@@ -1,0 +1,308 @@
+{
+  "meta": {
+    "title": "ClipsFlow — Clips IA avec sous-titres incrustés",
+    "description": "Transforme tes épisodes et vidéos en clips sous-titrés prêts à poster sur TikTok, Reels et Shorts. Sous-titres incrustés, format vertical, aucune app à installer."
+  },
+  "home": {
+    "badge": "Bêta privée",
+    "title": "Transforme tes vidéos en clips sous-titrés prêts à poster",
+    "subtitle": "ClipsFlow découpe tes épisodes en clips viraux Shorts, Reels et TikTok — sous-titres incrustés en 15 styles, format vertical, téléchargement MP4 + VTT. Aucun montage requis.",
+    "cta_primary": "Accès anticipé",
+    "cta_secondary": "Comment ça marche",
+    "features_title": "Ce que tu obtiens",
+    "feature_dub_title": "Sous-titres incrustés",
+    "feature_dub_desc": "Sous-titres animés mot à mot en 15 styles, couleurs, polices et positions personnalisables.",
+    "feature_clips_title": "Clips IA",
+    "feature_clips_desc": "Clips Shorts, Reels et TikTok avec sous-titres incrustés en 15 styles.",
+    "feature_consent_title": "Toutes les plateformes, en un clic",
+    "feature_consent_desc": "9:16, 1:1, 4:5, 16:9 — choisis un preset, génère, télécharge MP4 + VTT."
+  },
+  "not_found": {
+    "title": "Page introuvable",
+    "description": "La page que tu cherches n'existe pas.",
+    "back_home": "Retour à l'accueil"
+  },
+  "login": {
+    "title": "Connexion à ClipsFlow",
+    "subtitle": "Email et mot de passe — accès minimal P1.",
+    "email_label": "Email",
+    "email_placeholder": "toi@exemple.com",
+    "password_label": "Mot de passe",
+    "password_placeholder": "••••••••",
+    "submit_signin": "Se connecter",
+    "submit_signup": "Créer un compte",
+    "toggle_to_signup": "Pas encore de compte ? Crée-le",
+    "toggle_to_signin": "Déjà un compte ? Connecte-toi",
+    "loading": "Patiente…",
+    "error_generic": "Échec de l'authentification. Vérifie tes identifiants et réessaie.",
+    "signup_success": "Compte créé — vérifie ta boîte mail pour confirmer ton adresse, puis connecte-toi.",
+    "dev_note": "Login minimal P1 — remplacé par l'auth UI complète en Phase 3."
+  },
+  "clips": {
+    "shell": {
+      "nav_clips": "Clips",
+      "sign_out": "Déconnexion"
+    },
+    "page_title": "Clips sous-titrés",
+    "page_subtitle": "Transforme un épisode en clip prêt-à-poster en 30 secondes. Sous-titres incrustés, format vertical, aucune app à installer.",
+    "new_clip_cta": "Nouveau clip",
+    "studio_title": "Nouveau clip sous-titré",
+    "step_source": "Média source",
+    "step_segment": "Segment",
+    "step_style": "Style de sous-titres",
+    "step_customization": "Personnalisation & overlays",
+    "step_quota": "Quota & envoi",
+    "tab_upload": "Importer un fichier",
+    "tab_url": "Coller une URL",
+    "tab_episode": "Épisode existant",
+    "source_url_label": "URL du média (HTTPS)",
+    "source_url_placeholder": "https://mon-cdn.com/episode.mp4",
+    "source_url_hint": "Colle une URL HTTPS directe vers un fichier média (MP4, MP3…) ou utilise l'onglet Importer.",
+    "source_url_error_https": "L'URL doit commencer par https://",
+    "source_title_label": "Titre de l'épisode",
+    "source_title_placeholder": "Ex. Épisode 12 — Histoires de croissance",
+    "episode_select_label": "Choisis un de tes épisodes",
+    "episode_select_placeholder": "— Choisir un épisode —",
+    "episode_empty": "Aucun épisode pour l'instant — importe un fichier ou colle une URL pour en créer un.",
+    "upload_dropzone_label": "Glisse ton audio ou ta vidéo ici, ou clique pour parcourir",
+    "upload_browse_cta": "Parcourir",
+    "upload_progress": "Import en cours… {percent}%",
+    "upload_complete": "Média importé : {filename}",
+    "upload_replace": "Remplacer",
+    "upload_error_too_large": "Fichier trop volumineux (max 500 Mo)",
+    "upload_error_unsupported_type": "Format non supporté (MP4, MOV, WEBM, MP3, M4A ou WAV uniquement)",
+    "upload_error_failed": "Échec de l'import. Réessaie.",
+    "seg_start_label": "Début",
+    "seg_end_label": "Fin",
+    "seg_error": "La fin doit être après le début",
+    "seg_error_max": "Le clip ne peut pas dépasser 3 minutes (180 s)",
+    "aspect_label": "Format",
+    "aspect_hint_9_16": "TikTok · Reels · Shorts",
+    "aspect_hint_1_1": "Carré Insta · LinkedIn · X",
+    "aspect_hint_4_5": "Insta portrait (reach max)",
+    "aspect_hint_16_9": "YouTube · paysage",
+    "lang_label": "Langue des sous-titres",
+    "style_pro_locked": "Pro requis",
+    "style_premium_hint": "Les styles premium sont disponibles à partir du plan <strong>Pro</strong>.",
+    "custom_unavailable": "Les personnalisations sont disponibles à partir du plan <strong>Pro</strong>.",
+    "custom_text_color": "Couleur du texte",
+    "custom_highlight_color": "Couleur de mise en valeur",
+    "custom_font": "Police",
+    "custom_position_label": "Position des sous-titres",
+    "custom_position_aria": "Sélectionner la position verticale des sous-titres",
+    "custom_position_top": "Haut",
+    "custom_position_middle": "Milieu",
+    "custom_position_lower_third": "Tiers bas",
+    "custom_position_bottom": "Bas",
+    "custom_position_recommended": "Reco",
+    "custom_position_bottom_warning": "⚠️ Bas peut être masqué par l'interface TikTok / Shorts / Reels — préfère Tiers bas",
+    "custom_position_studio_gate": "Disponible avec le plan Studio (défaut : tiers bas)",
+    "custom_stroke_width_label": "Épaisseur du contour",
+    "custom_stroke_width_reset": "Réinitialiser au style par défaut",
+    "custom_bg_opacity_label": "Opacité du fond",
+    "custom_bg_opacity_reset": "Réinitialiser",
+    "custom_auto_emphasis_label": "Mettre en avant les mots forts",
+    "custom_auto_emphasis_hint": "Chiffres, devises, ! et MAJUSCULES auto-colorés avec la couleur de mise en valeur",
+    "custom_animation_speed_label": "Vitesse d'animation",
+    "custom_animation_speed_reset": "Réinitialiser à 1×",
+    "custom_emphasis_cycle_label": "Cycle de couleurs (5 max)",
+    "custom_emphasis_cycle_slot": "Couleur d'emphase {slot}",
+    "custom_emphasis_cycle_hint": "Chaque mot fort prend la couleur suivante du cycle",
+    "custom_emphasis_cycle_reset": "Désactiver le cycle",
+    "color_palette_aria": "Palette de couleurs",
+    "color_free_label": "Couleur libre",
+    "color_hex_aria": "Valeur hex",
+    "color_hex_placeholder": "#FFFFFF",
+    "color_picker": {
+      "studio_custom_hint": "Studio : couleur libre",
+      "selected_aria": "Couleur sélectionnée : {hex}"
+    },
+    "position_picker": {
+      "top_left": "Position en haut à gauche",
+      "top_right": "Position en haut à droite",
+      "bottom_left": "Position en bas à gauche",
+      "bottom_right": "Position en bas à droite",
+      "center": "Position centrée"
+    },
+    "overlays": {
+      "section_title": "Overlays",
+      "section_subtitle": "Ajoute un titre d'intro, un bandeau intervenant, un compteur animé et/ou un CTA final (optionnel).",
+      "title_card": {
+        "toggle": "Activer le titre d'intro",
+        "text_label": "Titre",
+        "text_placeholder": "Ex. Le moment clé",
+        "subtitle_label": "Sous-titre (optionnel)",
+        "subtitle_placeholder": "Ex. Interview, partie 2",
+        "start_label": "Début (s)",
+        "end_label": "Fin (s)",
+        "required_hint": "Titre requis quand activé."
+      },
+      "lower_third": {
+        "toggle": "Activer le bandeau intervenant",
+        "name_label": "Nom",
+        "name_placeholder": "Ex. Marie Dupont",
+        "role_label": "Rôle (optionnel)",
+        "role_placeholder": "Ex. CEO, Acme Corp",
+        "start_label": "Début (s)",
+        "end_label": "Fin (s)",
+        "required_hint": "Nom requis quand activé."
+      },
+      "stat_callout": {
+        "toggle": "Activer le compteur animé",
+        "value_label": "Valeur",
+        "value_placeholder": "Ex. 10K, +47%, 1M €",
+        "label_label": "Légende (optionnel)",
+        "label_placeholder": "Ex. abonnés, clics, économisés",
+        "position_label": "Position",
+        "start_label": "Début (s)",
+        "end_label": "Fin (s)",
+        "required_hint": "Valeur requise quand activé.",
+        "preset_default_label": "VUES"
+      },
+      "cta_outro": {
+        "toggle": "Activer l'appel à l'action final",
+        "text_label": "Texte",
+        "text_placeholder": "Ex. Abonne-toi ↗",
+        "start_label": "Début (s)",
+        "end_label": "Fin (s)",
+        "required_hint": "Texte requis quand activé.",
+        "preset_default_text": "Suis-moi pour plus de contenu"
+      }
+    },
+    "presets": {
+      "section_title": "Presets",
+      "section_subtitle": "Choisis un preset prêt-à-l'emploi ou personnalise tout",
+      "change": "Modifier",
+      "locked": "{plan} requis",
+      "viral_tiktok": {
+        "name": "Viral TikTok",
+        "tagline": "9:16 vertical, sous-titres jaunes pop"
+      },
+      "youtube_tutorial": {
+        "name": "Tutoriel YouTube",
+        "tagline": "16:9 paysage, sous-titres minimalistes"
+      },
+      "hormozi_style": {
+        "name": "Hormozi-Style",
+        "tagline": "Bold UPPERCASE jaune, hooks viraux + compteur"
+      },
+      "linkedin_pro": {
+        "name": "LinkedIn Pro",
+        "tagline": "Carré 1:1 sobre, ton B2B + CTA"
+      },
+      "podcast_clip": {
+        "name": "Podcast Clip",
+        "tagline": "Bandeau cinéma centré, focus voix"
+      },
+      "gaming_stream": {
+        "name": "Gaming Stream",
+        "tagline": "Stream gaming, bounce dynamique 9:16"
+      },
+      "sports_highlight": {
+        "name": "Sports Highlight",
+        "tagline": "Highlight sport, énergie max + compteur"
+      },
+      "interview_quote": {
+        "name": "Interview Quote",
+        "tagline": "Citation interview, sobre + cinéma"
+      },
+      "cinematic_vlog": {
+        "name": "Cinematic Vlog",
+        "tagline": "Vlog cinéma, sérif italique 16:9"
+      },
+      "mrbeast_energy": {
+        "name": "MrBeast Energy",
+        "tagline": "High-energy MrBeast, vert+bold + compteur"
+      },
+      "karaoke_hit": {
+        "name": "Karaoke Hit",
+        "tagline": "Flash de couleur par mot, karaoké viral"
+      },
+      "custom": {
+        "name": "Custom",
+        "tagline": "Tous les paramètres, contrôle total"
+      }
+    },
+    "quota_used_of": "{used} utilisées sur {limit} ce mois",
+    "quota_reset": "Reset le {date}",
+    "quota_exceeded": "Quota mensuel dépassé — il te reste {remaining} s ce mois.",
+    "submit_label": "Générer le clip sous-titré",
+    "submitting_label": "Soumission en cours…",
+    "submit_waiting": "Génération en cours — cela peut prendre quelques minutes…",
+    "submit_success": "Clip prêt !",
+    "submit_error": "Erreur lors de la soumission",
+    "submit_error_network": "Erreur réseau — réessaie dans quelques instants",
+    "poll_timeout": "Le rendu prend trop de temps. Vérifie la galerie dans quelques minutes.",
+    "gallery_status_pending": "En attente",
+    "gallery_status_processing": "En cours",
+    "gallery_status_completing": "Finalisation",
+    "gallery_status_completed": "Terminé",
+    "gallery_status_failed": "Échec",
+    "gallery_empty_title": "Aucun clip pour l'instant",
+    "gallery_empty_subtitle": "Crée ton premier clip sous-titré en quelques clics.",
+    "gallery_download": "Télécharger",
+    "gallery_download_vtt": "VTT",
+    "gallery_hook_score_label": "Hook",
+    "gallery_hook_score_tooltip": "Score basé sur : question d'ouverture (+20), verbe d'action (+15), mention « tu » (+10), longueur 5-12 mots (+10), chiffre (+10). 80+ = viral, 50-79 = correct, <50 = à retravailler.",
+    "gallery_section_title": "Tes clips précédents",
+    "toolbar": {
+      "filter_label": "Filtrer",
+      "filter_all": "Tous",
+      "filter_completed": "Terminés",
+      "filter_processing": "En cours",
+      "filter_failed": "Échoués",
+      "aspect_all": "Tous formats",
+      "sort_label": "Trier",
+      "sort_recent": "Récents",
+      "sort_oldest": "Plus anciens",
+      "sort_hook_desc": "Score hook ↓",
+      "search_placeholder": "Rechercher par style ou format…",
+      "search_aria": "Rechercher dans les clips",
+      "empty_filter": "Aucun clip ne correspond à ce filtre.",
+      "clear_filters": "Réinitialiser"
+    },
+    "reclip": {
+      "menu_aria": "Plus d'actions",
+      "rerender_style": "Régénérer dans un autre style",
+      "duplicate_square": "Régénérer en 1:1",
+      "duplicate_portrait": "Régénérer en 9:16"
+    },
+    "retry": {
+      "label": "Réessayer",
+      "running": "Relance…",
+      "success": "Clip relancé — traitement en cours",
+      "error": "Impossible de relancer ce clip. Réessaie dans un instant.",
+      "quota_exceeded": "Quota mensuel dépassé — impossible de relancer ce clip."
+    },
+    "share": {
+      "label": "Partager",
+      "copy_link": "Copier le lien",
+      "copied": "Lien copié",
+      "open_twitter": "Partager sur X",
+      "open_linkedin": "Partager sur LinkedIn",
+      "open_facebook": "Partager sur Facebook"
+    },
+    "watermark_notice": {
+      "free_banner": "Plan Free : tes clips portent un filigrane ClipsFlow. Passe au plan supérieur pour le retirer.",
+      "upgrade_cta": "Voir les plans"
+    },
+    "onboarding": {
+      "title": "Bienvenue dans Clips",
+      "subtitle": "Crée ton premier clip sous-titré en 3 étapes — moins de 60 secondes.",
+      "step1_title": "1. Choisis une source",
+      "step1_body": "Importe un audio/vidéo (max 500 Mo), colle une URL HTTPS directe, ou repars d'un épisode existant.",
+      "step2_title": "2. Choisis un preset & un style",
+      "step2_body": "12 presets et 15 styles de sous-titres pensés pour TikTok, Shorts, Reels, LinkedIn, podcasts.",
+      "step3_title": "3. Ship",
+      "step3_body": "Sous-titres incrustés, format vertical, téléchargement direct MP4 + VTT.",
+      "cta_start": "Démarrer maintenant",
+      "dismiss": "Ne plus afficher",
+      "dismiss_aria": "Fermer l'onboarding"
+    },
+    "errors": {
+      "no_speech_detected": "Aucune parole détectée dans ce média. Les sous-titres nécessitent une bande audio avec dialogue. Ton quota a été remboursé.",
+      "source_too_large": "Fichier source trop volumineux (max 500 Mo). Essaie un bitrate plus bas, une résolution plus petite ou un segment plus court. Ton quota a été remboursé.",
+      "invalid_source_url": "L'URL source est invalide ou pointe vers une adresse restreinte. Utilise une URL HTTPS hébergée sur un CDN public ou Supabase Storage. Ton quota a été remboursé."
+    }
+  }
+}

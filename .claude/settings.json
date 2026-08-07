@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "C:/Users/adama/Documents/Projet_Applications/Clips"
+    ],
+    "deny": [
+      "Edit(C:/Users/adama/Documents/Projet_Applications/Clips/**)",
+      "Write(C:/Users/adama/Documents/Projet_Applications/Clips/**)",
+      "MultiEdit(C:/Users/adama/Documents/Projet_Applications/Clips/**)",
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)"
+    ]
+  }
+}

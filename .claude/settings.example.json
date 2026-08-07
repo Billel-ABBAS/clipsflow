@@ -1,0 +1,15 @@
+{
+  "__ACTIVATION__": "Renommer ce fichier en settings.json pour activer la protection read-only mécanique de VidiaFlow (mégaprompt S.2). Commande : Rename-Item .claude/settings.example.json settings.json — puis supprimer cette clé __ACTIVATION__.",
+  "permissions": {
+    "additionalDirectories": [
+      "C:/Users/adama/Documents/Projet_Applications/Clips"
+    ],
+    "deny": [
+      "Edit(C:/Users/adama/Documents/Projet_Applications/Clips/**)",
+      "Write(C:/Users/adama/Documents/Projet_Applications/Clips/**)",
+      "MultiEdit(C:/Users/adama/Documents/Projet_Applications/Clips/**)",
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)"
+    ]
+  }
+}

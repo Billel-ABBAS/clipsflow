@@ -1,0 +1,16 @@
+# Gate sécurité ggshield (mégaprompt règle transverse 1).
+# Garde gracieuse tant que `ggshield auth login` n'a pas été exécuté :
+# une fois authentifié, le scan devient un hard gate. Pour durcir en gate
+# strict inconditionnel, remplacer le bloc par :
+#   ggshield secret scan pre-commit || exit 1
+if command -v ggshield >/dev/null 2>&1; then
+  if ggshield api-status >/dev/null 2>&1; then
+    ggshield secret scan pre-commit || exit 1
+  else
+    echo "⚠️  ggshield non authentifié — gate secrets INACTIF. Exécuter : ggshield auth login"
+  fi
+else
+  echo "⚠️  ggshield introuvable — gate secrets INACTIF. Exécuter : pip install ggshield && ggshield auth login"
+fi
+
+pnpm lint-staged
