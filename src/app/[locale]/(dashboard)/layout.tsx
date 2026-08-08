@@ -47,6 +47,12 @@ export default async function DashboardLayout({
               >
                 {t("nav_clips")}
               </Link>
+              <Link
+                href="/pricing"
+                className="text-muted-foreground hover:text-foreground text-sm transition-colors"
+              >
+                {t("nav_pricing")}
+              </Link>
             </nav>
           </div>
           <SignOutButton label={t("sign_out")} />

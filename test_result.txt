@@ -1,0 +1,13 @@
+=== LANDING /en ===
+URL: https://clipsflow-liart.vercel.app/en
+Title: ClipsFlow — AI clips with burned-in subtitles
+H1 count: 1
+  H1: Turn your videos into ready-to-post subtitled clips
+
+=== LOGIN /en/login ===
+URL: https://clipsflow-liart.vercel.app/en/login
+Title: ClipsFlow — AI clips with burned-in subtitles
+Email input: 1
+Password input: 1
+Submit button: 1
+Screenshot: login.png

@@ -72,7 +72,7 @@ export default async function ClipsPage({
   // Quota header — P1 : resolvePlan() returns 'pro' for everyone.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, clip_seconds_used_this_month, clip_quota_reset_at")
+    .select("id, clip_seconds_used_this_month, clip_quota_reset_at, plan")
     .eq("id", user.id)
     .maybeSingle();
 

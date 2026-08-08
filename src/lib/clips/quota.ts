@@ -51,19 +51,31 @@ export type Plan = keyof typeof QUOTAS_SECONDS;
 
 const PLAN_ORDER: readonly Plan[] = ["free", "solo", "pro", "studio"];
 
-// TODO(P3) : read the real tier from a `profiles.plan` column once the
-// billing phase lands. Until then every user renders on the 'pro' quota
-// (1800 s/month) with pro-level customization stripping.
-const DEFAULT_PLAN: Plan = "pro";
+// ─────────────────────────────────────────────────────────────────────────────
+// resolvePlan — source unique du tier d'un profile.
+//
+// P1 : profiles n'avait pas de colonne plan → tout résolu en 'pro'
+// (DEFAULT_PLAN). Phase P3 / Stripe : on lit maintenant `profiles.plan`
+// (créée par la migration 0003_stripe_billing.sql). La valeur est
+// validée contre QUOTAS_SECONDS ; toute valeur inconnue retombe sur
+// 'free' (fail-closed, principe de moindre privilège).
+// ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Resolve a user's plan from their profile row. P1 : the profiles table
- * has no plan column — constant DEFAULT_PLAN for everyone. The signature
- * already accepts the profile row so call sites won't change in P3.
- */
-export function resolvePlan(_profile: unknown): Plan {
-  void _profile; // consumed in P3 when profiles.plan lands
-  return DEFAULT_PLAN;
+const DEFAULT_PLAN: Plan = "pro"; // Kept for backward-compat callers that pass `null` before the migration lands.
+
+interface ProfileWithPlan {
+  plan?: string | null;
+}
+
+export function resolvePlan(profile: ProfileWithPlan | null | undefined): Plan {
+  const raw = profile?.plan;
+  if (typeof raw === "string") {
+    const lower = raw.toLowerCase();
+    if (lower in QUOTAS_SECONDS) {
+      return lower as Plan;
+    }
+  }
+  return "free";
 }
 
 /**
@@ -212,7 +224,7 @@ export async function checkClipAccess(
   // column in P3) and gives us `used` for the remaining computation.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, clip_seconds_used_this_month")
+    .select("id, clip_seconds_used_this_month, plan")
     .eq("id", userId)
     .single();
   if (!profile) throw new Error("profile_not_found");

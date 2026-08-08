@@ -41,6 +41,7 @@
   "clips": {
     "shell": {
       "nav_clips": "Clips",
+      "nav_pricing": "Pricing",
       "sign_out": "Sign out"
     },
     "page_title": "Subtitled clips",
@@ -303,6 +304,49 @@
       "no_speech_detected": "No speech detected in this media. Subtitles require an audio track with dialogue. Your quota has been refunded.",
       "source_too_large": "Source file is too large (500 MB max). Try a lower bitrate, smaller resolution, or shorter segment. Your quota has been refunded.",
       "invalid_source_url": "The source URL is invalid or points to a restricted location. Use an HTTPS URL hosted on a public CDN or Supabase Storage. Your quota has been refunded."
+    }
+  },
+  "pricing": {
+    "title": "ClipsFlow Pricing",
+    "subtitle": "Choose the plan that fits your clip volume. All plans include AI-powered subtitles, vertical formats, and direct downloads.",
+    "note": "Secure payment via Stripe. Cancel anytime.",
+    "loading": "Loading…",
+    "checkout_error": "Could not create checkout session. Try again.",
+    "free": {
+      "name": "Free",
+      "tagline": "Try ClipsFlow",
+      "price": "$0",
+      "feature1": "60 seconds of clips/month",
+      "feature2": "Basic subtitle styles",
+      "feature3": "ClipsFlow watermark",
+      "cta": "Start free"
+    },
+    "solo": {
+      "name": "Solo",
+      "tagline": "For creators getting started",
+      "price": "$29",
+      "feature1": "8 minutes of clips/month",
+      "feature2": "Pro subtitle styles",
+      "feature3": "No watermark",
+      "cta": "Upgrade to Solo"
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "For serious creators",
+      "price": "$79",
+      "feature1": "30 minutes of clips/month",
+      "feature2": "All styles + custom colors",
+      "feature3": "No watermark + priority",
+      "cta": "Upgrade to Pro"
+    },
+    "studio": {
+      "name": "Studio",
+      "tagline": "For agencies & teams",
+      "price": "$199",
+      "feature1": "60 minutes of clips/month",
+      "feature2": "Everything unlocked",
+      "feature3": "All positions + animations",
+      "cta": "Upgrade to Studio"
     }
   }
 }

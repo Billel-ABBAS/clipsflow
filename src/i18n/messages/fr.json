@@ -41,6 +41,7 @@
   "clips": {
     "shell": {
       "nav_clips": "Clips",
+      "nav_pricing": "Tarifs",
       "sign_out": "Déconnexion"
     },
     "page_title": "Clips sous-titrés",
@@ -303,6 +304,49 @@
       "no_speech_detected": "Aucune parole détectée dans ce média. Les sous-titres nécessitent une bande audio avec dialogue. Ton quota a été remboursé.",
       "source_too_large": "Fichier source trop volumineux (max 500 Mo). Essaie un bitrate plus bas, une résolution plus petite ou un segment plus court. Ton quota a été remboursé.",
       "invalid_source_url": "L'URL source est invalide ou pointe vers une adresse restreinte. Utilise une URL HTTPS hébergée sur un CDN public ou Supabase Storage. Ton quota a été remboursé."
+    }
+  },
+  "pricing": {
+    "title": "Tarifs ClipsFlow",
+    "subtitle": "Choisis le plan adapté à ton volume de clips. Tous les plans incluent des sous-titres IA, des formats verticaux et le téléchargement direct.",
+    "note": "Paiement sécurisé via Stripe. Résilie à tout moment.",
+    "loading": "Chargement…",
+    "checkout_error": "Impossible de créer la session de paiement. Réessaie.",
+    "free": {
+      "name": "Gratuit",
+      "tagline": "Découvrir ClipsFlow",
+      "price": "0 $",
+      "feature1": "60 secondes de clips/mois",
+      "feature2": "Styles de sous-titres de base",
+      "feature3": "Filigrane ClipsFlow",
+      "cta": "Commencer gratuitement"
+    },
+    "solo": {
+      "name": "Solo",
+      "tagline": "Pour les créateurs qui débutent",
+      "price": "29 $",
+      "feature1": "8 minutes de clips/mois",
+      "feature2": "Styles pro",
+      "feature3": "Sans filigrane",
+      "cta": "Passer à Solo"
+    },
+    "pro": {
+      "name": "Pro",
+      "tagline": "Pour les créateurs sérieux",
+      "price": "79 $",
+      "feature1": "30 minutes de clips/mois",
+      "feature2": "Tous les styles + couleurs perso",
+      "feature3": "Sans filigrane + priorité",
+      "cta": "Passer à Pro"
+    },
+    "studio": {
+      "name": "Studio",
+      "tagline": "Pour les agences et équipes",
+      "price": "199 $",
+      "feature1": "60 minutes de clips/mois",
+      "feature2": "Tout débloqué",
+      "feature3": "Toutes positions + animations",
+      "cta": "Passer à Studio"
     }
   }
 }
