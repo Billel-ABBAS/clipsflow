@@ -82,7 +82,7 @@ function makeSupabase(options: {
 describe("checkClipAccess — allowed", () => {
   it("retourne allowed=true quand le RPC retourne true", async () => {
     const sb = makeSupabase({
-      profileData: { id: "user1", clip_seconds_used_this_month: 0 },
+      profileData: { id: "user1", clip_seconds_used_this_month: 0, plan: "pro" },
       rpcData: true,
     });
     const result = await checkClipAccess(sb, "user1", 60);
@@ -92,7 +92,7 @@ describe("checkClipAccess — allowed", () => {
   it("calcule le remaining correctement", async () => {
     // plan=pro, limit=1800, used=100, seconds=60 → remaining=1800-100-60=1640
     const sb = makeSupabase({
-      profileData: { id: "user1", clip_seconds_used_this_month: 100 },
+      profileData: { id: "user1", clip_seconds_used_this_month: 100, plan: "pro" },
       rpcData: true,
     });
     const result = await checkClipAccess(sb, "user1", 60);
@@ -103,7 +103,7 @@ describe("checkClipAccess — allowed", () => {
 describe("checkClipAccess — denied", () => {
   it("retourne allowed=false quand le RPC retourne false (quota dépassé)", async () => {
     const sb = makeSupabase({
-      profileData: { id: "user1", clip_seconds_used_this_month: 1800 },
+      profileData: { id: "user1", clip_seconds_used_this_month: 1800, plan: "pro" },
       rpcData: false,
     });
     const result = await checkClipAccess(sb, "user1", 60);
@@ -113,7 +113,7 @@ describe("checkClipAccess — denied", () => {
 
   it("retourne allowed=false avec remaining=0 quand used >= limit", async () => {
     const sb = makeSupabase({
-      profileData: { id: "user1", clip_seconds_used_this_month: 1800 },
+      profileData: { id: "user1", clip_seconds_used_this_month: 1800, plan: "pro" },
       rpcData: false,
     });
     const result = await checkClipAccess(sb, "user1", 60);
@@ -122,7 +122,7 @@ describe("checkClipAccess — denied", () => {
 
   it("fail-closed : erreur RPC → allowed=false", async () => {
     const sb = makeSupabase({
-      profileData: { id: "user1", clip_seconds_used_this_month: 0 },
+      profileData: { id: "user1", clip_seconds_used_this_month: 0, plan: "pro" },
       rpcError: { message: "connection refused" },
     });
     const result = await checkClipAccess(sb, "user1", 60);

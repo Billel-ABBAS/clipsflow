@@ -28,7 +28,6 @@ export function PricingCards({ locale, isLoggedIn }: PricingCardsProps) {
   const t = useTranslations("pricing");
   const router = useRouter();
   const [loading, setLoading] = useState<PlanKey | null>(null);
-
   async function handleSelect(plan: PlanKey) {
     if (plan === "free") {
       return;
@@ -77,8 +76,8 @@ export function PricingCards({ locale, isLoggedIn }: PricingCardsProps) {
           </CardContent>
           <CardFooter>
             {plan === "free" ? (
-              <Button variant="outline" className="w-full" asChild>
-                <a href={`/${locale}/clips`}>{t("free.cta")}</a>
+              <Button variant="outline" className="w-full" onClick={() => router.push(`/${locale}/clips`)}>
+                {t("free.cta")}
               </Button>
             ) : (
               <Button

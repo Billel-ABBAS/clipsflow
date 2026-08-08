@@ -254,7 +254,7 @@ export async function POST(request: Request): Promise<Response> {
   // row episodes orpheline si le profil a disparu.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id")
+    .select("id, plan")
     .eq("id", user.id)
     .maybeSingle();
   if (!profile) {
