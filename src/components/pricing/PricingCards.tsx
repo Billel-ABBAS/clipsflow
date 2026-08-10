@@ -45,7 +45,7 @@ export function PricingCards({ locale, isLoggedIn }: PricingCardsProps) {
       });
       const data = await res.json();
       if (data.url) {
-        window.location.href = data.url;
+        router.push(data.url);
       } else {
         toast.error(data.error ?? t("checkout_error"));
       }

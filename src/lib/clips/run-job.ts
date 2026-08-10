@@ -1010,12 +1010,15 @@ export async function runRenderJob(
     }
 
     // ── Step 7.5 — Free-tier watermark ──────────────────────────────────
-    // P1 : `resolvePlan()` returns the constant 'pro' (no profiles.plan
-    // column yet — TODO(P3) in quota.ts), so this branch never fires in
-    // practice. Ported anyway, gated exactly like the source : plan is
-    // resolved SERVER-SIDE, never trusted from any client payload.
+    // Résout le plan réel du user (migration 0003 : colonne profiles.plan).
+    // Free = watermark "AI clip · ClipsFlow". Tout autre plan = pas de watermark.
     const { resolvePlan } = await import("./quota");
-    const plan = resolvePlan(null);
+    const { data: watermarkProfile } = await supabase
+      .from("profiles")
+      .select("plan")
+      .eq("id", clip.user_id)
+      .single();
+    const plan = resolvePlan(watermarkProfile ?? null);
     if (plan === "free") {
       addPipelineBreadcrumb("watermark_start", "info", {
         mp4_bytes: renderedBuf.length,

@@ -38,6 +38,7 @@ import {
   OutboundUrlError,
 } from "@/lib/security/validate-outbound-url";
 import { routing } from "@/i18n/routing";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 // Whisper Large v3 Turbo sur Groq répond en ~1 s pour un clip de 60 s.
@@ -74,6 +75,21 @@ export async function POST(request: Request): Promise<Response> {
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  // 1.5 Rate limit : 30 transcriptions / min par user (anti-spamming
+  // crédits IA Whisper/Groq). In-memory token bucket.
+  const rl = checkRateLimit(`transcribe:${user.id}`, 30);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": Math.ceil((rl.retryAfterMs ?? 60_000) / 1000).toString(),
+        },
+      },
+    );
   }
 
   // 2. Feature flag (miroir /api/clips/jobs).

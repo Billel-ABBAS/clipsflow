@@ -1,5 +1,4 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { notFound } from "next/navigation";
 
 import { PricingCards } from "@/components/pricing/PricingCards";
 import { createClient } from "@/lib/supabase/server";
@@ -10,6 +9,7 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
+  void locale;
   return {
     title: "ClipsFlow Pricing",
   };

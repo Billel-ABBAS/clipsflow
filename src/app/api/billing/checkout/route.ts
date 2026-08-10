@@ -2,7 +2,6 @@
 // Crée une session Stripe Checkout (mode subscription) pour le plan demandé.
 
 import { NextResponse } from "next/server";
-import { redirect } from "next/navigation";
 
 import { BILLING_PLANS, PAID_PLANS } from "@/lib/billing/plans";
 import { getStripe } from "@/lib/billing/stripe-server";

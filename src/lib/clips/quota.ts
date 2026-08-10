@@ -54,14 +54,10 @@ const PLAN_ORDER: readonly Plan[] = ["free", "solo", "pro", "studio"];
 // ─────────────────────────────────────────────────────────────────────────────
 // resolvePlan — source unique du tier d'un profile.
 //
-// P1 : profiles n'avait pas de colonne plan → tout résolu en 'pro'
-// (DEFAULT_PLAN). Phase P3 / Stripe : on lit maintenant `profiles.plan`
-// (créée par la migration 0003_stripe_billing.sql). La valeur est
-// validée contre QUOTAS_SECONDS ; toute valeur inconnue retombe sur
-// 'free' (fail-closed, principe de moindre privilège).
+// Lit `profiles.plan` (créée par la migration 0003_stripe_billing.sql).
+// La valeur est validée contre QUOTAS_SECONDS ; toute valeur inconnue
+// retombe sur 'free' (fail-closed, principe de moindre privilège).
 // ─────────────────────────────────────────────────────────────────────────────
-
-const DEFAULT_PLAN: Plan = "pro"; // Kept for backward-compat callers that pass `null` before the migration lands.
 
 interface ProfileWithPlan {
   plan?: string | null;
