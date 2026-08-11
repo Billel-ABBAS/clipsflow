@@ -1,14 +1,17 @@
-import { Languages, Mic, ShieldCheck } from "lucide-react";
+import { ArrowRight, Check, Scissors, Subtitles, Zap } from "lucide-react";
 import { getTranslations, setRequestLocale } from "next-intl/server";
+import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
+  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export default async function HomePage({
   params,
@@ -21,57 +24,392 @@ export default async function HomePage({
 
   const features = [
     {
-      icon: Languages,
-      title: t("feature_dub_title"),
-      description: t("feature_dub_desc"),
-    },
-    {
-      icon: Mic,
+      icon: Scissors,
       title: t("feature_clips_title"),
       description: t("feature_clips_desc"),
+      color: "text-cyan-600",
     },
     {
-      icon: ShieldCheck,
+      icon: Subtitles,
+      title: t("feature_dub_title"),
+      description: t("feature_dub_desc"),
+      color: "text-violet-600",
+    },
+    {
+      icon: Zap,
       title: t("feature_consent_title"),
       description: t("feature_consent_desc"),
+      color: "text-amber-600",
     },
-  ] as const;
+  ];
+
+  const howItWorks = [
+    { step: "1", title: t("step1_title"), desc: t("step1_desc") },
+    { step: "2", title: t("step2_title"), desc: t("step2_desc") },
+    { step: "3", title: t("step3_title"), desc: t("step3_desc") },
+  ];
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center gap-12 px-6 py-24">
-      <section className="flex flex-col items-center gap-6 text-center">
-        <Badge variant="secondary">{t("badge")}</Badge>
-        <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-          {t("title")}
-        </h1>
-        <p className="text-muted-foreground max-w-xl text-lg text-balance">
-          {t("subtitle")}
-        </p>
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Button size="lg">{t("cta_primary")}</Button>
-          <Button size="lg" variant="outline">
-            {t("cta_secondary")}
-          </Button>
+    <main className="min-h-screen bg-background text-foreground">
+      {/* ── NAVIGATION ───────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur">
+        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
+          <Link href={`/${locale}`} className="text-lg font-bold">
+            ClipsFlow
+          </Link>
+          <nav className="flex items-center gap-6">
+            <Link
+              href={`/${locale}/pricing`}
+              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Pricing
+            </Link>
+            <Link
+              href={`/${locale}/login`}
+              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Sign in
+            </Link>
+            <Link
+              href={`/${locale}/login`}
+              className="inline-flex h-8 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/80 transition-colors"
+            >
+              {t("cta_primary")}
+              <ArrowRight className="ml-1 h-4 w-4" />
+            </Link>
+          </nav>
+        </div>
+      </header>
+
+      {/* ── HERO ──────────────────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden px-4 py-24 sm:px-6 sm:py-32">
+        <div className="pointer-events-none absolute inset-0 -z-10">
+          <div className="absolute left-1/4 top-0 h-96 w-96 rounded-full bg-violet-500/15 blur-3xl" />
+          <div className="absolute right-1/4 top-1/4 h-96 w-96 rounded-full bg-cyan-500/15 blur-3xl" />
+        </div>
+
+        <div className="mx-auto max-w-4xl text-center">
+          <Badge variant="secondary" className="mb-6 gap-1.5">
+            <span className="size-1.5 rounded-full bg-green-500" />
+            {t("badge")}
+          </Badge>
+
+          <h1 className="text-5xl font-bold tracking-tight text-foreground sm:text-7xl">
+            {t("hero_part1")}{" "}
+            <span className="bg-gradient-to-r from-violet-600 to-cyan-600 bg-clip-text text-transparent">
+              {t("hero_highlight")}
+            </span>{" "}
+            {t("hero_part2")}
+          </h1>
+
+          <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">
+            {t("subtitle")}
+          </p>
+
+          <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+            <Link
+              href={`/${locale}/login`}
+              className="group inline-flex h-10 items-center justify-center rounded-md bg-primary px-8 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 focus-visible:outline-none transition-colors"
+            >
+              {t("cta_primary")}
+              <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+            </Link>
+            <a
+              href="#how-it-works"
+              className="inline-flex h-10 items-center justify-center rounded-md border border-input bg-background px-8 text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground focus-visible:outline-none transition-colors"
+            >
+              {t("cta_secondary")}
+            </a>
+          </div>
+
+          <p className="mt-8 text-sm text-muted-foreground">
+            {t("social_proof")}
+          </p>
         </div>
       </section>
 
-      <section className="w-full">
-        <h2 className="sr-only">{t("features_title")}</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {features.map((feature) => (
-            <Card key={feature.title}>
-              <CardHeader>
-                <feature.icon
-                  className="text-muted-foreground size-5"
-                  aria-hidden
-                />
-                <CardTitle className="text-base">{feature.title}</CardTitle>
-                <CardDescription>{feature.description}</CardDescription>
-              </CardHeader>
-            </Card>
-          ))}
+      {/* ── FEATURES ──────────────────────────────────────────────────────── */}
+      <section className="px-4 py-24 sm:px-6">
+        <div className="mx-auto max-w-7xl">
+          <div className="text-center">
+            <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+              {t("features_title")}
+            </h2>
+            <p className="mt-4 text-lg text-muted-foreground">
+              {t("features_subtitle")}
+            </p>
+          </div>
+
+          <div className="mt-16 grid gap-8 sm:grid-cols-3">
+            {features.map((feature) => (
+              <Card key={feature.title} className="border-border/50 bg-card/50 backdrop-blur">
+                <CardHeader>
+                  <div className={cn("mb-4 inline-flex size-10 items-center justify-center rounded-lg bg-muted", feature.color)}>
+                    <feature.icon className="size-5" />
+                  </div>
+                  <CardTitle className="text-xl">{feature.title}</CardTitle>
+                  <CardDescription className="text-base">
+                    {feature.description}
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            ))}
+          </div>
         </div>
       </section>
+
+      {/* ── HOW IT WORKS ─────────────────────────────────────────────────── */}
+      <section id="how-it-works" className="border-t border-border/40 bg-muted/30 px-4 py-24 sm:px-6">
+        <div className="mx-auto max-w-7xl">
+          <div className="text-center">
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              {t("how_it_works_title")}
+            </h2>
+          </div>
+
+          <div className="mt-16 grid gap-12 sm:grid-cols-3">
+            {howItWorks.map((item) => (
+              <div key={item.step} className="flex flex-col items-center text-center">
+                <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-primary text-xl font-bold text-primary-foreground">
+                  {item.step}
+                </div>
+                <h3 className="text-xl font-semibold">{item.title}</h3>
+                <p className="mt-2 text-muted-foreground">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── PRICING TEASER ────────────────────────────────────────────────── */}
+      <section className="px-4 py-24 sm:px-6">
+        <div className="mx-auto max-w-7xl">
+          <div className="text-center">
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              {t("pricing_title")}
+            </h2>
+            <p className="mt-4 text-lg text-muted-foreground">
+              {t("pricing_subtitle")}
+            </p>
+          </div>
+
+          <div className="mt-16 grid gap-8 lg:grid-cols-4">
+            {/* Free */}
+            <Card className="border-border/50">
+              <CardHeader>
+                <CardTitle>Free</CardTitle>
+                <CardDescription>{t("pricing_free_tagline")}</CardDescription>
+                <div className="mt-4 text-4xl font-bold">$0</div>
+                <p className="text-sm text-muted-foreground">{t("pricing_free_price")}</p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check className="size-4 text-green-500" />
+                  60s of clips/month
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check className="size-4 text-green-500" />
+                  15 subtitle styles
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check className="size-4 text-green-500" />
+                  ClipsFlow watermark
+                </div>
+              </CardContent>
+              <div className="p-6 pt-0">
+                <Link
+                  href={`/${locale}/login`}
+                  className="inline-flex h-8 w-full items-center justify-center rounded-md border border-input bg-background text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors"
+                >
+                  {t("pricing_free_cta")}
+                </Link>
+              </div>
+            </Card>
+
+            {/* Solo */}
+            <Card className="border-border/50">
+              <CardHeader>
+                <CardTitle>Solo</CardTitle>
+                <CardDescription>{t("pricing_solo_tagline")}</CardDescription>
+                <div className="mt-4 text-4xl font-bold">$29</div>
+                <p className="text-sm text-muted-foreground">{t("pricing_solo_price")}</p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check className="size-4 text-green-500" />
+                  480s of clips/month
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check className="size-4 text-green-500" />
+                  15 subtitle styles
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check className="size-4 text-green-500" />
+                  No watermark
+                </div>
+              </CardContent>
+              <div className="p-6 pt-0">
+                <Link
+                  href={`/${locale}/login`}
+                  className="inline-flex h-8 w-full items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/80 transition-colors"
+                >
+                  {t("pricing_solo_cta")}
+                </Link>
+              </div>
+            </Card>
+
+            {/* Pro */}
+            <Card className="relative border-primary">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                <Badge className="bg-primary text-primary-foreground">
+                  {t("pricing_popular")}
+                </Badge>
+              </div>
+              <CardHeader>
+                <CardTitle>Pro</CardTitle>
+                <CardDescription>{t("pricing_pro_tagline")}</CardDescription>
+                <div className="mt-4 text-4xl font-bold">$79</div>
+                <p className="text-sm text-muted-foreground">{t("pricing_pro_price")}</p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check className="size-4 text-green-500" />
+                  1800s of clips/month
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check className="size-4 text-green-500" />
+                  All styles + custom colors
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check className="size-4 text-green-500" />
+                  No watermark
+                </div>
+              </CardContent>
+              <div className="p-6 pt-0">
+                <Link
+                  href={`/${locale}/login`}
+                  className="inline-flex h-8 w-full items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/80 transition-colors"
+                >
+                  {t("pricing_pro_cta")}
+                </Link>
+              </div>
+            </Card>
+
+            {/* Studio */}
+            <Card className="border-border/50">
+              <CardHeader>
+                <CardTitle>Studio</CardTitle>
+                <CardDescription>{t("pricing_studio_tagline")}</CardDescription>
+                <div className="mt-4 text-4xl font-bold">$199</div>
+                <p className="text-sm text-muted-foreground">{t("pricing_studio_price")}</p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check className="size-4 text-green-500" />
+                  3600s of clips/month
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check className="size-4 text-green-500" />
+                  Everything unlocked
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Check className="size-4 text-green-500" />
+                  All positions + animations
+                </div>
+              </CardContent>
+              <div className="p-6 pt-0">
+                <Link
+                  href={`/${locale}/login`}
+                  className="inline-flex h-8 w-full items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground hover:bg-primary/80 transition-colors"
+                >
+                  {t("pricing_studio_cta")}
+                </Link>
+              </div>
+            </Card>
+          </div>
+
+          <div className="mt-10 text-center">
+            <Link
+              href={`/${locale}/pricing`}
+              className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+            >
+              {t("pricing_view_all")}
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FAQ ──────────────────────────────────────────────────────────── */}
+      <section className="border-t border-border/40 bg-muted/30 px-4 py-24 sm:px-6">
+        <div className="mx-auto max-w-3xl">
+          <div className="text-center">
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              {t("faq_title")}
+            </h2>
+          </div>
+
+          <div className="mt-16 space-y-8">
+            <div>
+              <h3 className="text-lg font-semibold">
+                {t("faq_q1_title")}
+              </h3>
+              <p className="mt-2 text-muted-foreground">{t("faq_q1_answer")}</p>
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold">
+                {t("faq_q2_title")}
+              </h3>
+              <p className="mt-2 text-muted-foreground">{t("faq_q2_answer")}</p>
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold">
+                {t("faq_q3_title")}
+              </h3>
+              <p className="mt-2 text-muted-foreground">{t("faq_q3_answer")}</p>
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold">
+                {t("faq_q4_title")}
+              </h3>
+              <p className="mt-2 text-muted-foreground">{t("faq_q4_answer")}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FINAL CTA ─────────────────────────────────────────────────────── */}
+      <section className="px-4 py-24 sm:px-6 sm:py-32">
+        <div className="mx-auto max-w-3xl text-center">
+          <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+            {t("final_title")}
+          </h2>
+          <p className="mx-auto mt-6 max-w-xl text-lg leading-8 text-muted-foreground">
+            {t("final_subtitle")}
+          </p>
+          <div className="mt-10 flex items-center justify-center gap-x-6">
+            <Link
+              href={`/${locale}/login`}
+              className="group inline-flex h-10 items-center justify-center rounded-md bg-primary px-8 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 focus-visible:outline-none transition-colors"
+            >
+              {t("final_cta")}
+              <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FOOTER ────────────────────────────────────────────────────────── */}
+      <footer className="border-t border-border/40 px-4 py-12 sm:px-6">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 sm:flex-row">
+          <Link href={`/${locale}`} className="text-lg font-bold">
+            ClipsFlow
+          </Link>
+          <p className="text-sm text-muted-foreground">
+            {t("footer_text")}
+          </p>
+        </div>
+      </footer>
     </main>
   );
 }
