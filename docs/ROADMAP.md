@@ -1,39 +1,63 @@
-# Roadmap — PolyCast
+# Roadmap — ClipsFlow
 
-> Source : MEGAPROMPT v2.0 (Phases 0 → 4). Une phase à la fois, gate ⏸️ entre chaque.
+> Produit : transformation de vidéos/épisodes longs en clips courts sous-titrés prêts à poster (TikTok, Reels, Shorts). Pas de doublage, pas de thumbnails IA.
 
-| Phase | Objectif                                | Durée | Livrable clé                                     | Statut                       |
-| ----- | --------------------------------------- | ----- | ------------------------------------------------ | ---------------------------- |
-| **0** | Audit VidiaFlow + scaffold              | 3h    | `CLIPFLOW_EXTRACTION_MAP.md` + repo buildable    | ✅ done (tag `phase-0-done`) |
-| **1** | Port ClipFlow (secondaire)              | 1 sem | Module clips end-to-end + tests ≥50%             | 🚧 code livré — gate en attente : smoke test fondateur + report + tag `phase-1-done` |
-| **2** | Hero dubbing + consentement AI Act      | 2 sem | Pipeline dub 5 langues GA + SRT/VTT + disclosure | —                            |
-| **3** | Stripe + auth + onboarding + rate limit | 1 sem | Produit monétisable, déployé                     | —                            |
-| **4** | Self-host VoxCPM2 (⚠️ conditionnel PMF) | 1 sem | −70%+ coût/job, fallback testé                   | —                            |
+## Phases livrées
 
-## Gates
+| Phase | Objectif | Statut |
+| ----- | -------- | ------ |
+| **P0** | Scaffold + audit ClipFlow | ✅ done |
+| **P1** | Port clips end-to-end (upload → Whisper → burn ffmpeg → galerie) | ✅ done |
+| **P2** | Billing Stripe (3 tiers live) + migrations DB + webhook | ✅ done |
+| **P3** | Hardening prod : rate limits, Sentry, RGPD, tests | 🚧 en cours |
 
-- Chaque phase se termine par : `docs/reports/PHASE_N_REPORT.md` + tag git `phase-N-done` + **STOP**.
-- Reprise de phase : préambule Annexe E du mégaprompt + bloc de phase.
-- Rollback : `git reset --hard phase-N-done && git clean -fd` (⚠️ détruit le travail non commité).
+## Ce qui est en place
 
-## 🚫 Verrou Phase 4
+### Core produit
+- **Studio 4 étapes** : source (upload ≤500 MB / URL / épisode) → segment (≤3 min) → style (15 prédéfinis) → personnalisation
+- **12 presets** platform-specific (TikTok, Hormozi, LinkedIn, etc.)
+- **Pipeline** : Whisper transcription → Claude traduction cues → ffmpeg burn (sous-titres animés) → smart crop → galerie realtime
+- **Overlays** : title card, bandeau intervenant, stat callout, CTA outro
+- **Webhook Stripe** : mise à jour automatique du plan
 
-Interdiction de démarrer sans **50+ payants OU $5k MRR** (preuve : screenshot dashboard Stripe collé dans le report). Sans ce signal → retour acquisition/marketing, pas d'optimisation.
+### Infra
+- **DB** : Supabase (auth, 3 + 1 tables, RPC quotas, storage privé 2 buckets)
+- **Paiement** : Stripe (3 produits live, webhook checkout.session.completed + subscription.updated/deleted)
+- **Deploy** : Vercel prod auto depuis `main`
+- **Monitoring** : Sentry branché (erreurs + breadcrumbs serveur)
+- **Sécurité** : RLS sur toutes les tables, rate limit 30 req/min sur transcribe, SSRF guard, PII scrubber Sentry, policies storage
 
-## Definition of Done globale
+### Plans (quotas seconds de clip rendu / mois)
 
-- Prod Vercel + Supabase + Stripe live ; 3 tiers $29/$79/$199 ; trial watermarké
-- Dubbing voice-cloné multilingue (GA benchmarkées MOS-lite ≥3.8 + beta), SRT/VTT, clips IA, thumbnails
-- Consentement vocal bloquant + disclosure AI Act Art. 50 sur chaque output
-- Coût/job optimisé (P4) avec fallback bridge permanent
-- ggshield/RLS/rate-limits partout ; commits propres ; tags par phase
-- **Acquire-ready** : git history clean, README investisseur, exports métriques (MRR Stripe, `cost_ledger`, `usage_meters`), 5 `PHASE_REPORT` = data room technique
+| Plan | $/mois | Quota | Features |
+| ---- | ------ | ----- | -------- |
+| free | 0 | 60s | 15 styles prédéfinis, watermark ClipsFlow |
+| solo | 29 | 480s | 15 styles prédéfinis, pas de watermark |
+| pro | 79 | 1800s | + custom colors (palette pro), pas de watermark |
+| studio | 199 | 3600s | + custom hex, fonts, positions, animations |
 
-## Pricing cible (P3)
+## Ce qui reste à faire
 
-| Plan   | $/mois | Quotas clés                                                                  |
-| ------ | ------ | ---------------------------------------------------------------------------- |
-| free   | 0      | trial unique : 1 dub 5 min watermarké, 1 langue, 3 clips total, 2 thumbnails |
-| solo   | 29     | 240 min/mois, 1 langue, 10 clips/épisode, 50 thumbs/mois                     |
-| pro    | 79     | 900 min/mois, 5 langues, 30 clips/épisode, 200 thumbs/mois                   |
-| studio | 199    | 1800 min/mois, 30 langues, clips/thumbs illimités                            |
+### Critique (post-lancement)
+- [ ] Tester le flow complet signup → upload → render → download
+- [ ] Vérifier que le webhook Stripe met à jour `profiles.plan` après paiement réel
+- [ ] Sentry : vérifier que les erreurs arrivent dans le dashboard Sentry (https://sentry.io)
+
+### Recommandé
+- [ ] Onboarding : page "premier clip" guidée
+- [ ] Settings : page compte (suppression RGPD, langue, notifications)
+- [ ] Landing : A/B test copy (titre, sous-titre)
+- [ ] Clip edit : régénérer un clip dans un autre style sans re-upload
+
+### Optionnel
+- [ ] Analytics : PostHog funnel activation (signup → first clip → upgrade)
+- [ ] Email : Resend notification "clip prêt"
+- [ ] API publique (pour intégrateurs)
+
+## Standards qualité
+
+- Typecheck : 0 erreur (`pnpm typecheck`)
+- Tests : 272/272 verts (`pnpm test`)
+- Lint : 0 erreur (`pnpm lint`)
+- Build : vert (`pnpm build`)
+- Secrets : jamais dans le repo, `.env.local` gitignored, `env.example` à jour
