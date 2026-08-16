@@ -1023,33 +1023,30 @@ export async function runRenderJob(
       .eq("id", clip.user_id)
       .single();
     const plan = resolvePlan(watermarkProfile ?? null);
-    if (plan === "free") {
-      addPipelineBreadcrumb("watermark_start", "info", {
-        mp4_bytes: renderedBuf.length,
+    const { applyPlanWatermark } = await import("./watermark-policy");
+    try {
+      renderedBuf = await applyPlanWatermark(
+        plan,
+        renderedBuf,
+        async (input) => {
+          addPipelineBreadcrumb("watermark_start", "info", {
+            mp4_bytes: input.length,
+          });
+          const { applyClipWatermark } = await import("./watermark");
+          const output = await applyClipWatermark(input);
+          addPipelineBreadcrumb("watermark_complete", "info", {
+            mp4_bytes: output.length,
+          });
+          return output;
+        },
+      );
+    } catch (err) {
+      logger.error("mandatory free-plan watermark failed", {
+        job_id: job.id,
+        clip_id: clip.id,
       });
-      try {
-        const { applyClipWatermark } = await import("./watermark");
-        renderedBuf = await applyClipWatermark(renderedBuf);
-        addPipelineBreadcrumb("watermark_complete", "info", {
-          mp4_bytes: renderedBuf.length,
-        });
-      } catch (err) {
-        // Watermark is a revenue-protection feature, not a render-blocker.
-        // If ffmpeg drawtext fails (font missing, malformed glyph), surface
-        // to Sentry but ship the un-watermarked clip — losing the upgrade
-        // hook is preferable to failing a Free user's first render and
-        // forcing a refund.
-        const errMsg = (err as Error).message;
-        logger.warn(
-          "ffmpeg watermark application failed (shipping unwatermarked)",
-          {
-            job_id: job.id,
-            clip_id: clip.id,
-            error: errMsg.slice(0, 400),
-          },
-        );
-        captureRunJobError(err, job, clip, "watermark_apply");
-      }
+      captureRunJobError(err, job, clip, "watermark_apply");
+      throw err;
     }
 
     // ── Step 8 — Parallel mp4 + vtt uploads to Supabase Storage ────────

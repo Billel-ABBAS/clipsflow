@@ -20,9 +20,8 @@
 //  - `-c:a copy` keeps audio unchanged (faster, no quality loss).
 //  - tmp dir cleaned via `finally`. Function is safe to call concurrently
 //    (each call gets its own `mkdtemp` workspace).
-//  - In P1 the plan resolves to the constant 'pro' (see quota.ts >
-//    resolvePlan) so this never fires in practice — ported anyway so the
-//    free-tier gate works the day profiles.plan lands (TODO(P3)).
+//  - Plan gating lives in watermark-policy.ts and is fail-closed: free or
+//    unknown plans must complete this transform before upload.
 //
 // Ported from VidiaFlow src/lib/clipflow/watermark.ts.
 // Adaptations : watermark text "VidiaFlow" → "AI clip · ClipsFlow" ;
