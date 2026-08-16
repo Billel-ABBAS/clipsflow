@@ -2,15 +2,24 @@
 // OAuth callback — récupère la session, redirige vers /clips
 
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { getTrustedAppUrl, safeRelativePath } from "@/lib/http/trusted-app-url";
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/clips";
+  const next = safeRelativePath(searchParams.get("next"), "/clips");
+  let appUrl: URL;
+  try {
+    appUrl = getTrustedAppUrl();
+  } catch {
+    return NextResponse.json(
+      { error: "app_url_not_configured" },
+      { status: 503 },
+    );
+  }
 
   if (code) {
     const supabase = await createClient();
@@ -26,12 +35,14 @@ export async function GET(request: Request) {
         .maybeSingle();
 
       if (!userRow) {
-        return NextResponse.redirect(`${origin}/login?error=profile_not_found`);
+        return NextResponse.redirect(
+          new URL("/login?error=profile_not_found", appUrl),
+        );
       }
 
-      return NextResponse.redirect(`${origin}${next}`);
+      return NextResponse.redirect(new URL(next, appUrl));
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=oauth_error`);
+  return NextResponse.redirect(new URL("/login?error=oauth_error", appUrl));
 }

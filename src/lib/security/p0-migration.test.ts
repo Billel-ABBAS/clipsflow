@@ -94,4 +94,48 @@ describe("migration P0 — frontière de mutation", () => {
       /GRANT EXECUTE ON FUNCTION public\.consume_api_rate_limit\([^)]+\) TO service_role/i,
     );
   });
+
+  it("rend les événements Stripe idempotents et les profils monotones", () => {
+    expect(migration).toMatch(/CREATE TABLE public\.stripe_webhook_events/i);
+    expect(migration).toMatch(
+      /ALTER TABLE public\.stripe_webhook_events FORCE ROW LEVEL SECURITY/i,
+    );
+    expect(migration).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.stripe_claim_webhook_event[\s\S]*ON CONFLICT \(event_id\) DO UPDATE/i,
+    );
+    expect(migration).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.stripe_apply_profile_event[\s\S]*stripe_event_created_at <= p_event_created/i,
+    );
+    for (const status of [
+      "incomplete",
+      "incomplete_expired",
+      "trialing",
+      "active",
+      "past_due",
+      "canceled",
+      "unpaid",
+      "paused",
+    ]) {
+      expect(migration).toContain(`'${status}'`);
+    }
+    for (const functionName of [
+      "stripe_claim_webhook_event",
+      "stripe_complete_webhook_event",
+      "stripe_fail_webhook_event",
+      "stripe_apply_profile_event",
+    ]) {
+      expect(migration).toMatch(
+        new RegExp(
+          `REVOKE ALL ON FUNCTION public\\.${functionName}\\([^)]+\\) FROM PUBLIC`,
+          "i",
+        ),
+      );
+      expect(migration).toMatch(
+        new RegExp(
+          `GRANT EXECUTE ON FUNCTION public\\.${functionName}\\([^)]+\\) TO service_role`,
+          "i",
+        ),
+      );
+    }
+  });
 });

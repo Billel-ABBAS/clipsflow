@@ -298,3 +298,242 @@ GRANT EXECUTE ON FUNCTION public.consume_api_rate_limit(text, integer, integer) 
 
 COMMENT ON FUNCTION public.consume_api_rate_limit(text, integer, integer) IS
   'Atomically consumes one fixed-window request token. Service role only.';
+
+-- --------------------------------------------------------------------------
+-- Stripe webhook idempotence and monotonic profile state
+-- --------------------------------------------------------------------------
+
+ALTER TABLE public.profiles
+  ADD COLUMN stripe_event_created_at bigint;
+
+ALTER TABLE public.profiles
+  DROP CONSTRAINT IF EXISTS profiles_subscription_status_check;
+ALTER TABLE public.profiles
+  ADD CONSTRAINT profiles_subscription_status_check
+  CHECK (subscription_status IN (
+    'none',
+    'incomplete',
+    'incomplete_expired',
+    'trialing',
+    'active',
+    'past_due',
+    'canceled',
+    'unpaid',
+    'paused'
+  ));
+
+CREATE OR REPLACE FUNCTION public.guard_profile_sensitive_fields()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF COALESCE(auth.role()::text, '') <> 'service_role' THEN
+    IF NEW.plan IS DISTINCT FROM OLD.plan
+       OR NEW.stripe_customer_id IS DISTINCT FROM OLD.stripe_customer_id
+       OR NEW.stripe_subscription_id IS DISTINCT FROM OLD.stripe_subscription_id
+       OR NEW.subscription_status IS DISTINCT FROM OLD.subscription_status
+       OR NEW.stripe_event_created_at IS DISTINCT FROM OLD.stripe_event_created_at
+       OR NEW.clip_seconds_used_this_month IS DISTINCT FROM OLD.clip_seconds_used_this_month
+       OR NEW.clip_quota_reset_at IS DISTINCT FROM OLD.clip_quota_reset_at THEN
+      RAISE EXCEPTION 'profile sensitive fields are server-managed'
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TABLE public.stripe_webhook_events (
+  event_id text PRIMARY KEY CHECK (char_length(event_id) BETWEEN 1 AND 255),
+  event_created bigint NOT NULL CHECK (event_created >= 0),
+  event_type text NOT NULL CHECK (char_length(event_type) BETWEEN 1 AND 255),
+  status text NOT NULL CHECK (status IN ('processing', 'processed', 'failed')),
+  attempts integer NOT NULL DEFAULT 1 CHECK (attempts >= 1),
+  error_message text,
+  claimed_at timestamptz NOT NULL DEFAULT now(),
+  processed_at timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.stripe_webhook_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.stripe_webhook_events FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.stripe_webhook_events FROM PUBLIC, anon, authenticated;
+
+CREATE INDEX idx_stripe_webhook_events_status_updated
+  ON public.stripe_webhook_events (status, updated_at);
+
+CREATE OR REPLACE FUNCTION public.stripe_claim_webhook_event(
+  p_event_id text,
+  p_event_created bigint,
+  p_event_type text
+)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_action text;
+BEGIN
+  IF p_event_id IS NULL
+     OR char_length(p_event_id) NOT BETWEEN 1 AND 255
+     OR p_event_created < 0
+     OR p_event_type IS NULL
+     OR char_length(p_event_type) NOT BETWEEN 1 AND 255 THEN
+    RAISE EXCEPTION 'invalid Stripe event identity' USING ERRCODE = '22023';
+  END IF;
+
+  INSERT INTO public.stripe_webhook_events AS existing (
+    event_id,
+    event_created,
+    event_type,
+    status,
+    attempts,
+    claimed_at,
+    updated_at
+  ) VALUES (
+    p_event_id,
+    p_event_created,
+    p_event_type,
+    'processing',
+    1,
+    now(),
+    now()
+  )
+  ON CONFLICT (event_id) DO UPDATE
+  SET
+    event_created = EXCLUDED.event_created,
+    event_type = EXCLUDED.event_type,
+    status = 'processing',
+    attempts = existing.attempts + 1,
+    error_message = NULL,
+    claimed_at = now(),
+    processed_at = NULL,
+    updated_at = now()
+  WHERE existing.status = 'failed'
+     OR (
+       existing.status = 'processing'
+       AND existing.claimed_at < now() - interval '5 minutes'
+     )
+  RETURNING 'process'::text INTO v_action;
+
+  RETURN COALESCE(v_action, 'skip');
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.stripe_complete_webhook_event(p_event_id text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  UPDATE public.stripe_webhook_events
+  SET
+    status = 'processed',
+    processed_at = now(),
+    error_message = NULL,
+    updated_at = now()
+  WHERE event_id = p_event_id
+    AND status = 'processing';
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Stripe event is not processing' USING ERRCODE = '55000';
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.stripe_fail_webhook_event(
+  p_event_id text,
+  p_error text
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  UPDATE public.stripe_webhook_events
+  SET
+    status = 'failed',
+    error_message = LEFT(COALESCE(NULLIF(p_error, ''), 'webhook_processing_failed'), 500),
+    updated_at = now()
+  WHERE event_id = p_event_id
+    AND status = 'processing';
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Stripe event is not processing' USING ERRCODE = '55000';
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.stripe_apply_profile_event(
+  p_user_id uuid,
+  p_event_created bigint,
+  p_plan text,
+  p_customer_id text,
+  p_subscription_id text,
+  p_status text,
+  p_clear_subscription boolean
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_updated integer;
+BEGIN
+  IF p_event_created < 0
+     OR (p_plan IS NOT NULL AND p_plan NOT IN ('free', 'solo', 'pro', 'studio'))
+     OR p_status NOT IN (
+       'none',
+       'incomplete',
+       'incomplete_expired',
+       'trialing',
+       'active',
+       'past_due',
+       'canceled',
+       'unpaid',
+       'paused'
+     ) THEN
+    RAISE EXCEPTION 'invalid Stripe profile state' USING ERRCODE = '22023';
+  END IF;
+
+  UPDATE public.profiles AS profile
+  SET
+    plan = COALESCE(p_plan, profile.plan),
+    stripe_customer_id = COALESCE(p_customer_id, profile.stripe_customer_id),
+    stripe_subscription_id = CASE
+      WHEN p_clear_subscription THEN NULL
+      ELSE COALESCE(p_subscription_id, profile.stripe_subscription_id)
+    END,
+    subscription_status = p_status,
+    stripe_event_created_at = p_event_created
+  WHERE profile.id = p_user_id
+    AND (
+      profile.stripe_event_created_at IS NULL
+      OR profile.stripe_event_created_at <= p_event_created
+    );
+
+  GET DIAGNOSTICS v_updated = ROW_COUNT;
+  RETURN v_updated = 1;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.stripe_claim_webhook_event(text, bigint, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.stripe_claim_webhook_event(text, bigint, text) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.stripe_claim_webhook_event(text, bigint, text) TO service_role;
+
+REVOKE ALL ON FUNCTION public.stripe_complete_webhook_event(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.stripe_complete_webhook_event(text) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.stripe_complete_webhook_event(text) TO service_role;
+
+REVOKE ALL ON FUNCTION public.stripe_fail_webhook_event(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.stripe_fail_webhook_event(text, text) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.stripe_fail_webhook_event(text, text) TO service_role;
+
+REVOKE ALL ON FUNCTION public.stripe_apply_profile_event(uuid, bigint, text, text, text, text, boolean) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.stripe_apply_profile_event(uuid, bigint, text, text, text, text, boolean) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.stripe_apply_profile_event(uuid, bigint, text, text, text, text, boolean) TO service_role;

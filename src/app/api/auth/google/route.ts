@@ -4,18 +4,30 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getTrustedAppUrl } from "@/lib/http/trusted-app-url";
 
-export async function GET(request: Request) {
+export async function GET() {
+  let callbackUrl: URL;
+  try {
+    callbackUrl = new URL("/api/auth/callback", getTrustedAppUrl());
+    callbackUrl.searchParams.set("next", "/clips");
+  } catch {
+    return NextResponse.json(
+      { error: "app_url_not_configured" },
+      { status: 503 },
+    );
+  }
+
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? "https://clipsflow-liart.vercel.app"}/api/auth/callback?next=/clips`,
+      redirectTo: callbackUrl.href,
     },
   });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: "oauth_unavailable" }, { status: 500 });
   }
 
   if (data.url) {

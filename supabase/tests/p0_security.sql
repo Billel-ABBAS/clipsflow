@@ -8,8 +8,17 @@ DECLARE
   forced boolean;
   function_signature text := 'public.clips_submit_job(uuid,uuid,integer,integer,text,text,text,jsonb,jsonb)';
   rate_function_signature text := 'public.consume_api_rate_limit(text,integer,integer)';
+  stripe_claim_signature text := 'public.stripe_claim_webhook_event(text,bigint,text)';
+  stripe_apply_signature text := 'public.stripe_apply_profile_event(uuid,bigint,text,text,text,text,boolean)';
 BEGIN
-  FOREACH table_name IN ARRAY ARRAY['profiles', 'episodes', 'clips', 'jobs']
+  FOREACH table_name IN ARRAY ARRAY[
+    'profiles',
+    'episodes',
+    'clips',
+    'jobs',
+    'api_rate_limits',
+    'stripe_webhook_events'
+  ]
   LOOP
     SELECT cls.relforcerowsecurity
       INTO forced
@@ -51,6 +60,16 @@ BEGIN
      OR NOT has_function_privilege('service_role', rate_function_signature, 'EXECUTE') THEN
     RAISE EXCEPTION 'distributed rate limit privileges are unsafe';
   END IF;
+
+  IF has_table_privilege('authenticated', 'public.stripe_webhook_events', 'SELECT')
+     OR has_table_privilege('authenticated', 'public.stripe_webhook_events', 'INSERT')
+     OR has_function_privilege('anon', stripe_claim_signature, 'EXECUTE')
+     OR has_function_privilege('authenticated', stripe_claim_signature, 'EXECUTE')
+     OR NOT has_function_privilege('service_role', stripe_claim_signature, 'EXECUTE')
+     OR has_function_privilege('authenticated', stripe_apply_signature, 'EXECUTE')
+     OR NOT has_function_privilege('service_role', stripe_apply_signature, 'EXECUTE') THEN
+    RAISE EXCEPTION 'Stripe webhook privileges are unsafe';
+  END IF;
 END;
 $$;
 
@@ -80,6 +99,11 @@ DECLARE
   submitted record;
   denied record;
   rate_result record;
+  stripe_action text;
+  stripe_applied boolean;
+  profile_plan text;
+  profile_status text;
+  profile_event_created bigint;
   used_seconds integer;
   clip_count integer;
   job_count integer;
@@ -172,6 +196,75 @@ BEGIN
   IF rate_result.allowed IS DISTINCT FROM false
      OR rate_result.retry_after_seconds NOT BETWEEN 1 AND 60 THEN
     RAISE EXCEPTION 'third distributed rate token should be denied';
+  END IF;
+
+  stripe_action := public.stripe_claim_webhook_event(
+    'evt_p0_retry',
+    200,
+    'customer.subscription.updated'
+  );
+  IF stripe_action <> 'process' THEN
+    RAISE EXCEPTION 'new Stripe event should be claimed';
+  END IF;
+  IF public.stripe_claim_webhook_event(
+    'evt_p0_retry',
+    200,
+    'customer.subscription.updated'
+  ) <> 'skip' THEN
+    RAISE EXCEPTION 'in-flight Stripe duplicate should be skipped';
+  END IF;
+
+  PERFORM public.stripe_fail_webhook_event('evt_p0_retry', 'expected test failure');
+  IF public.stripe_claim_webhook_event(
+    'evt_p0_retry',
+    200,
+    'customer.subscription.updated'
+  ) <> 'process' THEN
+    RAISE EXCEPTION 'failed Stripe event should be retryable';
+  END IF;
+  PERFORM public.stripe_complete_webhook_event('evt_p0_retry');
+  IF public.stripe_claim_webhook_event(
+    'evt_p0_retry',
+    200,
+    'customer.subscription.updated'
+  ) <> 'skip' THEN
+    RAISE EXCEPTION 'processed Stripe event should be idempotent';
+  END IF;
+
+  stripe_applied := public.stripe_apply_profile_event(
+    '00000000-0000-4000-8000-000000000001',
+    200,
+    'pro',
+    'cus_p0',
+    'sub_p0',
+    'active',
+    false
+  );
+  IF stripe_applied IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'new Stripe profile event should apply';
+  END IF;
+
+  stripe_applied := public.stripe_apply_profile_event(
+    '00000000-0000-4000-8000-000000000001',
+    100,
+    'free',
+    'cus_p0',
+    NULL,
+    'canceled',
+    true
+  );
+  IF stripe_applied IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'stale Stripe profile event should be ignored';
+  END IF;
+
+  SELECT plan, subscription_status, stripe_event_created_at
+    INTO profile_plan, profile_status, profile_event_created
+  FROM public.profiles
+  WHERE id = '00000000-0000-4000-8000-000000000001';
+  IF profile_plan <> 'pro'
+     OR profile_status <> 'active'
+     OR profile_event_created <> 200 THEN
+    RAISE EXCEPTION 'stale Stripe event regressed profile state';
   END IF;
 END;
 $$;
