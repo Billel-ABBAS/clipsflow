@@ -38,7 +38,7 @@ import {
   OutboundUrlError,
 } from "@/lib/security/validate-outbound-url";
 import { routing } from "@/i18n/routing";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkDistributedRateLimit } from "@/lib/rate-limit-distributed";
 
 export const runtime = "nodejs";
 // Whisper Large v3 Turbo sur Groq répond en ~1 s pour un clip de 60 s.
@@ -77,16 +77,30 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  // 1.5 Rate limit : 30 transcriptions / min par user (anti-spamming
-  // crédits IA Whisper/Groq). In-memory token bucket.
-  const rl = checkRateLimit(`transcribe:${user.id}`, 30);
-  if (!rl.allowed) {
+  // 1.5 Rate limit distribué : toutes les instances Vercel partagent le
+  // compteur et une panne Postgres ferme l'accès aux crédits IA.
+  const admin = createAdminClient();
+  let rateLimit;
+  try {
+    rateLimit = await checkDistributedRateLimit(
+      admin,
+      `transcribe:${user.id}`,
+      30,
+      60,
+    );
+  } catch {
+    return NextResponse.json(
+      { error: "rate_limit_unavailable" },
+      { status: 503 },
+    );
+  }
+  if (!rateLimit.allowed) {
     return NextResponse.json(
       { error: "rate_limited" },
       {
         status: 429,
         headers: {
-          "Retry-After": Math.ceil((rl.retryAfterMs ?? 60_000) / 1000).toString(),
+          "Retry-After": rateLimit.retryAfterSeconds.toString(),
         },
       },
     );
@@ -148,7 +162,6 @@ export async function POST(request: Request): Promise<Response> {
   // 4. Gate quota soft (clipDuration=0 — la durée finale est inconnue à ce
   // stade, aucun débit ici). Empêche juste les users déjà 100 % over-quota
   // de brûler des tokens Whisper.
-  const admin = createAdminClient();
   let access;
   try {
     access = await checkClipAccess(admin, user.id, 0);

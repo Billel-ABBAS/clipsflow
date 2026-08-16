@@ -201,3 +201,100 @@ GRANT EXECUTE ON FUNCTION public.clips_submit_job(uuid, uuid, integer, integer, 
 
 COMMENT ON FUNCTION public.clips_submit_job(uuid, uuid, integer, integer, text, text, text, jsonb, jsonb) IS
   'Atomically verifies ownership and quota, then creates a pending clip and render job. Service role only.';
+
+-- --------------------------------------------------------------------------
+-- Distributed fixed-window rate limiting
+-- --------------------------------------------------------------------------
+
+CREATE TABLE public.api_rate_limits (
+  key text PRIMARY KEY CHECK (char_length(key) BETWEEN 1 AND 256),
+  window_started_at timestamptz NOT NULL,
+  request_count integer NOT NULL CHECK (request_count >= 1),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.api_rate_limits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.api_rate_limits FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.api_rate_limits FROM PUBLIC, anon, authenticated;
+
+CREATE INDEX idx_api_rate_limits_window_started
+  ON public.api_rate_limits (window_started_at);
+
+CREATE OR REPLACE FUNCTION public.consume_api_rate_limit(
+  p_key text,
+  p_limit integer,
+  p_window_seconds integer
+)
+RETURNS TABLE (
+  allowed boolean,
+  retry_after_seconds integer
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_now timestamptz := clock_timestamp();
+  v_window_started_at timestamptz;
+  v_request_count integer;
+  v_retry_after integer;
+BEGIN
+  IF p_key IS NULL
+     OR char_length(p_key) NOT BETWEEN 1 AND 256
+     OR p_limit NOT BETWEEN 1 AND 10000
+     OR p_window_seconds NOT BETWEEN 1 AND 86400 THEN
+    RAISE EXCEPTION 'invalid rate limit arguments' USING ERRCODE = '22023';
+  END IF;
+
+  INSERT INTO public.api_rate_limits AS existing (
+    key,
+    window_started_at,
+    request_count,
+    updated_at
+  ) VALUES (
+    p_key,
+    v_now,
+    1,
+    v_now
+  )
+  ON CONFLICT (key) DO UPDATE
+  SET
+    request_count = CASE
+      WHEN existing.window_started_at + make_interval(secs => p_window_seconds) <= v_now
+        THEN 1
+      ELSE existing.request_count + 1
+    END,
+    window_started_at = CASE
+      WHEN existing.window_started_at + make_interval(secs => p_window_seconds) <= v_now
+        THEN v_now
+      ELSE existing.window_started_at
+    END,
+    updated_at = v_now
+  RETURNING request_count, window_started_at
+    INTO v_request_count, v_window_started_at;
+
+  IF v_request_count <= p_limit THEN
+    RETURN QUERY SELECT true, 0;
+    RETURN;
+  END IF;
+
+  v_retry_after := GREATEST(
+    1,
+    CEIL(
+      EXTRACT(
+        epoch FROM (
+          v_window_started_at + make_interval(secs => p_window_seconds) - v_now
+        )
+      )
+    )::integer
+  );
+  RETURN QUERY SELECT false, v_retry_after;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.consume_api_rate_limit(text, integer, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.consume_api_rate_limit(text, integer, integer) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.consume_api_rate_limit(text, integer, integer) TO service_role;
+
+COMMENT ON FUNCTION public.consume_api_rate_limit(text, integer, integer) IS
+  'Atomically consumes one fixed-window request token. Service role only.';

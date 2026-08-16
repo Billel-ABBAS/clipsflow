@@ -46,6 +46,7 @@ import {
   OutboundUrlError,
 } from "@/lib/security/validate-outbound-url";
 import { routing } from "@/i18n/routing";
+import { checkDistributedRateLimit } from "@/lib/rate-limit-distributed";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -215,6 +216,33 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const admin = createAdminClient();
+  let rateLimit;
+  try {
+    rateLimit = await checkDistributedRateLimit(
+      admin,
+      `jobs:${user.id}`,
+      10,
+      60,
+    );
+  } catch {
+    return NextResponse.json(
+      { error: "rate_limit_unavailable" },
+      { status: 503 },
+    );
+  }
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": rateLimit.retryAfterSeconds.toString(),
+        },
+      },
+    );
+  }
+
   // 2. Feature flag — locale lue du cookie next-intl (les routes /api sont
   // hors matcher du proxy : pas de header locale, le cookie posé par les
   // navigations de pages fait foi, fallback defaultLocale).
@@ -254,8 +282,6 @@ export async function POST(request: Request): Promise<Response> {
   if (!profile) {
     return NextResponse.json({ error: "profile_not_found" }, { status: 404 });
   }
-
-  const admin = createAdminClient();
 
   // 4. Résolution de l'épisode source.
   let episodeId: string;

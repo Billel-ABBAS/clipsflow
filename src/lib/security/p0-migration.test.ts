@@ -77,4 +77,21 @@ describe("migration P0 — frontière de mutation", () => {
     expect(migration).toMatch(/INSERT INTO public\.jobs/i);
     expect(migration).toContain("'quota_exceeded'");
   });
+
+  it("stocke le rate limit derrière un RPC service_role atomique", () => {
+    expect(migration).toMatch(/CREATE TABLE public\.api_rate_limits/i);
+    expect(migration).toMatch(
+      /ALTER TABLE public\.api_rate_limits FORCE ROW LEVEL SECURITY/i,
+    );
+    expect(migration).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.consume_api_rate_limit[\s\S]*SECURITY DEFINER SET search_path = ''/i,
+    );
+    expect(migration).toMatch(/ON CONFLICT \(key\) DO UPDATE/i);
+    expect(migration).toMatch(
+      /REVOKE ALL ON FUNCTION public\.consume_api_rate_limit\([^)]+\) FROM PUBLIC/i,
+    );
+    expect(migration).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.consume_api_rate_limit\([^)]+\) TO service_role/i,
+    );
+  });
 });

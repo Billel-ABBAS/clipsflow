@@ -7,6 +7,7 @@ DECLARE
   table_name text;
   forced boolean;
   function_signature text := 'public.clips_submit_job(uuid,uuid,integer,integer,text,text,text,jsonb,jsonb)';
+  rate_function_signature text := 'public.consume_api_rate_limit(text,integer,integer)';
 BEGIN
   FOREACH table_name IN ARRAY ARRAY['profiles', 'episodes', 'clips', 'jobs']
   LOOP
@@ -41,6 +42,15 @@ BEGIN
      OR NOT has_function_privilege('service_role', function_signature, 'EXECUTE') THEN
     RAISE EXCEPTION 'clips_submit_job execute privileges are unsafe';
   END IF;
+
+  IF has_table_privilege('authenticated', 'public.api_rate_limits', 'SELECT')
+     OR has_table_privilege('authenticated', 'public.api_rate_limits', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.api_rate_limits', 'UPDATE')
+     OR has_function_privilege('anon', rate_function_signature, 'EXECUTE')
+     OR has_function_privilege('authenticated', rate_function_signature, 'EXECUTE')
+     OR NOT has_function_privilege('service_role', rate_function_signature, 'EXECUTE') THEN
+    RAISE EXCEPTION 'distributed rate limit privileges are unsafe';
+  END IF;
 END;
 $$;
 
@@ -69,6 +79,7 @@ DO $$
 DECLARE
   submitted record;
   denied record;
+  rate_result record;
   used_seconds integer;
   clip_count integer;
   job_count integer;
@@ -142,6 +153,25 @@ BEGIN
   SELECT count(*) INTO job_count FROM public.jobs;
   IF used_seconds <> 30 OR clip_count <> 1 OR job_count <> 1 THEN
     RAISE EXCEPTION 'failed submission left partial state';
+  END IF;
+
+  SELECT * INTO rate_result
+  FROM public.consume_api_rate_limit('p0:test-user', 2, 60);
+  IF rate_result.allowed IS DISTINCT FROM true OR rate_result.retry_after_seconds <> 0 THEN
+    RAISE EXCEPTION 'first distributed rate token should be allowed';
+  END IF;
+
+  SELECT * INTO rate_result
+  FROM public.consume_api_rate_limit('p0:test-user', 2, 60);
+  IF rate_result.allowed IS DISTINCT FROM true THEN
+    RAISE EXCEPTION 'second distributed rate token should be allowed';
+  END IF;
+
+  SELECT * INTO rate_result
+  FROM public.consume_api_rate_limit('p0:test-user', 2, 60);
+  IF rate_result.allowed IS DISTINCT FROM false
+     OR rate_result.retry_after_seconds NOT BETWEEN 1 AND 60 THEN
+    RAISE EXCEPTION 'third distributed rate token should be denied';
   END IF;
 END;
 $$;

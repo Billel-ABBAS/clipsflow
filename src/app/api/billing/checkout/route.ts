@@ -7,6 +7,7 @@ import { BILLING_PLANS, PAID_PLANS } from "@/lib/billing/plans";
 import { getStripe } from "@/lib/billing/stripe-server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { checkDistributedRateLimit } from "@/lib/rate-limit-distributed";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -17,12 +18,39 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const admin = createAdminClient();
+  let rateLimit;
+  try {
+    rateLimit = await checkDistributedRateLimit(
+      admin,
+      `checkout:${user.id}`,
+      5,
+      300,
+    );
+  } catch {
+    return NextResponse.json(
+      { error: "rate_limit_unavailable" },
+      { status: 503 },
+    );
+  }
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": rateLimit.retryAfterSeconds.toString(),
+        },
+      },
+    );
+  }
+
   const { plan } = await request.json().catch(() => ({}));
   if (!plan || typeof plan !== "string") {
     return NextResponse.json({ error: "invalid_plan" }, { status: 400 });
   }
   const planLower = plan.toLowerCase() as keyof typeof BILLING_PLANS;
-  if (!PAID_PLANS.includes(planLower as typeof PAID_PLANS[number])) {
+  if (!PAID_PLANS.includes(planLower as (typeof PAID_PLANS)[number])) {
     return NextResponse.json({ error: "invalid_plan" }, { status: 400 });
   }
   const billingPlan = BILLING_PLANS[planLower];
@@ -33,7 +61,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const admin = createAdminClient();
   const { data: profile, error: profileError } = await admin
     .from("profiles")
     .select("id, stripe_customer_id, email, full_name")

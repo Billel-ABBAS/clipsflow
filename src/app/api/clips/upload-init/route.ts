@@ -31,6 +31,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isClipsEnabled } from "@/lib/clips/feature-flag";
 import { sanitizeFilename } from "@/lib/utils/storage-path";
 import { routing } from "@/i18n/routing";
+import { checkDistributedRateLimit } from "@/lib/rate-limit-distributed";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -63,6 +64,33 @@ export async function POST(request: Request): Promise<Response> {
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const admin = createAdminClient();
+  let rateLimit;
+  try {
+    rateLimit = await checkDistributedRateLimit(
+      admin,
+      `upload-init:${user.id}`,
+      10,
+      60,
+    );
+  } catch {
+    return NextResponse.json(
+      { error: "rate_limit_unavailable" },
+      { status: 503 },
+    );
+  }
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": rateLimit.retryAfterSeconds.toString(),
+        },
+      },
+    );
   }
 
   // 2. Feature flag (miroir /api/clips/jobs).
@@ -101,7 +129,6 @@ export async function POST(request: Request): Promise<Response> {
   const path = `${user.id}/${randomUUID()}-${safeName}`;
 
   // 5. Signed upload URL (client service_role — spec Lot 3).
-  const admin = createAdminClient();
   const { data: uploadData, error: uploadErr } = await admin.storage
     .from(BUCKET)
     .createSignedUploadUrl(path);
