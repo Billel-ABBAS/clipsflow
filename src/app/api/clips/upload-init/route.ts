@@ -120,11 +120,12 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  // 6. Row episodes stub (client user — RLS insert_own). status 'ready' :
+  // 6. Row episodes stub via service_role. Authenticated browser sessions
+  // have no direct INSERT privilege on lifecycle tables.
   // le render signe une read URL sur source_storage_path au claim ; si le
   // PUT client n'a jamais eu lieu, le job échoue proprement en
   // `source_download_failed:` (refundé).
-  const { data: episode, error: epErr } = await supabase
+  const { data: episode, error: epErr } = await admin
     .from("episodes")
     .insert({
       user_id: user.id,
