@@ -1,92 +1,102 @@
-# Operations Runbook — ClipsFlow
+# Runbook d'exploitation ClipsFlow
 
-Guide rapide pour diagnostiquer et résoudre les incidents prod.
+Ce runbook est volontairement prudent. Les commandes sans cible explicite servent à vérifier le dépôt local. Toute mutation distante exige une cible confirmée, une sauvegarde et une autorisation distincte.
 
-## Incidents courants
+## 1. Prévol obligatoire
 
-### 1. Stripe webhook ne met pas à jour le plan
+Depuis la racine du dépôt :
 
-**Symptôme** : user a payé, mais reste `plan='free'` dans Supabase.
-
-**Diagnostic** :
-```sql
--- Vérifier le profil
-SELECT id, plan, stripe_customer_id, subscription_status
-FROM profiles
-WHERE id = 'user-uuid';
-
--- Vérifier que le webhook est bien reçu (logs Vercel)
+```powershell
+pnpm install --frozen-lockfile
+pnpm test
+pnpm typecheck
+pnpm lint
+pnpm build
+pnpm audit --prod --audit-level high
+git diff --check
 ```
 
-**Fix** :
-- Vérifier que `STRIPE_WEBHOOK_SECRET` dans Vercel = celui du webhook Stripe
-- Vérifier la signature dans les logs : Stripe Dashboard → Webhooks → essais de livraison
-- Forcer manuellement : UPDATE profiles SET plan = 'solo' WHERE stripe_customer_id = 'cus_...'
+Vérifier ensuite, sans afficher de secret :
 
-### 2. Cron process-clips ne tourne pas
+- la branche et le commit à déployer ;
+- l'environnement visé : local, preview, staging ou production ;
+- la référence Supabase extraite du nom d'hôte de `NEXT_PUBLIC_SUPABASE_URL` ;
+- la référence du projet lié par la CLI ;
+- le projet et l'équipe Vercel ;
+- le mode Stripe, test ou live ;
+- l'existence d'une sauvegarde Postgres récente et restaurable.
 
-**Symptôme** : clips restent en 'pending' indéfiniment.
+Arrêter immédiatement si une référence, un domaine, une équipe ou un mode ne correspond pas. Une session CLI déjà connectée ne constitue pas une preuve de cible.
 
-**Diagnostic** :
-- Vercel Dashboard → Crons → vérifier que `process-clips` est listé et actif
-- Logs Vercel : filtrer par `api/cron/process-clips`
+## 2. Vérification locale de la base
 
-**Fix** :
-- Redéployer : `vercel --prod`
-- Vérifier que `CRON_SECRET` est bien posé dans Vercel env (Production)
+Docker doit fonctionner. Ces commandes ne ciblent que Supabase local :
 
-### 3. Erreurs Sentry ne remontent pas
-
-**Symptôme** : aucun événement dans Sentry.io malgré des erreurs.
-
-**Diagnostic** :
-- Vérifier que `NEXT_PUBLIC_SENTRY_DSN` est posé en production dans Vercel env
-- Vérifier `sentry.server.config.ts` : `dsn` est bien lu depuis `process.env.NEXT_PUBLIC_SENTRY_DSN`
-
-**Fix** :
-- Ajouter la clé dans Vercel env : `vercel env add NEXT_PUBLIC_SENTRY_DSN production --value "https://...@sentry.io/..." --yes`
-- Redéployer
-
-### 4. Quota dépassé (429)
-
-**Symptôme** : user reçoit `{"error":"clip_quota_exceeded"}` alors qu'il a payé.
-
-**Diagnostic** :
-- Vérifier que `profiles.plan = 'solo'` (ou pro/studio) après le paiement
-- Vérifier `clip_seconds_used_this_month` : si élevé, le quota est réellement épuisé
-
-**Fix** :
-- Si c'est un faux positif (Stripe a mis à jour), voir incident #1
-- Sinon, l'utilisateur doit attendre le reset mensuel ou upgrader
-
-### 5. Upload échoue ("source_too_large")
-
-**Symptôme** : user upload une vidéo, erreur "file too large".
-
-**Diagnostic** :
-- Taille actuelle : max 500 MB (configuré dans migration 0002)
-
-**Fix** :
-- Demander à l'utilisateur de compresser (Handbrake) ou réduire la résolution
-- Ou augmenter la limite dans la migration (pas recommandé — coût Supabase Storage)
-
-## Health check rapide
-
-```bash
-# 1. Site répond ?
-curl -I https://clipsflow-liart.vercel.app/en
-
-# 2. API billing reachable ?
-curl -I https://clipsflow-liart.vercel.app/api/billing/checkout
-
-# 3. DB Supabase reachable ?
-curl -H "apikey: $SUPABASE_ANON_KEY" https://luympnrbthbcgbemxykp.supabase.co/rest/v1/profiles?limit=1
+```powershell
+pnpm dlx supabase@latest db reset --local --no-seed
+pnpm dlx supabase@latest db lint --local --level error --fail-on error
 ```
 
-## Logs utiles
+Exécuter ensuite `supabase/tests/p0_security.sql` contre le Postgres local. Le fichier vérifie les privilèges, la RLS forcée, l'atomicité des soumissions, le rate limit et la reprise Stripe.
 
-| Où | Quoi |
-|----|------|
-| Vercel Functions | `api/clips/jobs`, `api/billing/checkout`, `api/billing/webhook` |
-| Supabase Logs | `postgres` (queries lentes), `storage` (uploads) |
-| Stripe Dashboard | `checkout.session.completed`, `customer.subscription.updated` |
+Avant une migration distante, consulter la liste et le SQL prévu. Utiliser le mode dry-run de la version installée de Supabase CLI quand il est disponible. Ne lancer aucun `db push` tant que la cible et la sauvegarde n'ont pas été validées par l'opérateur.
+
+## 3. Ordre de déploiement
+
+1. Créer et vérifier une sauvegarde de la base visée.
+2. Appliquer les migrations jusqu'à `20260816133249_p0_security_hardening.sql`.
+3. Vérifier les RPC, privilèges et politiques RLS sur la cible.
+4. Configurer les variables serveur et publiques dans le gestionnaire de secrets de l'environnement.
+5. Déployer l'application sur un environnement de prévisualisation ou de staging.
+6. Exécuter les smoke tests authentification, upload, soumission, cron, watermark et facturation test.
+7. Configurer ou confirmer le webhook Stripe vers `/api/billing/webhook` et ses événements.
+8. Promouvoir en production seulement après validation de la prévisualisation.
+
+La migration P0 est additive pour les tables et RPC, mais retire des privilèges directs aux rôles navigateur. Le code compatible RPC doit donc être prêt au moment de son application.
+
+## 4. Contrôles après déploiement
+
+- la page d'accueil et la route d'authentification répondent ;
+- les redirections OAuth restent sur l'origine applicative ;
+- un utilisateur ne peut lire que ses objets ;
+- une soumission valide crée exactement un clip et un job ;
+- un dépassement de débit renvoie `429` avec `Retry-After` ;
+- une indisponibilité du limiteur renvoie `503`, sans autoriser la requête ;
+- un quota insuffisant renvoie `402` ;
+- un plan gratuit produit un clip watermarké ;
+- un échec de watermark fait échouer le job et rembourse le quota ;
+- un webhook Stripe signé est traité une fois, relançable après échec et protégé contre les événements plus anciens ;
+- les erreurs Sentry ne contiennent ni e-mail, ni jeton, ni paramètres d'URL sensibles.
+
+## 5. Incidents usuels
+
+### Jobs bloqués
+
+Inspecter les jobs `pending` ou `processing`, leur ancienneté, le dernier code d'erreur sûr et les journaux du cron. Ne modifier pas directement le plan ou le quota. Corriger la cause, puis utiliser le mécanisme normal de reprise ou une opération SQL revue et limitée à l'incident.
+
+### Limitation de débit
+
+- `429` : fenêtre consommée ; attendre la valeur `Retry-After`.
+- `402` : quota fonctionnel du plan, distinct du rate limit.
+- `503` : stockage du limiteur indisponible ; investiguer Postgres/RPC. Le système échoue fermé.
+
+### Webhook Stripe
+
+Consulter l'événement dans Stripe et l'état correspondant dans `stripe_webhook_events`. Un état `failed` peut être rejoué depuis Stripe après correction. Ne marquer jamais manuellement l'événement `completed` et ne mettre jamais à jour `profiles.plan` pour masquer le problème.
+
+### Sortie réseau refusée
+
+Un refus `invalid_url`, `host_not_allowed`, `private_address` ou `redirect_limit` indique une protection SSRF. Corriger l'URL ou l'allowlist exacte ; ne désactivez pas la validation globale.
+
+## 6. Retour arrière
+
+1. Stopper la promotion et conserver les traces de l'incident.
+2. Revenir au dernier déploiement applicatif sain depuis la plateforme de déploiement.
+3. Ne supprimer ni table ni colonne de la migration P0 pendant l'incident.
+4. Si le code précédent dépendait des anciens privilèges navigateur, déployer plutôt un correctif avant de réaccorder un privilège sensible.
+5. Restaurer la base seulement si l'intégrité des données est compromise et après validation explicite de la sauvegarde et de la perte potentielle de données.
+6. Rejouer les webhooks Stripe échoués après restauration de l'application.
+
+## 7. Discipline des changements distants
+
+Les opérations de production, la rotation de secrets, la modification d'un webhook live et toute restauration sont des mutations externes. Elles nécessitent une autorisation explicite sur la cible nommée. Les procédures ne doivent contenir ni domaine historique, ni identifiant de projet copié, ni secret en argument de ligne de commande.

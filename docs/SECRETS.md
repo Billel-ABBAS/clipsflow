@@ -1,53 +1,60 @@
-# ClipsFlow — Secrets Management
+# Gestion des secrets
 
-Ce qui doit être gardé **hors du repo** et comment les gérer.
+## Classification
 
-## Fichier sensible actuel
+Variables publiques, intégrées au navigateur :
 
-`.env.local` (gitignored) contient actuellement en **LIVE** :
+- `NEXT_PUBLIC_APP_URL`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+- `NEXT_PUBLIC_CLIPS_ENABLED`
 
-- Stripe : `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_SOLO/PRO/STUDIO`
-- Supabase : `SUPABASE_SERVICE_ROLE_KEY`
-- Supabase : `GROQ_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
-- Cron : `CRON_SECRET`
+Secrets serveur :
 
-## ⚠️ Règles absolues
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `CRON_SECRET`
+- clés des fournisseurs d'IA ou de traduction
+- identifiants d'envoi d'e-mail ou d'observabilité donnant un accès privilégié
 
-1. **Jamais dans le chat** : ne colle `.env.local` dans aucun message (ni dans les issues, PR, screenshots)
-2. **Jamais committé** : `.env.local` est dans `.gitignore` — vérifier avec `git status` avant `git push`
-3. **Jamais dans les logs** : pas de `console.log(process.env.STRIPE_SECRET_KEY)`
-4. **R2** : toutes les clés sont LIVE — un leak = incident financier direct
+Le préfixe `NEXT_PUBLIC_` signifie que la valeur est publique. Une clé de service ou un secret fournisseur ne doit jamais porter ce préfixe.
 
-## Rotation (si leak suspecté)
+## Règles
 
-1. **Stripe Dashboard** → Developers → API keys → Regenerate (immediat, invalide l'ancien)
-2. **Stripe Dashboard** → Webhooks → ton endpoint → Regenerate signing secret
-3. **Supabase Dashboard** → Settings → API → Reset service_role
-4. **Groq/OpenAI/Anthropic** : revoke dans leurs consoles respectives
-5. **Update** : `.env.local` + `vercel env rm` + `vercel env add`
+- Ne jamais copier un secret dans Git, un ticket, un chat, une capture d'écran, un journal ou une URL.
+- Ne jamais passer un secret comme argument CLI : les arguments peuvent rester dans l'historique ou la liste des processus.
+- Utiliser `.env.local` uniquement sur la machine de développement ; ce fichier reste ignoré par Git.
+- Utiliser le gestionnaire de secrets Vercel ou celui de la plateforme pour preview/staging/production.
+- Séparer les identifiants Stripe test et live.
+- Donner à chaque environnement son propre secret de webhook et son propre `CRON_SECRET`.
+- Ne jamais utiliser `SUPABASE_SERVICE_ROLE_KEY` dans du code client.
+- Les logs doivent contenir des codes stables et des identifiants non sensibles, pas les réponses brutes des fournisseurs.
 
-## Vérification hebdomadaire (1 min)
+## Injection sûre
 
-```bash
-# Vérifie que .env.local n'est jamais committé
-git check-ignore .env.local  # doit retourner ".env.local"
+Pour le local, saisir les valeurs dans `.env.local` avec un éditeur local. Pour une plateforme, utiliser son interface de secrets ou une commande interactive qui lit depuis l'entrée standard. Ne mettez pas la valeur dans la commande, dans un script versionné ou dans une documentation.
 
-# Vérifie qu'aucun secret n'est dans le code source
-git grep -n "sk_live\|whsec\|eyJhbGc" -- "src/**"  # doit ne rien retourner
-```
+Le script `pnpm run stripe:setup:test` lit `STRIPE_SECRET_KEY` depuis l'environnement du processus, refuse les clés live et reste en dry-run sans `--apply`. Il n'obtient et n'affiche jamais de secret de webhook.
 
-## Accès production
+## Rotation
 
-- Vercel env vars : https://vercel.com/dashboard → clipsflow → Settings → Environment Variables
-- Stripe live : https://dashboard.stripe.com/live/apikeys
-- Supabase : https://supabase.com/dashboard/project/luympnrbthbcgbemxykp/settings/api
+1. Identifier précisément le secret et tous ses consommateurs.
+2. Créer une nouvelle valeur dans le fournisseur concerné.
+3. Enregistrer la nouvelle valeur dans le gestionnaire de secrets de chaque environnement autorisé.
+4. Redéployer et vérifier les parcours dépendants.
+5. Révoquer l'ancienne valeur.
+6. Surveiller les erreurs et l'utilisation anormale.
 
-## ggshield (secret scan)
+Si un secret a pu apparaître dans Git, le retirer du dernier commit ne suffit pas : le considérer compromis, le révoquer, puis traiter l'historique selon une procédure coordonnée.
 
-Hook pre-commit existant (`.husky/pre-commit`) scanne les secrets. Pour activer le gate strict :
+## Contrôles avant livraison
 
-```bash
-.venv\Scripts\activate.ps1   # ou équivalent si ggshield installé autrement
-ggshield auth login
-# Une fois authentifié une fois, les commits seront bloqués si un secret est détecté
-```
+- vérifier que `.env*` sensible n'est pas suivi par Git ;
+- rechercher les formes de clés privées à forte entropie dans les fichiers suivis et l'historique ;
+- inspecter les diffs pour les URLs contenant utilisateur, mot de passe, paramètres ou fragments sensibles ;
+- exécuter le scanner de secrets de l'organisation lorsqu'il est authentifié ;
+- vérifier que les tests n'utilisent que des valeurs factices courtes et explicitement invalides.
+
+Un scanner non authentifié ou indisponible ne doit jamais être présenté comme une preuve d'absence de secret : documenter la limite et compléter par une recherche locale qui n'affiche que les chemins concernés.

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "stripe:setup:test": "node scripts/setup-stripe-test.mjs",
     "format": "prettier --write .",
     "prepare": "husky"
   },
