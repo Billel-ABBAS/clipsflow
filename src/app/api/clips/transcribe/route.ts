@@ -181,7 +181,13 @@ export async function POST(request: Request): Promise<Response> {
   // cas et le mapping BCP-47 → nom Whisper vit dans run-job.ts.
   try {
     const { transcribeWithWhisper } = await import("@/lib/clips/whisper");
-    const result = await transcribeWithWhisper(input.source_video_url);
+    const result = await transcribeWithWhisper(
+      input.source_video_url,
+      undefined,
+      undefined,
+      undefined,
+      defaultClipsAllowedHosts(),
+    );
     // Guard words vide — miroir du fix cron VidiaFlow PR #408. Renvoyer
     // {words: []} laisserait l'appelant produire un clip sans sous-titres
     // (no-op silencieux). 422 → l'UI affiche un toast actionnable.

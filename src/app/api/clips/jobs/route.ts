@@ -43,6 +43,7 @@ import { resolvePlan, stripCustomizationsByPlan } from "@/lib/clips/quota";
 import { SubmitClipJobError, submitClipJob } from "@/lib/clips/submit-job";
 import {
   validateOutboundUrl,
+  defaultClipsAllowedHosts,
   OutboundUrlError,
 } from "@/lib/security/validate-outbound-url";
 import { routing } from "@/i18n/routing";
@@ -123,7 +124,7 @@ const logoRevealOverlaySchema = z.object({
   logoUrl: z.url().refine(
     (s) => {
       try {
-        validateOutboundUrl(s);
+        validateOutboundUrl(s, { allowedHosts: defaultClipsAllowedHosts() });
         return true;
       } catch {
         return false;

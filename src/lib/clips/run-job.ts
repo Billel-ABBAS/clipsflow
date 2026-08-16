@@ -433,10 +433,12 @@ export async function runRenderJob(
   //       sign a 1 h read URL with the service-role client, then validate
   //       it against the Supabase allowlist (defence in depth).
   let sourceUrl: string;
+  let sourceAllowedHosts: string[] | undefined;
   try {
     if (episode.source_url) {
       validateOutboundUrl(episode.source_url);
       sourceUrl = episode.source_url;
+      sourceAllowedHosts = undefined;
     } else if (episode.source_storage_path) {
       const { data: signed, error: signErr } = await supabase.storage
         .from("clip-sources")
@@ -446,8 +448,9 @@ export async function runRenderJob(
           `source_download_failed: could not sign source storage path (${signErr?.message ?? "no URL returned"})`,
         );
       }
+      sourceAllowedHosts = defaultClipsAllowedHosts();
       validateOutboundUrl(signed.signedUrl, {
-        allowedHosts: defaultClipsAllowedHosts(),
+        allowedHosts: sourceAllowedHosts,
       });
       sourceUrl = signed.signedUrl;
     } else {
@@ -503,6 +506,7 @@ export async function runRenderJob(
     // quota refund path handles it like any other download failure.
     const sourceRes = await safeFetch(sourceUrl, {
       timeoutMs: 30_000,
+      allowedHosts: sourceAllowedHosts,
     });
     if (!sourceRes.ok) {
       throw new Error(

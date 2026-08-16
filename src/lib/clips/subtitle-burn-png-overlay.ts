@@ -50,6 +50,8 @@ import type { BurnSubtitlesParams, BurnSubtitlesResult } from "./subtitle-burn";
 import { hexToAss, detectScriptFont, assTime } from "./ass-format";
 import { ASPECT_RATIO_DIMENSIONS } from "./types";
 import type { StyleKey } from "./types";
+import { safeFetch } from "@/lib/utils/safe-fetch";
+import { defaultClipsAllowedHosts } from "@/lib/security/validate-outbound-url";
 
 // ---------------------------------------------------------------------------
 // Style preset table (mirrors the inline table in subtitle-burn.ts)
@@ -479,7 +481,10 @@ export async function burnSubtitlesViaPngOverlay(
       if (params.sourceBuffer) {
         sourceBuf = params.sourceBuffer;
       } else {
-        const res = await fetch(params.sourceVideoUrl);
+        const res = await safeFetch(params.sourceVideoUrl, {
+          timeoutMs: 30_000,
+          allowedHosts: defaultClipsAllowedHosts(),
+        });
         if (!res.ok) {
           throw new Error(
             `Source download failed: HTTP ${res.status} ${res.statusText}`,

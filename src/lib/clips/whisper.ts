@@ -120,6 +120,7 @@ export async function transcribeWithWhisper(
   client?: TranscriberClient,
   sourceBuffer?: Buffer,
   sourcePath?: string,
+  allowedHosts?: string[],
 ): Promise<TranscriptionResult> {
   let file: File;
   if (sourcePath) {
@@ -132,7 +133,10 @@ export async function transcribeWithWhisper(
     if (sourceBuffer) {
       buf = sourceBuffer;
     } else {
-      const res = await safeFetch(videoUrl, { timeoutMs: 30_000 });
+      const res = await safeFetch(videoUrl, {
+        timeoutMs: 30_000,
+        allowedHosts,
+      });
       if (!res.ok) {
         throw new Error(
           `Failed to download source file: HTTP ${res.status} ${res.statusText}`,

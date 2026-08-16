@@ -372,6 +372,7 @@ export async function burnSubtitles(
         // to maxDuration without a typed error.
         const res = await safeFetch(params.sourceVideoUrl, {
           timeoutMs: 30_000,
+          allowedHosts: defaultClipsAllowedHosts(),
         });
         if (!res.ok) {
           throw new Error(
@@ -1230,7 +1231,7 @@ export async function burnSubtitles(
         } catch (err) {
           if (err instanceof OutboundUrlError) {
             throw new Error(
-              `brand_kit_logo_unavailable: Logo URL blocked by SSRF guard for ${plan.logoUrl.slice(0, 80)}. ${err.message}`,
+              `brand_kit_logo_unavailable: Logo URL blocked by SSRF guard. ${err.message}`,
             );
           }
           throw err;
@@ -1238,10 +1239,13 @@ export async function burnSubtitles(
         // 10 s timeout. Timeout surfaces as FetchTimeoutError → caught by
         // outer wrap → re-prefixed with `brand_kit_logo_unavailable:` so
         // the cron worker refunds quota (same behaviour as a 404).
-        const logoRes = await safeFetch(plan.logoUrl, { timeoutMs: 10_000 });
+        const logoRes = await safeFetch(plan.logoUrl, {
+          timeoutMs: 10_000,
+          allowedHosts: defaultClipsAllowedHosts(),
+        });
         if (!logoRes.ok) {
           throw new Error(
-            `brand_kit_logo_unavailable: Logo fetch failed for logo overlay ${plan.logoUrl.slice(0, 80)}. HTTP ${logoRes.status} ${logoRes.statusText}`,
+            `brand_kit_logo_unavailable: Logo fetch failed. HTTP ${logoRes.status} ${logoRes.statusText}`,
           );
         }
         const logoBuf = Buffer.from(await logoRes.arrayBuffer());
@@ -1259,7 +1263,7 @@ export async function burnSubtitles(
         // Network error / write failure → wrap with the same prefix so
         // the cron handler can pattern-match on a single prefix.
         throw new Error(
-          `brand_kit_logo_unavailable: Logo fetch failed for logo overlay ${plan.logoUrl.slice(0, 80)}. ${msg.slice(0, 200)}`,
+          `brand_kit_logo_unavailable: Logo fetch failed. ${msg.slice(0, 200)}`,
         );
       }
     }
