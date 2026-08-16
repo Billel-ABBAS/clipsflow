@@ -71,6 +71,7 @@ Le test SQL `supabase/tests/p0_security.sql` exerce la migration réelle sur Pos
 | `supabase/tests/p0_security.sql`           | Réussi avec rollback final                                                                                       |
 | Script Stripe test                         | Dry-run réussi sans clé ni appel Stripe                                                                          |
 | Script webhook local                       | Refus attendu sans l'unique argument `--apply`                                                                   |
+| Smoke Chrome local                         | Tenté sur le serveur de production local ; bloqué avant navigation par l'intégration extension/native-host       |
 | Recherche de secrets par signatures fortes | Une seule fixture factice dans le test du scrubber Sentry ; aucun autre chemin courant ou historique détecté     |
 
 Le hook Git signale que ggshield est installé mais non authentifié. La ligne correspondante reste donc une limite ouverte malgré la recherche locale réussie.
@@ -91,7 +92,7 @@ Un upload initialisé mais abandonné, ou un épisode URL créé avant une soumi
 
 ### R4 — Couverture navigateur réelle
 
-La compilation et les tests de logique ne remplacent pas un parcours Chrome complet sur une preview avec OAuth, upload réel, rendu FFmpeg, Checkout test et retour webhook. Exécuter ce parcours après configuration d'un environnement correspondant. Priorité : haute avant production.
+La compilation et les tests de logique ne remplacent pas un parcours Chrome complet sur une preview avec OAuth, upload réel, rendu FFmpeg, Checkout test et retour webhook. Un smoke local a été tenté, mais Chrome n'était pas contrôlable : l'extension existe sur un profil secondaire tandis que le profil sélectionné ne l'a pas, et le manifeste native-host est incomplet. Réinstaller le plugin Browser depuis l'interface des plugins, confirmer l'extension dans Chrome, puis exécuter ce parcours après configuration d'un environnement correspondant. Priorité : haute avant production.
 
 ### R5 — Scanner de secrets institutionnel
 
@@ -111,7 +112,7 @@ Les refactors UX n'ont volontairement pas précédé P0. Après stabilisation : 
 - aucune valeur de secret d'un projet distant ou fournie par l'utilisateur n'a été lue en clair, affichée, créée ou tournée ;
 - aucun produit/prix/webhook Stripe live créé ou modifié ;
 - aucun déploiement Vercel ou promotion production ;
-- aucun smoke test Chrome sur un environnement distant ;
+- aucun smoke test Chrome terminé : l'intégration extension/native-host doit être réinstallée avant le test local ou distant ;
 - scanner ggshield non authentifié.
 
 Ces limites doivent être levées avec une cible nommée et une autorisation explicite. Le prompt d'exécution détaillé se trouve dans `docs/ULTRA_MEGA_PROMPT_P0.md`.
