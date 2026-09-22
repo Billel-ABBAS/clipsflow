@@ -4,12 +4,11 @@
 // Transcribes a video or audio URL with word-level timestamps via the
 // Whisper API. Used by the clip transcription pipeline.
 //
-// Provider routing :
-//   - Default → Groq Whisper Large v3 Turbo when GROQ_API_KEY is set
-//     (216× real-time, 9× cheaper, drop-in OpenAI-compatible API).
-//   - Fallback → OpenAI whisper-1 when GROQ_API_KEY is not configured.
-//   - Opt-out from Groq via CLIPS_FORCE_OPENAI_WHISPER=1 if Groq
-//     ever causes downstream regressions.
+// Provider routing is budget-gated:
+//   - CLIPS_AI_BUDGET_AUTHORIZED=true is required before any hosted model.
+//   - Then Groq Whisper Large v3 Turbo is preferred when GROQ_API_KEY exists.
+//   - OpenAI whisper-1 is a fallback only after that explicit approval.
+//   - CLIPS_FORCE_OPENAI_WHISPER=1 opts out from Groq after approval.
 //
 // Both paths support `response_format: "verbose_json"` +
 // `timestamp_granularities: ["word"]` for word-level timing.
@@ -58,14 +57,19 @@ export interface TranscriberClient {
 
 /**
  * Resolves the transcriber client + model name based on env config.
- * Default = Groq Whisper Large v3 Turbo when GROQ_API_KEY is set.
- * Fallback = OpenAI whisper-1 when GROQ_API_KEY is unset, OR when
- * CLIPS_FORCE_OPENAI_WHISPER=1 is explicitly set.
+ * CLIPS_AI_BUDGET_AUTHORIZED=true is required first. Groq Whisper Large v3
+ * Turbo is then preferred when GROQ_API_KEY is set; OpenAI whisper-1 is the
+ * fallback when Groq is absent or CLIPS_FORCE_OPENAI_WHISPER=1 is set.
  */
 function defaultTranscriberConfig(): {
   client: TranscriberClient;
   model: string;
 } {
+  if (process.env.CLIPS_AI_BUDGET_AUTHORIZED !== "true") {
+    throw new Error(
+      "paid_ai_not_authorized: set CLIPS_AI_BUDGET_AUTHORIZED=true only after approving the provider budget",
+    );
+  }
   const forceOpenAI = process.env.CLIPS_FORCE_OPENAI_WHISPER === "1";
   const groqKey = process.env.GROQ_API_KEY;
   if (!forceOpenAI && groqKey) {
@@ -76,6 +80,11 @@ function defaultTranscriberConfig(): {
       }) as unknown as TranscriberClient,
       model: "whisper-large-v3-turbo",
     };
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error(
+      "transcription_unavailable: no GROQ_API_KEY and no OPENAI_API_KEY configured",
+    );
   }
   return {
     client: new OpenAI({
@@ -98,8 +107,8 @@ void defaultTranscriber;
 
 /**
  * Transcribe a video or audio file at the given HTTPS URL via Whisper with
- * word-level timestamps. Routes to Groq Whisper Large v3 Turbo when
- * GROQ_API_KEY is set in env, otherwise falls back to OpenAI whisper-1.
+ * word-level timestamps. It requires explicit AI-budget authorisation,
+ * routes to Groq when configured, and otherwise falls back to OpenAI.
  * Language is auto-detected by Whisper (no forced `language` param).
  *
  * @param videoUrl      Signed HTTPS URL pointing to the source file. Used

@@ -81,6 +81,16 @@ export interface AnthropicLike {
 }
 
 function defaultAnthropicClient(): AnthropicLike {
+  if (process.env.CLIPS_AI_BUDGET_AUTHORIZED !== "true") {
+    throw new Error(
+      "paid_ai_not_authorized: set CLIPS_AI_BUDGET_AUTHORIZED=true only after approving the provider budget",
+    );
+  }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error(
+      "translation_unavailable: ANTHROPIC_API_KEY is not configured",
+    );
+  }
   // Lazy require avoids bundling @anthropic-ai/sdk in paths that never use
   // translation. The SDK is already a dep so no install cost — just deferred.
   // (Fix Lot 3 : le disable-next-line ne couvrait que la 1re ligne de

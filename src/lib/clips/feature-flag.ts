@@ -142,6 +142,23 @@ export function isClipsEnabled(input: {
 }
 
 /**
+ * Separate operational gate for render capacity.  It is intentionally
+ * independent from the product rollout flag above: when the Railway worker
+ * is paused for budget or maintenance, the API must not reserve a user's
+ * quota for work that cannot start.  Local development remains convenient;
+ * production is fail-closed until the worker has passed staging validation.
+ */
+export function isClipsWorkerEnabled(
+  raw = process.env.CLIPS_WORKER_ENABLED,
+  nodeEnv = process.env.NODE_ENV,
+): boolean {
+  if (raw == null || raw.trim().length === 0) {
+    return nodeEnv !== "production";
+  }
+  return raw.trim().toLowerCase() === "true" || raw.trim() === "1";
+}
+
+/**
  * Diagnostic helper — returns the list of locales currently enabled.
  *
  * Semantics :

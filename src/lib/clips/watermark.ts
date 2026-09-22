@@ -34,6 +34,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { attachFfmpegTimeout } from "./ffmpeg-timeout";
 
 /**
  * Apply the "AI clip · ClipsFlow" drawtext watermark to a subtitle-burned
@@ -64,13 +65,19 @@ export async function applyClipWatermark(input: Buffer): Promise<Buffer> {
         outPath,
       ];
       const p = spawn(ffmpegPath.path, args);
+      const watchdog = attachFfmpegTimeout(p, "watermark");
       let stderrBuf = "";
       p.stderr?.on("data", (chunk: Buffer) => {
         stderrBuf += chunk.toString();
       });
-      p.on("error", rej);
+      p.on("error", (error) => {
+        watchdog.clear();
+        rej(error);
+      });
       p.on("close", (code) => {
-        if (code === 0) res();
+        watchdog.clear();
+        if (watchdog.timedOut()) rej(new Error(watchdog.message()));
+        else if (code === 0) res();
         else rej(new Error(`ffmpeg exited ${code}: ${stderrBuf.slice(-500)}`));
       });
     });

@@ -29,6 +29,7 @@
 
 import sharp from "sharp";
 import { spawn } from "node:child_process";
+import { attachFfmpegTimeout } from "./ffmpeg-timeout";
 
 // Width × height of the analysis frame. Smaller = faster. 320×180
 // preserves enough detail to localize a face within ±5 % of the
@@ -74,14 +75,23 @@ async function extractFirstFrameJpeg(sourceUrl: string): Promise<Buffer> {
     const child = spawn(ffmpegPath, args, {
       stdio: ["ignore", "pipe", "pipe"],
     });
+    const watchdog = attachFfmpegTimeout(child, "smart_crop", 30_000);
     const chunks: Buffer[] = [];
     let stderr = "";
     child.stdout.on("data", (c: Buffer) => chunks.push(c));
     child.stderr.on("data", (c: Buffer) => {
       stderr += c.toString();
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      watchdog.clear();
+      reject(error);
+    });
     child.on("close", (code) => {
+      watchdog.clear();
+      if (watchdog.timedOut()) {
+        reject(new Error(watchdog.message()));
+        return;
+      }
       if (code !== 0 || chunks.length === 0) {
         reject(new Error(`ffmpeg exit ${code}: ${stderr.slice(0, 200)}`));
         return;

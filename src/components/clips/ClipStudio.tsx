@@ -635,6 +635,13 @@ export function ClipStudio({
         toast.error(t("quota_exceeded", { remaining }));
         return;
       }
+      if (
+        res.status === 503 &&
+        json?.error === "rendering_temporarily_unavailable"
+      ) {
+        toast.error(t("worker_unavailable"));
+        return;
+      }
       if (res.status !== 202 || !json?.data?.clip_id) {
         toast.error(
           typeof json.error === "string" ? json.error : t("submit_error"),
@@ -645,9 +652,10 @@ export function ClipStudio({
       const clipId: string = json.data.clip_id;
 
       // Await the terminal status via the Realtime hook (+ its 5 s polling
-      // fallback). 6-min cap as the user-facing safety net : the cron's
-      // stuck-job sweep marks abandoned rows failed server-side anyway.
-      const MAX_WAIT_MS = 6 * 60 * 1000;
+      // fallback). Railway Cron can wait up to five minutes before it starts
+      // a job and can defer a busy invocation, so the UI must not imply an
+      // immediate six-minute SLA. The queued row persists if this page closes.
+      const MAX_WAIT_MS = 20 * 60 * 1000;
       const terminal = await new Promise<ClipJobStatusState | "timeout">(
         (resolve) => {
           const timeoutId = setTimeout(() => {
@@ -669,7 +677,7 @@ export function ClipStudio({
       );
 
       if (terminal === "timeout") {
-        toast.error(t("poll_timeout"));
+        toast.info(t("poll_timeout"));
         return;
       }
       if (terminal.status === "completed") {

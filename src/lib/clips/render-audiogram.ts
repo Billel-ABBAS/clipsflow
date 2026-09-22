@@ -32,6 +32,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { unlink } from "node:fs/promises";
 import { ASPECT_RATIO_DIMENSIONS, type AspectRatio } from "./types";
+import { attachFfmpegTimeout } from "./ffmpeg-timeout";
 
 /**
  * Render the audiogram base video for an audio-only clip segment.
@@ -110,13 +111,20 @@ export async function renderAudiogramBase(
   try {
     await new Promise<void>((res, rej) => {
       const p = spawn(ffmpegPath.path, args);
+      const watchdog = attachFfmpegTimeout(p, "audiogram");
       let stderrBuf = "";
       p.stderr?.on("data", (chunk: Buffer) => {
         stderrBuf += chunk.toString();
       });
-      p.on("error", rej);
+      p.on("error", (error) => {
+        watchdog.clear();
+        rej(error);
+      });
       p.on("close", (code) => {
-        if (code === 0) {
+        watchdog.clear();
+        if (watchdog.timedOut()) {
+          rej(new Error(watchdog.message()));
+        } else if (code === 0) {
           res();
         } else {
           console.log(

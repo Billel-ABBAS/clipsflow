@@ -7,6 +7,7 @@ import {
   parseClipsFlag,
   isClipsFlagEnabled,
   isClipsEnabledFor,
+  isClipsWorkerEnabled,
 } from "./feature-flag";
 
 // ---------------------------------------------------------------------------
@@ -194,5 +195,18 @@ describe("isClipsEnabledFor", () => {
     // Note : en test NODE_ENV peut être 'test', pas 'production'.
     // On teste directement isClipsEnabledFor (qui ne lit pas NODE_ENV)
     expect(isClipsEnabledFor({ flagValue: undefined })).toBe(false);
+  });
+});
+
+describe("isClipsWorkerEnabled", () => {
+  it("fails closed for an unset production worker", () => {
+    expect(isClipsWorkerEnabled(undefined, "production")).toBe(false);
+  });
+
+  it("keeps local development usable while production stays explicit", () => {
+    expect(isClipsWorkerEnabled(undefined, "development")).toBe(true);
+    expect(isClipsWorkerEnabled("true", "production")).toBe(true);
+    expect(isClipsWorkerEnabled("1", "production")).toBe(true);
+    expect(isClipsWorkerEnabled("false", "development")).toBe(false);
   });
 });

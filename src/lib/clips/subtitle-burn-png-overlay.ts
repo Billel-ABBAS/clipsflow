@@ -41,6 +41,7 @@ import { readdirSync } from "node:fs";
 import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { attachFfmpegTimeout } from "./ffmpeg-timeout";
 import {
   STYLE_CRF_MAP,
   aspectFilterFor,
@@ -822,12 +823,17 @@ export async function burnSubtitlesViaPngOverlay(
 function runFfmpeg(args: string[], passLabel: string): Promise<void> {
   return new Promise<void>((res, rej) => {
     const p = spawn(ffmpegPath.path, args);
+    const watchdog = attachFfmpegTimeout(p, `png_overlay_${passLabel}`);
     let stderrBuf = "";
     p.stderr?.on("data", (chunk: Buffer) => {
       stderrBuf += chunk.toString();
     });
-    p.on("error", rej);
+    p.on("error", (error) => {
+      watchdog.clear();
+      rej(error);
+    });
     p.on("close", (code) => {
+      watchdog.clear();
       const stderrTail = stderrBuf.slice(-1500);
       const subtitleLines = stderrBuf
         .split("\n")
@@ -845,7 +851,9 @@ function runFfmpeg(args: string[], passLabel: string): Promise<void> {
       console.log(
         `[clips-burn-png] ${passLabel} exit=${code} signals=${JSON.stringify(subtitleLines).slice(0, 600)}`,
       );
-      if (code !== 0) {
+      if (watchdog.timedOut()) {
+        rej(new Error(watchdog.message()));
+      } else if (code !== 0) {
         console.log(
           `[clips-burn-png] ${passLabel} FAIL stderr=${JSON.stringify(stderrTail).slice(0, 1200)}`,
         );

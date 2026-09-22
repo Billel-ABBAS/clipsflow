@@ -1,0 +1,25 @@
+# One-shot Railway Cron image for ClipsFlow renders.  It contains the Node
+# pipeline, the packaged ffmpeg binary and the local font assets.  Runtime
+# limits (1 vCPU / 1 GiB) and the five-minute Cron schedule are configured in
+# Railway, not baked into the image.
+FROM node:25-bookworm-slim
+
+WORKDIR /app
+
+# ffmpeg is supplied by @ffmpeg-installer/ffmpeg. fontconfig and DejaVu are a
+# fallback for libass glyph discovery; project fonts/ are copied below.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable
+
+# Keep dev dependencies only for tsx, then switch the actual worker process
+# to production mode. The lockfile is the sole dependency authority.
+ENV NODE_ENV=development
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+ENV NODE_ENV=production
+CMD ["pnpm", "worker:clips"]

@@ -50,6 +50,7 @@ import type { WordTimestamp } from "./whisper";
 import type { OverlayElement } from "./overlays";
 import { buildOverlays } from "./overlays";
 import { ASPECT_RATIO_DIMENSIONS } from "./types";
+import { attachFfmpegTimeout } from "./ffmpeg-timeout";
 import type { AspectRatio, StyleKey, SubtitleCustomizations } from "./types";
 import {
   assTime,
@@ -1437,12 +1438,17 @@ export async function burnSubtitles(
     const runFfmpeg = (passArgs: string[], passLabel: string): Promise<void> =>
       new Promise<void>((res, rej) => {
         const p = spawn(ffmpegPath.path, passArgs);
+        const watchdog = attachFfmpegTimeout(p, `subtitle_${passLabel}`);
         let stderrBuf = "";
         p.stderr?.on("data", (chunk: Buffer) => {
           stderrBuf += chunk.toString();
         });
-        p.on("error", rej);
+        p.on("error", (error) => {
+          watchdog.clear();
+          rej(error);
+        });
         p.on("close", (code) => {
+          watchdog.clear();
           const stderrTail = stderrBuf.slice(-1500);
           const subtitleLines = stderrBuf
             .split("\n")
@@ -1460,7 +1466,9 @@ export async function burnSubtitles(
           ffmpegLogger.log(
             `[clips-burn] ${passLabel} exit=${code} signals=${JSON.stringify(subtitleLines).slice(0, 600)}`,
           );
-          if (code !== 0) {
+          if (watchdog.timedOut()) {
+            rej(new Error(watchdog.message()));
+          } else if (code !== 0) {
             ffmpegLogger.log(
               `[clips-burn] ${passLabel} FAIL stderr=${JSON.stringify(stderrTail).slice(0, 1200)}`,
             );

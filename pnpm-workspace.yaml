@@ -3,6 +3,7 @@ allowBuilds:
   "@sentry/cli": true
   "@swc/core": true
   "@tailwindcss/oxide": true
+  esbuild: true
   sharp: true
   unrs-resolver: true
 overrides:

@@ -33,7 +33,7 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isClipsEnabled } from "@/lib/clips/feature-flag";
+import { isClipsEnabled, isClipsWorkerEnabled } from "@/lib/clips/feature-flag";
 import {
   ASPECT_RATIOS,
   STYLE_KEYS,
@@ -254,6 +254,23 @@ export async function POST(request: Request): Promise<Response> {
     !isClipsEnabled({ locale, userId: user.id })
   ) {
     return NextResponse.json({ error: "not_yet_available" }, { status: 403 });
+  }
+
+  // The product can remain visible while rendering is deliberately paused
+  // (staging, maintenance, or Railway budget protection).  Fail before a
+  // source row or quota reservation is created, and make the five-minute
+  // Railway cadence explicit to the caller.
+  if (!isClipsWorkerEnabled()) {
+    return NextResponse.json(
+      {
+        error: "rendering_temporarily_unavailable",
+        retry_after_seconds: 300,
+      },
+      {
+        status: 503,
+        headers: { "Retry-After": "300" },
+      },
+    );
   }
 
   // 3. Parse + validation stricte du body.
