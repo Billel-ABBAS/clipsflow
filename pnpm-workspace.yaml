@@ -1,4 +1,5 @@
 allowBuilds:
+  "@ffmpeg-installer/linux-x64": true
   "@parcel/watcher": true
   "@sentry/cli": true
   "@swc/core": true
