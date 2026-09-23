@@ -8,10 +8,14 @@ WORKDIR /app
 
 # ffmpeg is supplied by @ffmpeg-installer/ffmpeg. fontconfig and DejaVu are a
 # fallback for libass glyph discovery; project fonts/ are copied below.
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core \
-  && rm -rf /var/lib/apt/lists/* \
-  && npm install --global pnpm@11.20.0
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core \
+  && rm -rf /var/lib/apt/lists/*
+
+# Keep package-manager installation separate from apt so build logs identify
+# registry stalls and the system-package layer can be cached independently.
+RUN npm install --global pnpm@11.20.0 --no-audit --no-fund \
+  --fetch-retries=2 --fetch-timeout=30000
 
 # Keep dev dependencies only for tsx, then switch the actual worker process
 # to production mode. The lockfile is the sole dependency authority.
