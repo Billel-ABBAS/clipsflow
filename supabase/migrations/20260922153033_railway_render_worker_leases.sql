@@ -78,53 +78,53 @@ BEGIN
   -- Recover every expired render lease before choosing new work.  `FOR UPDATE
   -- SKIP LOCKED` makes simultaneous Railway invocations harmless.
   FOR v_stale IN
-    SELECT *
-    FROM public.jobs
-    WHERE type = 'render'
-      AND status = 'processing'
-      AND lease_expires_at IS NOT NULL
-      AND lease_expires_at <= v_now
-    ORDER BY lease_expires_at ASC
+    SELECT job.*
+    FROM public.jobs AS job
+    WHERE job.type = 'render'
+      AND job.status = 'processing'
+      AND job.lease_expires_at IS NOT NULL
+      AND job.lease_expires_at <= v_now
+    ORDER BY job.lease_expires_at ASC
     FOR UPDATE SKIP LOCKED
   LOOP
     IF v_stale.attempt_count < 2 THEN
-      UPDATE public.jobs
+      UPDATE public.jobs AS job
       SET
         status = 'pending',
         claimed_at = NULL,
         lease_token = NULL,
         lease_expires_at = NULL,
         error_message = 'worker_interrupted_retrying'
-      WHERE id = v_stale.id;
+      WHERE job.id = v_stale.id;
 
-      UPDATE public.clips
+      UPDATE public.clips AS clip
       SET status = 'pending'
-      WHERE id = v_stale.clip_id
-        AND status = 'processing';
+      WHERE clip.id = v_stale.clip_id
+        AND clip.status = 'processing';
     ELSE
       v_refund_user_id := NULL;
       v_refund_seconds := NULL;
-      UPDATE public.clips
+      UPDATE public.clips AS clip
       SET
         status = 'failed',
         error_message = 'worker_interrupted',
         completed_at = v_now
-      WHERE id = v_stale.clip_id
-        AND status IN ('pending', 'processing')
-      RETURNING user_id, duration_seconds
+      WHERE clip.id = v_stale.clip_id
+        AND clip.status IN ('pending', 'processing')
+      RETURNING clip.user_id, clip.duration_seconds
         INTO v_refund_user_id, v_refund_seconds;
       v_refunded := FOUND;
 
       IF v_refunded AND v_refund_seconds > 0 THEN
-        UPDATE public.profiles
+        UPDATE public.profiles AS profile
         SET clip_seconds_used_this_month = GREATEST(
           0,
-          clip_seconds_used_this_month - v_refund_seconds
+          profile.clip_seconds_used_this_month - v_refund_seconds
         )
-        WHERE id = v_refund_user_id;
+        WHERE profile.id = v_refund_user_id;
       END IF;
 
-      UPDATE public.jobs
+      UPDATE public.jobs AS job
       SET
         status = 'failed',
         error_message = 'worker_interrupted',
@@ -132,15 +132,15 @@ BEGIN
         lease_token = NULL,
         lease_expires_at = NULL,
         refund_applied_at = CASE WHEN v_refunded THEN v_now ELSE NULL END
-      WHERE id = v_stale.id;
+      WHERE job.id = v_stale.id;
     END IF;
   END LOOP;
 
-  SELECT * INTO v_claim
-  FROM public.jobs
-  WHERE type = 'render'
-    AND status = 'pending'
-  ORDER BY created_at ASC
+  SELECT job.* INTO v_claim
+  FROM public.jobs AS job
+  WHERE job.type = 'render'
+    AND job.status = 'pending'
+  ORDER BY job.created_at ASC
   LIMIT 1
   FOR UPDATE SKIP LOCKED;
 
@@ -148,33 +148,33 @@ BEGIN
     RETURN;
   END IF;
 
-  UPDATE public.clips
+  UPDATE public.clips AS clip
   SET status = 'processing'
-  WHERE id = v_claim.clip_id
-    AND status = 'pending';
+  WHERE clip.id = v_claim.clip_id
+    AND clip.status = 'pending';
 
   -- A deleted or terminal clip is never rendered.  Mark only the bad job;
   -- any already terminal clip keeps its authoritative state and quota.
   IF NOT FOUND THEN
-    UPDATE public.jobs
+    UPDATE public.jobs AS job
     SET
       status = 'failed',
       error_message = 'clip_not_pending',
       completed_at = v_now
-    WHERE id = v_claim.id;
+    WHERE job.id = v_claim.id;
     RETURN;
   END IF;
 
-  UPDATE public.jobs
+  UPDATE public.jobs AS job
   SET
     status = 'processing',
-    attempt_count = attempt_count + 1,
+    attempt_count = job.attempt_count + 1,
     claimed_at = v_now,
     lease_token = gen_random_uuid(),
     lease_expires_at = v_now + make_interval(secs => p_lease_seconds),
     error_message = NULL
-  WHERE id = v_claim.id
-  RETURNING * INTO v_claim;
+  WHERE job.id = v_claim.id
+  RETURNING job.* INTO v_claim;
 
   RETURN QUERY
   SELECT
@@ -212,13 +212,13 @@ BEGIN
     RAISE EXCEPTION 'lease_seconds_out_of_range' USING ERRCODE = '22023';
   END IF;
 
-  UPDATE public.jobs
+  UPDATE public.jobs AS job
   SET lease_expires_at = v_now + make_interval(secs => p_lease_seconds)
-  WHERE id = p_job_id
-    AND type = 'render'
-    AND status = 'processing'
-    AND lease_token = p_lease_token
-    AND lease_expires_at > v_now;
+  WHERE job.id = p_job_id
+    AND job.type = 'render'
+    AND job.status = 'processing'
+    AND job.lease_token = p_lease_token
+    AND job.lease_expires_at > v_now;
 
   RETURN FOUND;
 END;
@@ -244,20 +244,20 @@ DECLARE
   v_job public.jobs%ROWTYPE;
   v_now timestamptz := now();
 BEGIN
-  SELECT * INTO v_job
-  FROM public.jobs
-  WHERE id = p_job_id
-    AND type = 'render'
-    AND status = 'processing'
-    AND lease_token = p_lease_token
-    AND lease_expires_at > v_now
+  SELECT job.* INTO v_job
+  FROM public.jobs AS job
+  WHERE job.id = p_job_id
+    AND job.type = 'render'
+    AND job.status = 'processing'
+    AND job.lease_token = p_lease_token
+    AND job.lease_expires_at > v_now
   FOR UPDATE;
 
   IF NOT FOUND THEN
     RETURN false;
   END IF;
 
-  UPDATE public.clips
+  UPDATE public.clips AS clip
   SET
     status = 'completed',
     video_url = p_video_url,
@@ -269,22 +269,22 @@ BEGIN
     hook_text = p_hook_text,
     error_message = NULL,
     completed_at = v_now
-  WHERE id = v_job.clip_id
-    AND user_id = v_job.user_id
-    AND status IN ('pending', 'processing');
+  WHERE clip.id = v_job.clip_id
+    AND clip.user_id = v_job.user_id
+    AND clip.status IN ('pending', 'processing');
 
   IF NOT FOUND THEN
     RETURN false;
   END IF;
 
-  UPDATE public.jobs
+  UPDATE public.jobs AS job
   SET
     status = 'completed',
     completed_at = v_now,
     lease_token = NULL,
     lease_expires_at = NULL,
     error_message = NULL
-  WHERE id = v_job.id;
+  WHERE job.id = v_job.id;
 
   RETURN true;
 END;
@@ -306,40 +306,40 @@ DECLARE
   v_refund_user_id uuid;
   v_refund_seconds integer;
 BEGIN
-  SELECT * INTO v_job
-  FROM public.jobs
-  WHERE id = p_job_id
-    AND type = 'render'
-    AND status = 'processing'
-    AND lease_token = p_lease_token
-    AND lease_expires_at > v_now
+  SELECT job.* INTO v_job
+  FROM public.jobs AS job
+  WHERE job.id = p_job_id
+    AND job.type = 'render'
+    AND job.status = 'processing'
+    AND job.lease_token = p_lease_token
+    AND job.lease_expires_at > v_now
   FOR UPDATE;
 
   IF NOT FOUND THEN
     RETURN false;
   END IF;
 
-  UPDATE public.clips
+  UPDATE public.clips AS clip
   SET
     status = 'failed',
     error_message = left(COALESCE(p_error_message, 'render_failed'), 400),
     completed_at = v_now
-  WHERE id = v_job.clip_id
-    AND user_id = v_job.user_id
-    AND status IN ('pending', 'processing')
-  RETURNING user_id, duration_seconds
+  WHERE clip.id = v_job.clip_id
+    AND clip.user_id = v_job.user_id
+    AND clip.status IN ('pending', 'processing')
+  RETURNING clip.user_id, clip.duration_seconds
     INTO v_refund_user_id, v_refund_seconds;
 
   IF FOUND AND v_refund_seconds > 0 THEN
-    UPDATE public.profiles
+    UPDATE public.profiles AS profile
     SET clip_seconds_used_this_month = GREATEST(
       0,
-      clip_seconds_used_this_month - v_refund_seconds
+      profile.clip_seconds_used_this_month - v_refund_seconds
     )
-    WHERE id = v_refund_user_id;
+    WHERE profile.id = v_refund_user_id;
   END IF;
 
-  UPDATE public.jobs
+  UPDATE public.jobs AS job
   SET
     status = 'failed',
     error_message = left(COALESCE(p_error_message, 'render_failed'), 400),
@@ -347,7 +347,7 @@ BEGIN
     lease_token = NULL,
     lease_expires_at = NULL,
     refund_applied_at = CASE WHEN v_refund_user_id IS NOT NULL THEN v_now ELSE NULL END
-  WHERE id = v_job.id;
+  WHERE job.id = v_job.id;
 
   RETURN true;
 END;
