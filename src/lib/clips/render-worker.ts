@@ -105,6 +105,10 @@ export async function processOneRenderJob(
   const job = candidate;
   let leaseLost = false;
   let renewInFlight = false;
+  // Finalization and the heartbeat both mutate the same fenced job row.  A
+  // slow heartbeat that resolves after a fail/complete RPC must not turn a
+  // terminal render into a misleading "lease lost" diagnostic.
+  let finalizing = false;
 
   const heartbeat = setInterval(() => {
     if (renewInFlight || leaseLost) return;
@@ -117,6 +121,7 @@ export async function processOneRenderJob(
       }),
     )
       .then(({ data: renewed, error: renewError }) => {
+        if (finalizing) return;
         if (renewError || renewed !== true) {
           leaseLost = true;
           log("warn", "render lease lost", {
@@ -126,7 +131,7 @@ export async function processOneRenderJob(
         }
       })
       .catch(() => {
-        leaseLost = true;
+        if (!finalizing) leaseLost = true;
       })
       .finally(() => {
         renewInFlight = false;
@@ -138,6 +143,8 @@ export async function processOneRenderJob(
     const result = await runRenderJob(supabase, job, {
       leaseToken: job.lease_token,
     });
+    finalizing = true;
+    clearInterval(heartbeat);
     if (leaseLost) {
       await removeAttemptArtifacts(supabase, job);
       return { kind: "stale", jobId: job.id };
@@ -171,6 +178,8 @@ export async function processOneRenderJob(
     return { kind: "completed", jobId: job.id };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    finalizing = true;
+    clearInterval(heartbeat);
     if (leaseLost) {
       await removeAttemptArtifacts(supabase, job);
       return { kind: "stale", jobId: job.id };
@@ -222,6 +231,7 @@ export async function processOneRenderJob(
     });
     return { kind: "failed", jobId: job.id };
   } finally {
+    finalizing = true;
     clearInterval(heartbeat);
   }
 }

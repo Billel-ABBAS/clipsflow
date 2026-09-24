@@ -50,7 +50,11 @@ import type { WordTimestamp } from "./whisper";
 import type { OverlayElement } from "./overlays";
 import { buildOverlays } from "./overlays";
 import { ASPECT_RATIO_DIMENSIONS } from "./types";
-import { attachFfmpegTimeout } from "./ffmpeg-timeout";
+import {
+  attachFfmpegTimeout,
+  FFMPEG_SINGLE_CORE_FILTER_ARGS,
+  FFMPEG_SINGLE_CORE_X264_ARGS,
+} from "./ffmpeg-timeout";
 import type { AspectRatio, StyleKey, SubtitleCustomizations } from "./types";
 import {
   assTime,
@@ -1337,6 +1341,9 @@ export async function burnSubtitles(
     const commonVideoFlags = [
       "-c:v",
       "libx264",
+      // The Railway renderer is intentionally constrained to 1 vCPU / 1 GiB.
+      // Prevent x264 from allocating auto-sized worker and lookahead pools.
+      ...FFMPEG_SINGLE_CORE_X264_ARGS,
       // `ultrafast` preset cuts encode wall-clock ~10× vs `medium` for a
       // ~0.4% SSIM drop — imperceptible on talking-head short-form.
       // styleCrf's range (18-22) compensates for the lighter motion
@@ -1378,6 +1385,9 @@ export async function burnSubtitles(
         : ["-vf", filterStr];
 
     const encodeArgs = [
+      // Global filtergraph thread limits must precede the input.  They keep
+      // libass + scale/crop from fanning out beyond the Railway allocation.
+      ...FFMPEG_SINGLE_CORE_FILTER_ARGS,
       // `-autorotate 1` forces ffmpeg to apply the `displaymatrix`
       // rotation metadata BEFORE the crop / scale / subtitle filter
       // chain sees the frames. iPhone / Android portrait recordings
@@ -1447,7 +1457,7 @@ export async function burnSubtitles(
           watchdog.clear();
           rej(error);
         });
-        p.on("close", (code) => {
+        p.on("close", (code, signal) => {
           watchdog.clear();
           const stderrTail = stderrBuf.slice(-1500);
           const subtitleLines = stderrBuf
@@ -1464,7 +1474,7 @@ export async function burnSubtitles(
             .slice(0, 10)
             .join(" | ");
           ffmpegLogger.log(
-            `[clips-burn] ${passLabel} exit=${code} signals=${JSON.stringify(subtitleLines).slice(0, 600)}`,
+            `[clips-burn] ${passLabel} exit=${code} signal=${signal ?? "none"} subtitles=${JSON.stringify(subtitleLines).slice(0, 600)}`,
           );
           if (watchdog.timedOut()) {
             rej(new Error(watchdog.message()));
@@ -1474,7 +1484,7 @@ export async function burnSubtitles(
             );
             rej(
               new Error(
-                `ffmpeg ${passLabel} exited ${code}: ${stderrBuf.slice(-600)}`,
+                `ffmpeg ${passLabel} ${signal ? `terminated by ${signal}` : `exited ${code}`}: ${stderrBuf.slice(-600)}`,
               ),
             );
           } else {

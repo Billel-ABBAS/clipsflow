@@ -34,7 +34,11 @@ import { spawn } from "node:child_process";
 import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { attachFfmpegTimeout } from "./ffmpeg-timeout";
+import {
+  attachFfmpegTimeout,
+  FFMPEG_SINGLE_CORE_FILTER_ARGS,
+  FFMPEG_SINGLE_CORE_X264_ARGS,
+} from "./ffmpeg-timeout";
 
 /**
  * Apply the "AI clip · ClipsFlow" drawtext watermark to a subtitle-burned
@@ -55,10 +59,20 @@ export async function applyClipWatermark(input: Buffer): Promise<Buffer> {
       // subtitle text. Padding scales with frame height so every aspect
       // renders proportionally.
       const args = [
+        ...FFMPEG_SINGLE_CORE_FILTER_ARGS,
         "-i",
         inPath,
         "-vf",
         "drawtext=text='AI clip · ClipsFlow':fontcolor=white@0.85:fontsize=h*0.045:x=w-tw-h*0.045:y=h*0.045:shadowcolor=black@0.55:shadowx=2:shadowy=2",
+        "-c:v",
+        "libx264",
+        ...FFMPEG_SINGLE_CORE_X264_ARGS,
+        "-preset",
+        "ultrafast",
+        "-crf",
+        "20",
+        "-pix_fmt",
+        "yuv420p",
         "-c:a",
         "copy",
         "-y",
@@ -74,11 +88,16 @@ export async function applyClipWatermark(input: Buffer): Promise<Buffer> {
         watchdog.clear();
         rej(error);
       });
-      p.on("close", (code) => {
+      p.on("close", (code, signal) => {
         watchdog.clear();
         if (watchdog.timedOut()) rej(new Error(watchdog.message()));
         else if (code === 0) res();
-        else rej(new Error(`ffmpeg exited ${code}: ${stderrBuf.slice(-500)}`));
+        else
+          rej(
+            new Error(
+              `ffmpeg ${signal ? `terminated by ${signal}` : `exited ${code}`}: ${stderrBuf.slice(-500)}`,
+            ),
+          );
       });
     });
     return await readFile(outPath);

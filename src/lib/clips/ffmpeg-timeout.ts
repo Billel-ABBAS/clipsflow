@@ -2,6 +2,29 @@ import type { ChildProcess } from "node:child_process";
 
 const DEFAULT_FFMPEG_TIMEOUT_MS = 300_000;
 
+/**
+ * Railway's staging worker is deliberately capped at one vCPU and 1 GiB of
+ * memory.  Letting ffmpeg/x264 auto-size its decoder, filter, and lookahead
+ * pools can oversubscribe that tiny container and cause the kernel to kill
+ * only the ffmpeg child.  Keep every render pass deterministic and bounded.
+ *
+ * Filter options are global and therefore belong before the input.  x264
+ * options belong after `-c:v libx264` in the output section.
+ */
+export const FFMPEG_SINGLE_CORE_FILTER_ARGS = [
+  "-filter_threads",
+  "1",
+  "-filter_complex_threads",
+  "1",
+] as const;
+
+export const FFMPEG_SINGLE_CORE_X264_ARGS = [
+  "-threads",
+  "1",
+  "-x264-params",
+  "threads=1:lookahead_threads=1:sync-lookahead=0",
+] as const;
+
 function configuredTimeoutMs(): number {
   const raw = process.env.CLIPS_FFMPEG_TIMEOUT_MS;
   const value = raw ? Number(raw) : NaN;
