@@ -46,6 +46,15 @@ describe("translateCues", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it("does not call OpenAI for source and target language names differing only by case", async () => {
+    const { client, create } = clientFor({ translations: [] });
+
+    await expect(
+      translateCues(words, "English", " english ", 3, client),
+    ).resolves.toEqual(buildCueGroups(words, 3));
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("uses schema-constrained, non-stored OpenAI output and preserves cue timing", async () => {
     const { client, create } = clientFor({
       translations: [

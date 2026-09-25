@@ -201,7 +201,8 @@ function parseTranslatedCues(rawText: string, cues: CueGroup[]): CueGroup[] {
  * Timestamps are preserved 1:1 from the source words.
  *
  * Returns source cues unchanged ONLY when no translation is required:
- *   - `fromLang === toLang` (no translation needed)
+ *   - `fromLang` and `toLang` are equal after whitespace/case normalization
+ *     (no translation needed)
  *   - `words` is empty
  *
  * @param words       Word-level timestamps from Whisper auto-detect.
@@ -220,7 +221,9 @@ export async function translateCues(
   if (words.length === 0) return [];
 
   const cues = buildCueGroups(words, wordsPerCue);
-  if (fromLang === toLang) return cues;
+  if (fromLang.trim().toLowerCase() === toLang.trim().toLowerCase()) {
+    return cues;
+  }
 
   if (
     !isSupportedTranslateLanguage(fromLang) ||

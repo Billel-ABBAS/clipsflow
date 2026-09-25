@@ -843,9 +843,10 @@ export async function runRenderJob(
 
     // ── Step 6 — Translate cues when source language ≠ target ──────────
     // Map user-supplied BCP-47 code to Whisper full-name convention.
-    // Whisper auto-detect returns the English language name lowercased ;
-    // we keep the same convention so the `detectedLanguage !==
-    // targetLangName` check below works.
+    // Whisper's language-name casing is provider-dependent (for example,
+    // "English" versus "english"). Compare normalized values below so an
+    // identical source/target language does not spend a translation call or
+    // fail the render because of a casing-only mismatch.
     const langNameMap: Record<string, string> = {
       fr: "french",
       en: "english",
@@ -891,7 +892,11 @@ export async function runRenderJob(
       | { text: string; start: number; end: number }[]
       | undefined;
 
-    if (detectedLanguage !== targetLangName && words.length > 0) {
+    if (
+      detectedLanguage.trim().toLowerCase() !==
+        targetLangName.trim().toLowerCase() &&
+      words.length > 0
+    ) {
       // OBS — translate stage entry breadcrumb.
       addPipelineBreadcrumb("translate_start", "info", {
         from_language: detectedLanguage,
