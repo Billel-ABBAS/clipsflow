@@ -47,7 +47,7 @@
     "faq_q1_title": "Quels formats ClipsFlow supporte-t-il ?",
     "faq_q1_answer": "MP4, MOV, WEBM, MP3, M4A, WAV — jusqu'à 500 Mo par fichier. Détection automatique du ratio d'aspect et optimisation pour TikTok (9:16), Instagram (1:1, 4:5), et YouTube (16:9).",
     "faq_q2_title": "Comment fonctionne la génération IA de sous-titres ?",
-    "faq_q2_answer": "On utilise Groq Whisper pour une transcription ultra-rapide (216x temps réel), puis Claude traduit mot à mot. Le résultat : des sous-titres animés et personnalisables en 15 styles.",
+    "faq_q2_answer": "On utilise Groq Whisper pour une transcription ultra-rapide (216x temps réel), puis OpenAI traduit les segments selon la langue choisie. Le résultat : des sous-titres animés et personnalisables en 15 styles.",
     "faq_q3_title": "Le plan gratuit est-il vraiment gratuit ?",
     "faq_q3_answer": "Oui. Le Tier gratuit inclut 60 secondes de clips rendus par mois, avec filigrane ClipsFlow. Les plans Solo, Pro et Studio suppriment le filigrane et débloquent plus de styles.",
     "faq_q4_title": "Puis-je annuler à tout moment ?",

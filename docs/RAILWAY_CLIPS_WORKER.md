@@ -28,7 +28,7 @@ le suivant si le précédent est encore actif.
   lisible avant toute réservation de quota. Le worker se termine aussi sans
   travail lorsqu'il est désactivé.
 - `CLIPS_AI_BUDGET_AUTHORIZED` est `false` par défaut : aucun média n'est
-  envoyé à Groq, OpenAI ou Anthropic tant qu'un budget n'a pas été approuvé.
+  envoyé à Groq ou OpenAI tant qu'un budget n'a pas été approuvé.
 
 ## Préparation d'un environnement de test autorisé
 
