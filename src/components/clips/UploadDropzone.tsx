@@ -10,7 +10,7 @@
 //
 // Pure presentational : the parent (ClipStudio) owns the upload pipeline
 // (upload-init + signed PUT) and passes the reactive `uploadState` down.
-// Client-side validation (MIME + 500 MB cap) happens here before onFile.
+// Client-side validation (MIME + 200 MiB cap) happens here before onFile.
 // ============================================================================
 
 import { useCallback, useRef, useState } from "react";
@@ -30,7 +30,7 @@ export const ACCEPTED_MIME_TYPES = [
   "audio/wav",
 ] as const;
 
-export const MAX_UPLOAD_BYTES = 524_288_000; // 500 MB
+export const MAX_UPLOAD_BYTES = 209_715_200; // 200 MiB, matching the Railway worker
 
 /** Reactive upload state owned by the parent. */
 export type UploadState =

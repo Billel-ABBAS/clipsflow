@@ -32,7 +32,7 @@
 //   - episode_not_found:      parent episodes row missing
 //   - invalid_source_url:     SSRF-blocked or absent source
 //   - source_download_failed: HTTP error / empty body / sign failure
-//   - source_too_large:       source exceeds the 500 MB cap
+//   - source_too_large:       source exceeds the configured download cap
 //   - invalid_source_file:    magic-byte sniff failed (not a recognized
 //                             media container, or bytes contradict the
 //                             response content-type). Refundable like any
@@ -207,7 +207,7 @@ function addPipelineBreadcrumb(
  * `source_too_large:` (refunded by the worker transaction like any other
  * failure). Railway config sets this below the one-GiB worker budget.
  */
-const DEFAULT_MAX_SOURCE_BYTES = 500 * 1024 * 1024; // 500 MB
+const DEFAULT_MAX_SOURCE_BYTES = 200 * 1024 * 1024; // 200 MiB
 const MIN_SOURCE_BYTES = 8 * 1024 * 1024; // avoid a nonsensical env value
 
 function configuredMaxSourceBytes(): number {
