@@ -86,6 +86,7 @@ import {
 } from "@/lib/security/validate-outbound-url";
 import type { ClipJob, QueueJob } from "./types";
 import type { OverlayElement } from "./overlays";
+import { attachFfmpegTimeout } from "./ffmpeg-timeout";
 import { verifySourceMagicBytes } from "./verify-magic-bytes";
 
 // ----------------------------------------------------------------------------
@@ -203,9 +204,23 @@ function addPipelineBreadcrumb(
  * Hard cap on source media size for the clips pipeline. Serverless /tmp =
  * 512 MB per invocation ; we leave a margin for the extracted segment, the
  * rendered MP4 output, and staged fonts. Sources above this throw
- * `source_too_large:` (refunded by the cron handler like any other failure).
+ * `source_too_large:` (refunded by the worker transaction like any other
+ * failure). Railway config sets this below the one-GiB worker budget.
  */
-const MAX_SOURCE_BYTES = 500 * 1024 * 1024; // 500 MB
+const DEFAULT_MAX_SOURCE_BYTES = 500 * 1024 * 1024; // 500 MB
+const MIN_SOURCE_BYTES = 8 * 1024 * 1024; // avoid a nonsensical env value
+
+function configuredMaxSourceBytes(): number {
+  const raw = process.env.CLIPS_MAX_SOURCE_BYTES;
+  if (!raw) return DEFAULT_MAX_SOURCE_BYTES;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed >= MIN_SOURCE_BYTES
+    ? parsed
+    : DEFAULT_MAX_SOURCE_BYTES;
+}
+
+const MAX_SOURCE_BYTES = configuredMaxSourceBytes();
+const DOWNLOAD_TIMEOUT_MS = 120_000;
 
 /**
  * Hard cap on the clip window. Whisper handles ≤180 s segments comfortably
@@ -225,6 +240,26 @@ export interface RunRenderJobResult {
   score: number | null; // hook score 0-100
   hook_text: string | null; // first sentence of the clip transcript
   detected_language: string | null;
+}
+
+export type RenderJobOptions = {
+  /**
+   * A Railway lease fence. When supplied, rendered objects live under a
+   * unique attempt path so a late worker has no mutable object in common
+   * with the retry that replaced it.
+   */
+  leaseToken?: string;
+};
+
+export function getRenderArtifactPaths(
+  userId: string,
+  clipId: string,
+  leaseToken?: string,
+): { mp4: string; vtt: string } {
+  const prefix = leaseToken
+    ? `${userId}/${clipId}/attempts/${leaseToken}`
+    : `${userId}/${clipId}`;
+  return { mp4: `${prefix}.mp4`, vtt: `${prefix}.vtt` };
 }
 
 /** Minimal episode row shape consumed by the render pipeline. */
@@ -300,13 +335,19 @@ async function extractSegment(opts: {
 
   await new Promise<void>((res, rej) => {
     const p = spawn(ffmpegPath.path, args);
+    const watchdog = attachFfmpegTimeout(p, "segment_extract");
     let stderrBuf = "";
     p.stderr?.on("data", (chunk: Buffer) => {
       stderrBuf += chunk.toString();
     });
-    p.on("error", rej);
+    p.on("error", (error) => {
+      watchdog.clear();
+      rej(error);
+    });
     p.on("close", (code) => {
-      if (code === 0) res();
+      watchdog.clear();
+      if (watchdog.timedOut()) rej(new Error(watchdog.message()));
+      else if (code === 0) res();
       else
         rej(
           new Error(
@@ -332,6 +373,7 @@ async function extractSegment(opts: {
 export async function runRenderJob(
   supabase: SupabaseClient,
   job: QueueJob,
+  options: RenderJobOptions = {},
 ): Promise<RunRenderJobResult> {
   // Lazy imports — keep ffmpeg + Whisper + libass off the module load
   // path so the cron worker boots fast. Same pattern as the VidiaFlow
@@ -433,10 +475,12 @@ export async function runRenderJob(
   //       sign a 1 h read URL with the service-role client, then validate
   //       it against the Supabase allowlist (defence in depth).
   let sourceUrl: string;
+  let sourceAllowedHosts: string[] | undefined;
   try {
     if (episode.source_url) {
       validateOutboundUrl(episode.source_url);
       sourceUrl = episode.source_url;
+      sourceAllowedHosts = undefined;
     } else if (episode.source_storage_path) {
       const { data: signed, error: signErr } = await supabase.storage
         .from("clip-sources")
@@ -446,8 +490,9 @@ export async function runRenderJob(
           `source_download_failed: could not sign source storage path (${signErr?.message ?? "no URL returned"})`,
         );
       }
+      sourceAllowedHosts = defaultClipsAllowedHosts();
       validateOutboundUrl(signed.signedUrl, {
-        allowedHosts: defaultClipsAllowedHosts(),
+        allowedHosts: sourceAllowedHosts,
       });
       sourceUrl = signed.signedUrl;
     } else {
@@ -503,6 +548,7 @@ export async function runRenderJob(
     // quota refund path handles it like any other download failure.
     const sourceRes = await safeFetch(sourceUrl, {
       timeoutMs: 30_000,
+      allowedHosts: sourceAllowedHosts,
     });
     if (!sourceRes.ok) {
       throw new Error(
@@ -535,6 +581,18 @@ export async function runRenderJob(
     const nodeStream = Readable.fromWeb(
       sourceRes.body as unknown as import("node:stream/web").ReadableStream<Uint8Array>,
     );
+    let downloadTimedOut = false;
+    // `safeFetch` bounds response headers; a separate body deadline prevents
+    // a peer that sends one byte at a time from pinning the one-worker
+    // Railway process forever.
+    const downloadTimer = setTimeout(() => {
+      downloadTimedOut = true;
+      nodeStream.destroy(
+        new Error(
+          `source_download_failed: source body exceeded ${DOWNLOAD_TIMEOUT_MS / 1000}s deadline`,
+        ),
+      );
+    }, DOWNLOAD_TIMEOUT_MS);
     nodeStream.on("data", (chunk: Buffer) => {
       totalBytes += chunk.length;
       if (totalBytes > MAX_SOURCE_BYTES) {
@@ -559,7 +617,14 @@ export async function runRenderJob(
           `source_too_large: Source media exceeded ${MAX_SOURCE_BYTES / 1024 / 1024} MB.`,
         );
       }
+      if (downloadTimedOut) {
+        throw new Error(
+          `source_download_failed: source body exceeded ${DOWNLOAD_TIMEOUT_MS / 1000}s deadline`,
+        );
+      }
       throw pipelineErr;
+    } finally {
+      clearTimeout(downloadTimer);
     }
     // Verify the stream actually produced bytes — a 200 response with an
     // empty body would otherwise sail through and crash ffmpeg later
@@ -778,9 +843,10 @@ export async function runRenderJob(
 
     // ── Step 6 — Translate cues when source language ≠ target ──────────
     // Map user-supplied BCP-47 code to Whisper full-name convention.
-    // Whisper auto-detect returns the English language name lowercased ;
-    // we keep the same convention so the `detectedLanguage !==
-    // targetLangName` check below works.
+    // Whisper's language-name casing is provider-dependent (for example,
+    // "English" versus "english"). Compare normalized values below so an
+    // identical source/target language does not spend a translation call or
+    // fail the render because of a casing-only mismatch.
     const langNameMap: Record<string, string> = {
       fr: "french",
       en: "english",
@@ -826,7 +892,11 @@ export async function runRenderJob(
       | { text: string; start: number; end: number }[]
       | undefined;
 
-    if (detectedLanguage !== targetLangName && words.length > 0) {
+    if (
+      detectedLanguage.trim().toLowerCase() !==
+        targetLangName.trim().toLowerCase() &&
+      words.length > 0
+    ) {
       // OBS — translate stage entry breadcrumb.
       addPipelineBreadcrumb("translate_start", "info", {
         from_language: detectedLanguage,
@@ -920,11 +990,15 @@ export async function runRenderJob(
       ? clip.overlays
       : [];
 
-    // Pre-allocate the output paths up-front. Deterministic per clip
-    // (contract : clip-outputs/{user_id}/{clip_id}.mp4) — uploads use
-    // upsert so a retried job overwrites its own partial artifacts.
-    const outPath = `${clip.user_id}/${clip.id}.mp4`;
-    const vttStoragePath = `${clip.user_id}/${clip.id}.vtt`;
+    // Railway supplies a unique lease token. Its output paths are immutable
+    // per attempt, so an old process cannot overwrite a retry's MP4/VTT.
+    // The legacy no-token shape remains only for the old cron during the
+    // staged cut-over; production switches it off before enabling Railway.
+    const { mp4: outPath, vtt: vttStoragePath } = getRenderArtifactPaths(
+      clip.user_id,
+      clip.id,
+      options.leaseToken,
+    );
 
     let renderedBuf: Buffer;
     let captionsVtt: string;
@@ -1019,33 +1093,30 @@ export async function runRenderJob(
       .eq("id", clip.user_id)
       .single();
     const plan = resolvePlan(watermarkProfile ?? null);
-    if (plan === "free") {
-      addPipelineBreadcrumb("watermark_start", "info", {
-        mp4_bytes: renderedBuf.length,
+    const { applyPlanWatermark } = await import("./watermark-policy");
+    try {
+      renderedBuf = await applyPlanWatermark(
+        plan,
+        renderedBuf,
+        async (input) => {
+          addPipelineBreadcrumb("watermark_start", "info", {
+            mp4_bytes: input.length,
+          });
+          const { applyClipWatermark } = await import("./watermark");
+          const output = await applyClipWatermark(input);
+          addPipelineBreadcrumb("watermark_complete", "info", {
+            mp4_bytes: output.length,
+          });
+          return output;
+        },
+      );
+    } catch (err) {
+      logger.error("mandatory free-plan watermark failed", {
+        job_id: job.id,
+        clip_id: clip.id,
       });
-      try {
-        const { applyClipWatermark } = await import("./watermark");
-        renderedBuf = await applyClipWatermark(renderedBuf);
-        addPipelineBreadcrumb("watermark_complete", "info", {
-          mp4_bytes: renderedBuf.length,
-        });
-      } catch (err) {
-        // Watermark is a revenue-protection feature, not a render-blocker.
-        // If ffmpeg drawtext fails (font missing, malformed glyph), surface
-        // to Sentry but ship the un-watermarked clip — losing the upgrade
-        // hook is preferable to failing a Free user's first render and
-        // forcing a refund.
-        const errMsg = (err as Error).message;
-        logger.warn(
-          "ffmpeg watermark application failed (shipping unwatermarked)",
-          {
-            job_id: job.id,
-            clip_id: clip.id,
-            error: errMsg.slice(0, 400),
-          },
-        );
-        captureRunJobError(err, job, clip, "watermark_apply");
-      }
+      captureRunJobError(err, job, clip, "watermark_apply");
+      throw err;
     }
 
     // ── Step 8 — Parallel mp4 + vtt uploads to Supabase Storage ────────
@@ -1059,8 +1130,8 @@ export async function runRenderJob(
       .from("clip-outputs")
       .upload(outPath, renderedBuf, {
         contentType: "video/mp4",
-        // Deterministic {user_id}/{clip_id} path → retried jobs overwrite
-        // their own partial artifacts instead of erroring on collision.
+        // Unique per lease attempt in Railway; an upload retry within that
+        // same attempt can still resume safely.
         upsert: true,
       });
     const vttUploadP = supabase.storage

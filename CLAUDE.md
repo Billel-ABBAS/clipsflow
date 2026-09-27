@@ -4,7 +4,7 @@
 
 ## Stack
 
-Next.js 16.2 App Router · TS strict · Tailwind v4 · shadcn v4 base-ui (design **neutre**, PAS de noir-studio) · Supabase eu-west · Vercel/Sentry · next-intl (en/fr) · ffmpeg · Whisper · Claude (traduction cues) · pnpm ≥9
+Next.js 16.2 App Router · TS strict · Tailwind v4 · shadcn v4 base-ui (design **neutre**, PAS de noir-studio) · Supabase eu-west · Vercel/Sentry · next-intl (en/fr) · ffmpeg · Whisper · OpenAI (traduction cues) · pnpm ≥9
 
 ⚠️ **Next 16 : `src/proxy.ts`, PAS `middleware.ts`** (convention renommée — voir docs embarquées `node_modules/next/dist/docs`). Lire ces docs avant tout code Next non trivial.
 

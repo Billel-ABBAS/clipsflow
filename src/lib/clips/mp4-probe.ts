@@ -24,6 +24,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { attachFfmpegTimeout } from "./ffmpeg-timeout";
 
 export class Mp4ProbeError extends Error {
   constructor(message: string) {
@@ -76,13 +77,19 @@ export async function probeMp4Duration(
     const stderr = await new Promise<string>((res, rej) => {
       const args = ["-hide_banner", "-i", inPath, "-f", "null", "-t", "0", "-"];
       const p = spawn(ffmpegPath.path, args);
+      const watchdog = attachFfmpegTimeout(p, "mp4_probe_duration", 30_000);
       let stderrBuf = "";
       p.stderr?.on("data", (chunk: Buffer) => {
         stderrBuf += chunk.toString();
       });
-      p.on("error", rej);
+      p.on("error", (error) => {
+        watchdog.clear();
+        rej(error);
+      });
       p.on("close", () => {
-        res(stderrBuf);
+        watchdog.clear();
+        if (watchdog.timedOut()) rej(new Mp4ProbeError(watchdog.message()));
+        else res(stderrBuf);
       });
     });
     // ffmpeg duration line :
@@ -128,13 +135,19 @@ export async function probeHasVideoStream(filePath: string): Promise<boolean> {
   const stderr = await new Promise<string>((res, rej) => {
     const args = ["-hide_banner", "-i", filePath, "-f", "null", "-t", "0", "-"];
     const p = spawn(ffmpegPath.path, args);
+    const watchdog = attachFfmpegTimeout(p, "mp4_probe_streams", 30_000);
     let stderrBuf = "";
     p.stderr?.on("data", (chunk: Buffer) => {
       stderrBuf += chunk.toString();
     });
-    p.on("error", rej);
+    p.on("error", (error) => {
+      watchdog.clear();
+      rej(error);
+    });
     p.on("close", () => {
-      res(stderrBuf);
+      watchdog.clear();
+      if (watchdog.timedOut()) rej(new Mp4ProbeError(watchdog.message()));
+      else res(stderrBuf);
     });
   });
 

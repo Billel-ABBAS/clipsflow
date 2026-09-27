@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ export function PricingCards({ locale, isLoggedIn }: PricingCardsProps) {
   const t = useTranslations("pricing");
   const router = useRouter();
   const [loading, setLoading] = useState<PlanKey | null>(null);
+  const checkoutRequestIds = useRef<Partial<Record<PlanKey, string>>>({});
   async function handleSelect(plan: PlanKey) {
     if (plan === "free") {
       return;
@@ -37,11 +38,13 @@ export function PricingCards({ locale, isLoggedIn }: PricingCardsProps) {
       return;
     }
     setLoading(plan);
+    const requestId = checkoutRequestIds.current[plan] ?? crypto.randomUUID();
+    checkoutRequestIds.current[plan] = requestId;
     try {
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, request_id: requestId }),
       });
       const data = await res.json();
       if (data.url) {
@@ -63,12 +66,10 @@ export function PricingCards({ locale, isLoggedIn }: PricingCardsProps) {
           <CardHeader>
             <CardTitle>{t(`${plan}.name`)}</CardTitle>
             <CardDescription>{t(`${plan}.tagline`)}</CardDescription>
-            <div className="mt-2 text-3xl font-bold">
-              {t(`${plan}.price`)}
-            </div>
+            <div className="mt-2 text-3xl font-bold">{t(`${plan}.price`)}</div>
           </CardHeader>
           <CardContent className="flex-1">
-            <ul className="space-y-2 text-sm text-muted-foreground">
+            <ul className="text-muted-foreground space-y-2 text-sm">
               <li>{t(`${plan}.feature1`)}</li>
               <li>{t(`${plan}.feature2`)}</li>
               <li>{t(`${plan}.feature3`)}</li>
@@ -76,7 +77,11 @@ export function PricingCards({ locale, isLoggedIn }: PricingCardsProps) {
           </CardContent>
           <CardFooter>
             {plan === "free" ? (
-              <Button variant="outline" className="w-full" onClick={() => router.push(`/${locale}/clips`)}>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => router.push(`/${locale}/clips`)}
+              >
                 {t("free.cta")}
               </Button>
             ) : (

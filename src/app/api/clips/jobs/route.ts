@@ -20,11 +20,9 @@
 //   4. Résolution source : episode_id OWN (404) XOR source.url
 //      (SSRF guard 400 → row episodes créée via service_role)
 //   5. stripCustomizationsByPlan AVANT insert (fail-closed par plan)
-//   6. Quota : checkClipAccess réserve `end-start` secondes (402)
-//   7. INSERT clips puis jobs — si l'insert jobs échoue APRÈS celui de
-//      clips : refund + clips → failed (cohérence, pas de row orpheline
-//      'pending' jamais drainée)
-//   8. 202 { data: { clip_id, job_id, status: "pending" } }
+//   6. RPC transactionnelle service_role : vérifie propriétaire + quota,
+//      réserve les secondes et crée clips + jobs sans état partiel (402)
+//   7. 202 { data: { clip_id, job_id, status: "pending" } }
 //
 // Réponses d'erreur : { error: string } (+ remaining sur 402).
 // Status codes : 202 / 400 / 401 / 402 / 403 / 404 / 500.
@@ -35,23 +33,21 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isClipsEnabled } from "@/lib/clips/feature-flag";
+import { isClipsEnabled, isClipsWorkerEnabled } from "@/lib/clips/feature-flag";
 import {
   ASPECT_RATIOS,
   STYLE_KEYS,
   SUBTITLE_POSITIONS,
 } from "@/lib/clips/types";
-import {
-  checkClipAccess,
-  refundClipSeconds,
-  resolvePlan,
-  stripCustomizationsByPlan,
-} from "@/lib/clips/quota";
+import { resolvePlan, stripCustomizationsByPlan } from "@/lib/clips/quota";
+import { SubmitClipJobError, submitClipJob } from "@/lib/clips/submit-job";
 import {
   validateOutboundUrl,
+  defaultClipsAllowedHosts,
   OutboundUrlError,
 } from "@/lib/security/validate-outbound-url";
 import { routing } from "@/i18n/routing";
+import { checkDistributedRateLimit } from "@/lib/rate-limit-distributed";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -128,7 +124,7 @@ const logoRevealOverlaySchema = z.object({
   logoUrl: z.url().refine(
     (s) => {
       try {
-        validateOutboundUrl(s);
+        validateOutboundUrl(s, { allowedHosts: defaultClipsAllowedHosts() });
         return true;
       } catch {
         return false;
@@ -221,6 +217,33 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const admin = createAdminClient();
+  let rateLimit;
+  try {
+    rateLimit = await checkDistributedRateLimit(
+      admin,
+      `jobs:${user.id}`,
+      10,
+      60,
+    );
+  } catch {
+    return NextResponse.json(
+      { error: "rate_limit_unavailable" },
+      { status: 503 },
+    );
+  }
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": rateLimit.retryAfterSeconds.toString(),
+        },
+      },
+    );
+  }
+
   // 2. Feature flag — locale lue du cookie next-intl (les routes /api sont
   // hors matcher du proxy : pas de header locale, le cookie posé par les
   // navigations de pages fait foi, fallback defaultLocale).
@@ -231,6 +254,23 @@ export async function POST(request: Request): Promise<Response> {
     !isClipsEnabled({ locale, userId: user.id })
   ) {
     return NextResponse.json({ error: "not_yet_available" }, { status: 403 });
+  }
+
+  // The product can remain visible while rendering is deliberately paused
+  // (staging, maintenance, or Railway budget protection).  Fail before a
+  // source row or quota reservation is created, and make the five-minute
+  // Railway cadence explicit to the caller.
+  if (!isClipsWorkerEnabled()) {
+    return NextResponse.json(
+      {
+        error: "rendering_temporarily_unavailable",
+        retry_after_seconds: 300,
+      },
+      {
+        status: 503,
+        headers: { "Retry-After": "300" },
+      },
+    );
   }
 
   // 3. Parse + validation stricte du body.
@@ -260,8 +300,6 @@ export async function POST(request: Request): Promise<Response> {
   if (!profile) {
     return NextResponse.json({ error: "profile_not_found" }, { status: 404 });
   }
-
-  const admin = createAdminClient();
 
   // 4. Résolution de l'épisode source.
   let episodeId: string;
@@ -330,102 +368,59 @@ export async function POST(request: Request): Promise<Response> {
     input.customizations,
   );
 
-  // 6. Quota — réservation atomique de `end-start` secondes via le RPC
-  // clips_reserve_quota (service_role only). À partir d'ICI, tout échec
-  // avant le 202 doit refund (règle anti-double-refund : la réservation
-  // vit au POST, le refund vit dans LE chemin qui constate l'échec).
-  const durationSeconds = input.end_seconds - input.start_seconds;
-  let access;
+  // 6. La réservation de quota et les deux INSERT sont une seule unité
+  // transactionnelle Postgres. Aucun état partiel n'est observable et le
+  // navigateur n'a plus de privilège INSERT/UPDATE sur ces tables.
+  let submitted;
   try {
-    access = await checkClipAccess(admin, user.id, durationSeconds);
-  } catch {
-    return NextResponse.json({ error: "profile_not_found" }, { status: 404 });
-  }
-  if (!access.allowed) {
-    return NextResponse.json(
-      { error: "quota_exceeded", remaining: access.remaining ?? 0 },
-      { status: 402 },
-    );
-  }
-
-  // 7a. INSERT clips (client user — RLS insert_own active).
-  const { data: clip, error: clipErr } = await supabase
-    .from("clips")
-    .insert({
-      episode_id: episodeId,
-      user_id: user.id,
-      start_seconds: input.start_seconds,
-      end_seconds: input.end_seconds,
-      style_key: input.style_key,
-      aspect_ratio: input.aspect_ratio,
+    submitted = await submitClipJob(admin, {
+      userId: user.id,
+      episodeId,
+      startSeconds: input.start_seconds,
+      endSeconds: input.end_seconds,
+      styleKey: input.style_key,
+      aspectRatio: input.aspect_ratio,
       language: input.language,
       customizations: allowedCustomizations,
       overlays: input.overlays ?? [],
-      status: "pending",
-    })
-    .select("id")
-    .single();
-  if (clipErr || !clip) {
+    });
+  } catch (error) {
+    if (error instanceof SubmitClipJobError) {
+      if (error.code === "quota_exceeded") {
+        return NextResponse.json(
+          { error: "quota_exceeded", remaining: error.remaining ?? 0 },
+          { status: 402 },
+        );
+      }
+      if (error.code === "episode_not_found") {
+        return NextResponse.json(
+          { error: "episode_not_found" },
+          { status: 404 },
+        );
+      }
+      if (error.code === "profile_not_found") {
+        return NextResponse.json(
+          { error: "profile_not_found" },
+          { status: 404 },
+        );
+      }
+    }
     console.error(
       JSON.stringify({
         level: "error",
         source: "api-clips-jobs",
-        message: "clips insert failed",
-        error: clipErr?.message?.slice(0, 300),
+        message: "transactional submit failed",
       }),
     );
-    // Quota réservé à l'étape 6 mais la row n'existe pas → refund.
-    await refundClipSeconds(admin, user.id, durationSeconds);
-    return NextResponse.json({ error: "insert_failed" }, { status: 500 });
-  }
-  const clipId = clip.id as string;
-
-  // 7b. INSERT jobs (queue). Si CET insert échoue après celui de clips :
-  // refund + clips → failed, sinon la row 'pending' ne serait jamais
-  // drainée et le quota resterait débité (cohérence).
-  const { data: jobRow, error: jobErr } = await supabase
-    .from("jobs")
-    .insert({
-      type: "render",
-      user_id: user.id,
-      episode_id: episodeId,
-      clip_id: clipId,
-      payload: { clip_id: clipId },
-      status: "pending",
-    })
-    .select("id")
-    .single();
-  if (jobErr || !jobRow) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        source: "api-clips-jobs",
-        message: "jobs insert failed after clips insert",
-        clip_id: clipId,
-        error: jobErr?.message?.slice(0, 300),
-      }),
-    );
-    await refundClipSeconds(admin, user.id, durationSeconds);
-    // Best-effort : marque le clip failed pour que la galerie n'affiche
-    // pas un 'pending' fantôme. Client user (RLS clips_update_own) — la row
-    // appartient au user courant, pas besoin du service_role (review L3 E2).
-    await supabase
-      .from("clips")
-      .update({
-        status: "failed",
-        error_message: "enqueue_failed: jobs insert failed",
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", clipId);
     return NextResponse.json({ error: "insert_failed" }, { status: 500 });
   }
 
-  // 8. 202 — le cron process-clips draine la queue (≤ 60 s).
+  // 7. 202 — le cron process-clips draine la queue (≤ 60 s).
   return NextResponse.json(
     {
       data: {
-        clip_id: clipId,
-        job_id: jobRow.id as string,
+        clip_id: submitted.clipId,
+        job_id: submitted.jobId,
         status: "pending",
       },
     },

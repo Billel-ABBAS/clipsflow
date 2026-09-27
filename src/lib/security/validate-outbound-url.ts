@@ -1,18 +1,5 @@
-// ============================================================================
-// validateOutboundUrl — SSRF guard for user-supplied URLs
-// ============================================================================
-// Defense against Server-Side Request Forgery attacks where an attacker
-// tricks our server into fetching internal resources :
-//   - cloud metadata endpoints (169.254.169.254 etc.)
-//   - localhost / loopback (127.0.0.0/8)
-//   - link-local (169.254.0.0/16)
-//   - private RFC1918 ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
-//   - non-HTTPS schemes (file://, gopher://, ftp://)
-//
-// Ported from VidiaFlow src/lib/utils/validate-outbound-url.ts (unchanged
-// logic). The `defaultClipflowAllowedHosts` function is renamed to
-// `defaultClipsAllowedHosts` for ClipsFlow naming consistency.
-// ============================================================================
+import { lookup as nodeLookup } from "node:dns/promises";
+import { isIP } from "node:net";
 
 export class OutboundUrlError extends Error {
   constructor(message: string) {
@@ -23,87 +10,125 @@ export class OutboundUrlError extends Error {
 
 const BLOCKED_HOSTNAMES = new Set([
   "localhost",
-  "0.0.0.0",
-  "169.254.169.254", // AWS / GCP / Azure metadata
+  "metadata",
   "metadata.google.internal",
-  "metadata", // some k8s clusters expose plain "metadata"
 ]);
-
 const BLOCKED_TLD_SUFFIXES = [".internal", ".local", ".localhost"];
 
-/**
- * Returns true if hostname is a private/internal IP or domain.
- * Blocks IPv4 RFC1918 + loopback + link-local + IPv6 ULA + reserved.
- */
-function isBlockedHost(hostname: string): boolean {
-  const stripped =
+function canonicalHostname(hostname: string): string {
+  const unwrapped =
     hostname.startsWith("[") && hostname.endsWith("]")
       ? hostname.slice(1, -1)
       : hostname;
-  const lower = stripped.toLowerCase();
+  return unwrapped.toLowerCase().replace(/\.$/, "");
+}
 
-  if (BLOCKED_HOSTNAMES.has(lower)) return true;
-  if (BLOCKED_TLD_SUFFIXES.some((s) => lower.endsWith(s))) return true;
+function parseIpv4(address: string): number | null {
+  const parts = address.split(".");
+  if (parts.length !== 4) return null;
+  const octets = parts.map((part) => {
+    if (!/^\d{1,3}$/.test(part)) return null;
+    const value = Number(part);
+    return value >= 0 && value <= 255 ? value : null;
+  });
+  if (octets.some((value) => value === null)) return null;
+  return (octets as number[]).reduce(
+    (result, value) => result * 256 + value,
+    0,
+  );
+}
 
-  // IPv4 check
-  const ipv4 = lower.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4) {
-    const oct1 = parseInt(ipv4[1]!, 10);
-    const oct2 = parseInt(ipv4[2]!, 10);
+function ipv4InCidr(value: number, base: string, prefix: number): boolean {
+  const baseValue = parseIpv4(base);
+  if (baseValue === null) return false;
+  const shift = 32 - prefix;
+  return Math.floor(value / 2 ** shift) === Math.floor(baseValue / 2 ** shift);
+}
 
-    if (oct1 === 127) return true; // 127.0.0.0/8 loopback
-    if (oct1 === 10) return true; // 10.0.0.0/8 RFC1918
-    if (oct1 === 172 && oct2 >= 16 && oct2 <= 31) return true; // 172.16/12
-    if (oct1 === 192 && oct2 === 168) return true; // 192.168/16
-    if (oct1 === 169 && oct2 === 254) return true; // link-local
-    if (oct1 === 0) return true; // reserved
-    if (oct1 === 100 && oct2 >= 64 && oct2 <= 127) return true; // CGNAT
-    if (oct1 >= 224 && oct1 <= 239) return true; // multicast
-    if (oct1 >= 240) return true; // reserved
+function isPublicIpv4(address: string): boolean {
+  const value = parseIpv4(address);
+  if (value === null) return false;
+  const blockedCidrs: Array<[string, number]> = [
+    ["0.0.0.0", 8],
+    ["10.0.0.0", 8],
+    ["100.64.0.0", 10],
+    ["127.0.0.0", 8],
+    ["169.254.0.0", 16],
+    ["172.16.0.0", 12],
+    ["192.0.0.0", 24],
+    ["192.0.2.0", 24],
+    ["192.168.0.0", 16],
+    ["198.18.0.0", 15],
+    ["198.51.100.0", 24],
+    ["203.0.113.0", 24],
+    ["224.0.0.0", 4],
+    ["240.0.0.0", 4],
+  ];
+  return !blockedCidrs.some(([base, prefix]) =>
+    ipv4InCidr(value, base, prefix),
+  );
+}
 
-    return false;
-  }
+function parseIpv6(address: string): number[] | null {
+  const withoutZone = address.split("%", 1)[0] ?? address;
+  if (withoutZone.includes(".")) return null;
+  if ((withoutZone.match(/::/g) ?? []).length > 1) return null;
 
-  // IPv6 — block loopback, ULA, link-local
-  if (lower === "::1" || lower === "::") return true;
-  if (lower.startsWith("fc") || lower.startsWith("fd")) return true;
+  const [leftRaw, rightRaw] = withoutZone.split("::");
+  const left = leftRaw ? leftRaw.split(":") : [];
+  const right = rightRaw ? rightRaw.split(":") : [];
+  const hasCompression = withoutZone.includes("::");
   if (
-    lower.startsWith("fe8") ||
-    lower.startsWith("fe9") ||
-    lower.startsWith("fea") ||
-    lower.startsWith("feb")
+    (!hasCompression && left.length !== 8) ||
+    left.length + right.length > 8
   ) {
-    return true;
+    return null;
   }
-  // IPv4-mapped IPv6 (::ffff:127.0.0.1 etc.)
-  if (lower.startsWith("::ffff:") || lower.startsWith("::ffff.")) {
-    const tail = lower.slice(7);
-    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(tail)) {
-      return isBlockedHost(tail);
-    }
-    return true;
+  const missing = hasCompression ? 8 - left.length - right.length : 0;
+  if (hasCompression && missing < 1) return null;
+  const groups = [...left, ...Array<string>(missing).fill("0"), ...right];
+  if (
+    groups.length !== 8 ||
+    groups.some((group) => !/^[0-9a-f]{1,4}$/i.test(group))
+  ) {
+    return null;
   }
 
+  return groups.map((group) => Number.parseInt(group, 16));
+}
+
+function isPublicIpv6(address: string): boolean {
+  const groups = parseIpv6(address);
+  if (groups === null) return false;
+  // Fail closed: only ordinary global-unicast 2000::/3 is routable here.
+  if ((groups[0]! & 0xe000) !== 0x2000) return false;
+
+  if (groups[0] === 0x2001 && groups[1] === 0x0db8) return false;
+  // Teredo and 6to4 can tunnel otherwise blocked IPv4 destinations.
+  if (groups[0] === 0x2001 && groups[1] === 0) return false;
+  if (groups[0] === 0x2002) return false;
+  return true;
+}
+
+export function isPublicIpAddress(address: string): boolean {
+  const family = isIP(address);
+  if (family === 4) return isPublicIpv4(address);
+  if (family === 6) return isPublicIpv6(address);
   return false;
 }
 
+function isBlockedHostname(hostname: string): boolean {
+  const host = canonicalHostname(hostname);
+  if (BLOCKED_HOSTNAMES.has(host)) return true;
+  if (BLOCKED_TLD_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true;
+  return isIP(host) !== 0 && !isPublicIpAddress(host);
+}
+
 export interface ValidateOutboundUrlOptions {
-  /**
-   * If provided, the hostname MUST match one of these (or a subdomain
-   * thereof). When omitted, any public hostname is allowed.
-   */
+  /** Exact host or subdomain suffixes accepted for this request. */
   allowedHosts?: string[];
 }
 
-/**
- * Validates an outbound URL. Throws OutboundUrlError if blocked.
- * Returns the parsed URL on success.
- *
- * Pre-checks (always enforced) :
- *   - Must parse as a URL.
- *   - Protocol must be https:.
- *   - Hostname must NOT be in the private/loopback/link-local block list.
- */
 export function validateOutboundUrl(
   raw: string,
   options: ValidateOutboundUrlOptions = {},
@@ -112,55 +137,90 @@ export function validateOutboundUrl(
   try {
     url = new URL(raw);
   } catch {
-    throw new OutboundUrlError(`Invalid URL : ${raw.slice(0, 100)}`);
+    throw new OutboundUrlError("Invalid outbound URL");
   }
 
   if (url.protocol !== "https:") {
-    throw new OutboundUrlError(
-      `Non-HTTPS URL blocked : ${url.protocol}//${url.hostname}`,
-    );
+    throw new OutboundUrlError("Only HTTPS outbound URLs are allowed");
+  }
+  if (url.username || url.password) {
+    throw new OutboundUrlError("URL credentials are forbidden");
+  }
+  if (url.port) {
+    throw new OutboundUrlError("Non-standard HTTPS ports are forbidden");
+  }
+  if (isBlockedHostname(url.hostname)) {
+    throw new OutboundUrlError("Private or reserved destination blocked");
   }
 
-  if (isBlockedHost(url.hostname)) {
-    throw new OutboundUrlError(`Blocked hostname : ${url.hostname}`);
-  }
-
-  if (options.allowedHosts && options.allowedHosts.length > 0) {
-    const host = url.hostname.toLowerCase();
-    const ok = options.allowedHosts.some((entry) => {
-      const e = entry.toLowerCase();
-      return host === e || host.endsWith(`.${e}`);
-    });
-    if (!ok) {
-      throw new OutboundUrlError(
-        `Hostname ${url.hostname} not in allowlist : ${options.allowedHosts.join(", ")}`,
-      );
+  if (options.allowedHosts !== undefined) {
+    const host = canonicalHostname(url.hostname);
+    const allowed = options.allowedHosts
+      .map(canonicalHostname)
+      .filter(Boolean)
+      .some((entry) => host === entry || host.endsWith(`.${entry}`));
+    if (!allowed) {
+      throw new OutboundUrlError("Destination is outside the allowlist");
     }
   }
 
   return url;
 }
 
-/**
- * Returns the list of host suffixes considered "Supabase Storage" for
- * the purposes of the ClipsFlow clips source-video guard. Includes the
- * project's own Supabase URL hostname when the env var is set, plus
- * generic Supabase host suffixes used by signed-URL downloads.
- */
-export function defaultClipsAllowedHosts(): string[] {
-  const hosts: string[] = ["supabase.co", "supabase.in"];
+export interface DnsAnswer {
+  address: string;
+  family: number;
+}
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (supabaseUrl) {
-    try {
-      const u = new URL(supabaseUrl);
-      if (u.hostname && !hosts.includes(u.hostname)) {
-        hosts.push(u.hostname);
-      }
-    } catch {
-      // Env var malformed — fall back to generic suffixes.
+export type DnsLookup = (hostname: string) => Promise<readonly DnsAnswer[]>;
+
+const defaultLookup: DnsLookup = async (hostname) =>
+  nodeLookup(hostname, { all: true, verbatim: true });
+
+/** Resolve every A/AAAA answer and fail if any target is non-public. */
+export async function assertPublicDns(
+  url: URL,
+  lookup: DnsLookup = defaultLookup,
+): Promise<void> {
+  const hostname = canonicalHostname(url.hostname);
+  if (isIP(hostname)) {
+    if (!isPublicIpAddress(hostname)) {
+      throw new OutboundUrlError("Private or reserved destination blocked");
     }
+    return;
   }
 
-  return hosts;
+  let answers: readonly DnsAnswer[];
+  try {
+    answers = await lookup(hostname);
+  } catch {
+    throw new OutboundUrlError("DNS resolution failed");
+  }
+  if (
+    answers.length === 0 ||
+    answers.some((answer) => !isPublicIpAddress(answer.address))
+  ) {
+    throw new OutboundUrlError("DNS resolved to a private or reserved address");
+  }
+}
+
+/** Return only the exact configured ClipsFlow Supabase project hostname. */
+export function defaultClipsAllowedHosts(): string[] {
+  const raw = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!raw) return [];
+  try {
+    const url = new URL(raw);
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.port ||
+      isBlockedHostname(url.hostname)
+    ) {
+      return [];
+    }
+    return [canonicalHostname(url.hostname)];
+  } catch {
+    return [];
+  }
 }

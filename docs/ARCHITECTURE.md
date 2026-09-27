@@ -1,72 +1,74 @@
-# Architecture — PolyCast
+# Architecture de ClipsFlow
 
-> Document vivant. Phase 0 : fondations seulement. Mis à jour à chaque phase.
+État de référence : 16 août 2026. Ce document décrit l'architecture réellement implémentée après le durcissement P0.
 
 ## Vue d'ensemble
 
-```
-Next.js 16.2 App Router (Vercel)
-├── src/proxy.ts                  # ⚠️ Next 16 : remplace middleware.ts (déprécié)
-│     1. next-intl  → normalise /pricing → /en/pricing (localePrefix: always)
-│     2. Supabase   → refresh session, cookies layered SUR la réponse intl
-├── src/app/[locale]/             # 2 locales Phase 0 : en (défaut), fr
-│   ├── layout.tsx                # <html lang> + NextIntlClientProvider
-│   └── page.tsx                  # home placeholder (hero + 3 features)
-├── src/app/layout.tsx            # pass-through (pattern VidiaFlow, prouvé sur 16.2)
-├── src/i18n/                     # routing / navigation / request / messages
-├── src/lib/supabase/             # client (browser) · server (RSC) · middleware (proxy)
-└── supabase/migrations/          # 0001_init.sql = profiles + RLS + trigger
-```
-
-## Décisions structurantes
-
-| #   | Décision                                                       | Pourquoi                                                                                      | Alternative écartée                                                 |
-| --- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| 1   | `src/proxy.ts` (convention Next 16)                            | `middleware.ts` est déprécié dans Next 16 (docs embarquées)                                   | Garder middleware.ts (legacy dès J1)                                |
-| 2   | Cookies Supabase layerés SUR la réponse next-intl              | Écraser la réponse intl casse `useLocale()` (incident VidiaFlow PR #43)                       | 2 réponses fusionnées à la main                                     |
-| 3   | Clients Supabase avec placeholders + proxy no-op sans env vars | Projet Supabase pas encore créé ; build/dev doivent rester verts                              | Crash au boot tant que les keys manquent                            |
-| 4   | shadcn v4 primitives **base-ui**, thème neutre                 | Megaprompt : design neutre, pas de noir-studio ; base-ui = choix shadcn v4 actuel             | Radix (ancienne génération)                                         |
-| 5   | 2 locales (en/fr) Phase 0, extension P3                        | Chaque locale déclarée sans bundle = erreur runtime                                           | Déclarer 6 locales avec bundles vides                               |
-| 6   | pnpm + `pnpm-workspace.yaml > allowBuilds`                     | pnpm ≥10 bloque les postinstall par défaut (supply chain) ; allowlist explicite de 6 packages | `pnpm.onlyBuiltDependencies` dans package.json (ignoré par pnpm 11) |
-| 7   | Vitest (environment node) + alias `@`                          | Megaprompt impose Vitest ; tests colocalisés `src/**/*.test.ts`                               | Jest (plus lourd, double config TS)                                 |
-| 8   | Husky pre-commit : ggshield gate gracieux → durcissable        | ggshield pas encore authentifié (action founder) ; le hook devient hard gate dès l'auth       | Hook strict immédiat = tous les commits bloqués                     |
-
-## Modèle de données (Phase 0)
-
-`profiles` (id FK auth.users, email, full_name, locale, timestamps) — RLS own-row SELECT/UPDATE, INSERT via trigger `handle_new_user` (security definer, search_path pinné), `updated_at` via trigger.
-
-Schéma cible Phase 1 (épisodes/clips/jobs) : voir `docs/CLIPFLOW_EXTRACTION_MAP.md` section 4.
-
-## Pipeline cible (rappel produit)
-
-- **P1 — Clips** : upload/URL → Whisper (Groq) → ASS/libass burn ffmpeg → storage → galerie realtime
-- **P2 — Dubbing** : ASR → segmentation → traduction length-controlled (Claude) → voice clone (consent gate) → synthèse → alignement `atempo` 0.92–1.08 → loudnorm −16 LUFS → SRT/VTT → disclosure Art. 50
-- **P3 — Monétisation** : Stripe 3 tiers + trial unique watermarké + Upstash rate limit
-- **P4 — VoxCPM2 self-host** : verrou PMF (50+ payants OU $5k MRR), rollout par flag, fallback bridge permanent
-
-## Interface voice provider (P2, pour mémoire)
-
-```typescript
-export interface VoiceProvider {
-  cloneVoice(
-    refAudio: Buffer,
-    refTranscript: string,
-    lang: string,
-  ): Promise<VoiceCloneResult>;
-  synthesize(
-    text: string,
-    voiceId: string,
-    lang: string,
-    opts?: { speed?: number },
-  ): Promise<SynthesisResult>;
-  estimateCost(textLength: number, lang: string): number;
-}
-// impls : fal-voxcpm.ts | elevenlabs.ts | index.ts (factory par env VOICE_PROVIDER)
+```mermaid
+flowchart LR
+  U["Navigateur"] --> N["Next.js 16 / React 19"]
+  N --> A["Routes authentifiées"]
+  A --> R["RPC serveur Supabase"]
+  R --> P[("Postgres + RLS forcée")]
+  A --> S["Stockage Supabase privé"]
+  C["Cron authentifié"] --> J["Pipeline FFmpeg / IA"]
+  J --> P
+  J --> S
+  J --> E["Services externes via safeFetch"]
+  T["Stripe"] --> W["Webhook signé et idempotent"]
+  W --> P
 ```
 
-## Sécurité
+Le navigateur peut lire les ressources de l'utilisateur selon les politiques RLS. Les mutations sensibles du cycle de vie des clips, jobs, quotas, limites de débit et abonnements sont réservées au serveur et passent par des fonctions Postgres atomiques ou par le client Supabase de service.
 
-- ggshield sur chaque commit (hook husky) ; scan path complet à chaque gate
-- RLS sur toute table user ; `SUPABASE_SERVICE_ROLE_KEY` server-only
-- VidiaFlow en deny mécanique (`.claude/settings.json`)
-- Reviewer `securite` (sub-agent) obligatoire avant chaque merge → verdict PASS requis
+## Frontières de confiance
+
+| Zone                  | Autorité admise                      | Contrôles obligatoires                                              |
+| --------------------- | ------------------------------------ | ------------------------------------------------------------------- |
+| Navigateur            | Session Supabase de l'utilisateur    | RLS forcée, validations Zod, aucune clé de service                  |
+| Routes Next.js        | Cookie utilisateur + logique serveur | Authentification, propriété, quota, rate limit distribué            |
+| Cron de traitement    | Secret de cron                       | Comparaison du secret, revendication atomique des jobs              |
+| Supabase service role | Serveur uniquement                   | RPC dédiées, privilèges minimaux, transactions atomiques            |
+| Webhook Stripe        | Signature Stripe valide              | Corps brut, idempotence, reprise après échec, ordre des événements  |
+| Sorties réseau        | Hôtes explicitement autorisés        | HTTPS, port 443, DNS public, redirections revalidées, délai maximal |
+
+`NEXT_PUBLIC_*` est public par définition. `SUPABASE_SERVICE_ROLE_KEY`, les clés privées des fournisseurs, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` et `CRON_SECRET` ne doivent jamais atteindre le navigateur, les journaux, les URLs ou le dépôt Git.
+
+## Données et invariants
+
+Tables métier principales :
+
+- `profiles` : identité applicative, plan, quota et état Stripe ordonné ;
+- `episodes` : source appartenant à un utilisateur ;
+- `clips` : configuration et résultat de rendu ;
+- `jobs` : file de traitement et informations d'échec ;
+- `api_rate_limits` : fenêtres de limitation partagées entre instances ;
+- `stripe_webhook_events` : revendication, réussite et échec des événements Stripe.
+
+Les tables utilisateur ont la RLS activée et forcée. Les rôles de navigateur ne peuvent pas créer ou altérer directement les états internes du pipeline. La migration P0 ajoute notamment les RPC serveur suivantes :
+
+- `clips_submit_job` : valide propriété et quota, puis crée le clip et son job dans une transaction ;
+- `consume_api_rate_limit` : consomme atomiquement une unité dans une fenêtre ;
+- `stripe_claim_webhook_event`, `stripe_complete_webhook_event`, `stripe_fail_webhook_event` : rendent le traitement du webhook relançable et observable ;
+- `stripe_apply_profile_event` : applique un état d'abonnement uniquement si l'événement est au moins aussi récent que le précédent.
+
+## Pipeline de clip
+
+1. L'utilisateur initialise l'upload ; le serveur crée l'épisode via le client de service.
+2. L'utilisateur soumet un job ; `clips_submit_job` applique propriété, quota et atomicité.
+3. Le cron revendique un job en attente et exécute transcription, traduction et rendu.
+4. Toute ressource distante passe par `safeFetch`, y compris les redirections et la résolution DNS.
+5. Un plan gratuit ou inconnu doit recevoir le watermark ClipsFlow. Un échec de watermark fait échouer le job : il n'existe plus de chemin « fail-open » sans marque.
+6. La réussite écrit les artefacts privés et finalise le job. L'échec rembourse le quota selon la logique du pipeline.
+
+## Facturation
+
+Checkout et portail n'acceptent que l'origine applicative configurée. En production, `NEXT_PUBLIC_APP_URL` doit être une URL HTTPS explicite ; le `Host` fourni par la requête n'est pas une source de confiance.
+
+Les créations Stripe utilisent des clés d'idempotence stables. Le webhook vérifie la signature, revendique l'événement, traite ou marque l'échec, puis applique les états par ordre de création Stripe. Un événement échoué reste relançable ; un événement déjà terminé est ignoré.
+
+## Déploiement
+
+La migration P0 doit être appliquée avant le code applicatif qui appelle ses RPC. La cible distante ne doit jamais être déduite d'une session CLI ou MCP existante : sa référence doit correspondre au nom d'hôte de `NEXT_PUBLIC_SUPABASE_URL` de l'environnement prévu.
+
+Les contrôles locaux de référence sont documentés dans [phase-1-smoke-test.md](./phase-1-smoke-test.md). La procédure de production et le retour arrière sont dans [OPERATIONS.md](./OPERATIONS.md).
