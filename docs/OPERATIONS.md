@@ -65,7 +65,8 @@ les migrations initiales pourraient être rejouées sur les tables existantes.
 Le workflow manuel [supabase-migrations.yml](../.github/workflows/supabase-migrations.yml)
 offre `inspect` et `apply`, avec un dry-run et un refus explicite si une
 migration initiale reste en attente. Il doit d'abord être présent sur la branche
-par défaut. Chaque environnement GitHub (`staging`, `production`) doit avoir
+par défaut. Chaque environnement GitHub (`supabase-staging`,
+`supabase-production`) doit avoir
 ses propres secrets `SUPABASE_ACCESS_TOKEN` (jeton Supabase à portée limitée)
 et `SUPABASE_DB_PASSWORD`. Ne pas copier les clés `service_role` dans ces
 secrets : elles servent aux API et au worker, pas à la CLI. La production est
