@@ -15,7 +15,7 @@
 
 ### Core produit
 
-- **Studio 4 étapes** : source (upload ≤500 MB / URL / épisode) → segment (≤3 min) → style (15 prédéfinis) → personnalisation
+- **Studio 4 étapes** : source (upload ≤200 Mio / URL HTTPS directe / épisode) → segment (≤3 min) → style (15 prédéfinis) → personnalisation
 - **12 presets** platform-specific (TikTok, Hormozi, LinkedIn, etc.)
 - **Pipeline** : Whisper transcription → OpenAI traduction cues → ffmpeg burn (sous-titres animés) → smart crop → galerie realtime
 - **Overlays** : title card, bandeau intervenant, stat callout, CTA outro
