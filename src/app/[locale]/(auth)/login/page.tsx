@@ -91,6 +91,9 @@ export default function LoginPage() {
           variant="outline"
           className="mb-4 w-full"
           onClick={() => {
+            // OAuth must use a full-page navigation so the API route can set
+            // cookies and redirect the browser to Google's authorization page.
+            // eslint-disable-next-line @next/next/no-location-assign-relative-destination
             window.location.href = "/api/auth/google";
           }}
         >
@@ -126,7 +129,7 @@ export default function LoginPage() {
             <span className="w-full border-t" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">
+            <span className="bg-card text-muted-foreground px-2">
               Or continue with email
             </span>
           </div>
