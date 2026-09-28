@@ -10,7 +10,7 @@
 // ============================================================================
 
 import { useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -21,12 +21,14 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useRouter } from "@/i18n/navigation";
+import { getPasswordRecoveryRedirectUrl } from "@/lib/auth/password-recovery";
 import { createClient } from "@/lib/supabase/client";
 
-type Mode = "signin" | "signup";
+type Mode = "signin" | "signup" | "recovery";
 
 export default function LoginPage() {
   const t = useTranslations("login");
+  const locale = useLocale();
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
@@ -42,6 +44,24 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const supabase = createClient();
+      if (mode === "recovery") {
+        const { error: err } = await supabase.auth.resetPasswordForEmail(
+          email,
+          {
+            redirectTo: getPasswordRecoveryRedirectUrl(
+              process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin,
+              locale,
+            ),
+          },
+        );
+        if (err) {
+          setError(t("recovery_error"));
+          return;
+        }
+        setInfo(t("recovery_sent"));
+        return;
+      }
+
       if (mode === "signin") {
         const { error: err } = await supabase.auth.signInWithPassword({
           email,
@@ -81,8 +101,12 @@ export default function LoginPage() {
     <main className="flex min-h-full flex-1 items-center justify-center px-4 py-16">
       <Card className="w-full max-w-sm p-6">
         <CardHeader className="px-0 pt-0">
-          <CardTitle>{t("title")}</CardTitle>
-          <CardDescription>{t("subtitle")}</CardDescription>
+          <CardTitle>
+            {mode === "recovery" ? t("recovery_title") : t("title")}
+          </CardTitle>
+          <CardDescription>
+            {mode === "recovery" ? t("recovery_description") : t("subtitle")}
+          </CardDescription>
         </CardHeader>
 
         {/* Google OAuth */}
@@ -90,6 +114,7 @@ export default function LoginPage() {
           type="button"
           variant="outline"
           className="mb-4 w-full"
+          hidden={mode === "recovery"}
           onClick={() => {
             // OAuth must use a full-page navigation so the API route can set
             // cookies and redirect the browser to Google's authorization page.
@@ -124,7 +149,7 @@ export default function LoginPage() {
           Continue with Google
         </Button>
 
-        <div className="relative mb-4">
+        <div className="relative mb-4" hidden={mode === "recovery"}>
           <div className="absolute inset-0 flex items-center">
             <span className="w-full border-t" />
           </div>
@@ -153,7 +178,7 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5" hidden={mode === "recovery"}>
             <label
               htmlFor="login-password"
               className="text-foreground text-sm font-medium"
@@ -166,12 +191,26 @@ export default function LoginPage() {
               autoComplete={
                 mode === "signin" ? "current-password" : "new-password"
               }
-              required
+              required={mode !== "recovery"}
+              disabled={mode === "recovery"}
               minLength={6}
               placeholder={t("password_placeholder")}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
+            {mode === "signin" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("recovery");
+                  setError(null);
+                  setInfo(null);
+                }}
+                className="text-muted-foreground text-xs underline-offset-4 hover:underline"
+              >
+                {t("forgot_password")}
+              </button>
+            )}
           </div>
 
           {error && (
@@ -188,9 +227,11 @@ export default function LoginPage() {
           <Button type="submit" className="w-full" disabled={loading}>
             {loading
               ? t("loading")
-              : mode === "signin"
-                ? t("submit_signin")
-                : t("submit_signup")}
+              : mode === "recovery"
+                ? t("recovery_submit")
+                : mode === "signin"
+                  ? t("submit_signin")
+                  : t("submit_signup")}
           </Button>
 
           <button
@@ -202,7 +243,7 @@ export default function LoginPage() {
             }}
             className="text-muted-foreground w-full text-center text-xs underline-offset-4 hover:underline"
           >
-            {mode === "signin" ? t("toggle_to_signup") : t("toggle_to_signin")}
+            {mode === "signin" ? t("toggle_to_signup") : t("back_to_login")}
           </button>
 
           <p className="text-muted-foreground/70 text-center text-[10px]">
