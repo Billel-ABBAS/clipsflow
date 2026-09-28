@@ -113,6 +113,14 @@ export async function GET(request: Request): Promise<Response> {
   const unauth = guardCronRequest(request, "process-clips");
   if (unauth) return unauth;
 
+  // Cut-over guard: once the Railway worker has passed staging and this
+  // variable is set in Vercel, its existing cron invocation becomes a cheap
+  // no-op. This prevents two schedulers from claiming the same queue while a
+  // follow-up deployment removes the Vercel schedule itself.
+  if (process.env.CLIPS_WORKER_BACKEND === "railway") {
+    return NextResponse.json({ ok: true, skipped: "railway_worker_active" });
+  }
+
   const admin = createAdminClient();
   const nowIso = () => new Date().toISOString();
 

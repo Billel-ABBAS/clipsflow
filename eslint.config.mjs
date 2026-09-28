@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Artefacts de coverage (déjà dans .prettierignore) :
     "coverage/**",
+    // Runtime local Supabase/Docker généré par `supabase start` :
+    "supabase/.temp/**",
   ]),
 ]);
 

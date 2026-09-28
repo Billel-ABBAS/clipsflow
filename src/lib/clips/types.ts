@@ -92,6 +92,12 @@ export type QueueJob = {
   status: QueueJobStatus;
   attempt_count: number;
   claimed_at: string | null;
+  /** Fencing token granted by the Railway worker claim RPC. */
+  lease_token: string | null;
+  /** UTC expiry of the worker's renewable claim. */
+  lease_expires_at: string | null;
+  /** Timestamp of the terminal quota refund, if one was applied. */
+  refund_applied_at: string | null;
   error_message: string | null;
   created_at: string;
   completed_at: string | null;

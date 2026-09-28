@@ -6,8 +6,9 @@ import { NextResponse } from "next/server";
 import { getStripe } from "@/lib/billing/stripe-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { getTrustedAppUrl } from "@/lib/http/trusted-app-url";
 
-export async function GET(request: Request) {
+export async function GET() {
   const supabase = await createClient();
   const {
     data: { user },
@@ -24,17 +25,22 @@ export async function GET(request: Request) {
     .single();
 
   if (error || !profile?.stripe_customer_id) {
-    return NextResponse.json(
-      { error: "no_subscription" },
-      { status: 404 },
-    );
+    return NextResponse.json({ error: "no_subscription" }, { status: 404 });
   }
 
   const stripe = getStripe();
-  const origin = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
+  let appUrl: URL;
+  try {
+    appUrl = getTrustedAppUrl();
+  } catch {
+    return NextResponse.json(
+      { error: "app_url_not_configured" },
+      { status: 503 },
+    );
+  }
   const session = await stripe.billingPortal.sessions.create({
     customer: profile.stripe_customer_id,
-    return_url: `${origin}/clips`,
+    return_url: new URL("/clips", appUrl).href,
   });
 
   return NextResponse.redirect(session.url);
