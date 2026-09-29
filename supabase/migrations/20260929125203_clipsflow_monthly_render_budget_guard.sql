@@ -5,7 +5,11 @@
 -- The cap is opt-in and starts disabled.  It is a conservative estimate of
 -- clip COGS, not an invoice or a replacement for Railway usage monitoring.
 
-CREATE TABLE public.clips_budget_guard (
+-- This may be applied manually to an already aligned staging database before
+-- its Supabase CLI migration history is repaired.  Keep the DDL replay-safe:
+-- the table shape is still asserted by the migration tests and every mutable
+-- object below is replaced or granted explicitly.
+CREATE TABLE IF NOT EXISTS public.clips_budget_guard (
   singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
   enabled boolean NOT NULL DEFAULT false,
   monthly_budget_usd numeric(10, 4),
@@ -24,11 +28,11 @@ INSERT INTO public.clips_budget_guard (singleton, enabled, monthly_budget_usd)
 VALUES (true, false, NULL)
 ON CONFLICT (singleton) DO NOTHING;
 
-CREATE INDEX idx_clips_completed_monthly_cost
+CREATE INDEX IF NOT EXISTS idx_clips_completed_monthly_cost
   ON public.clips (completed_at)
   WHERE status = 'completed' AND cost_usd IS NOT NULL;
 
-CREATE INDEX idx_jobs_render_budget_active
+CREATE INDEX IF NOT EXISTS idx_jobs_render_budget_active
   ON public.jobs (type, status)
   WHERE type = 'render' AND status IN ('pending', 'processing');
 

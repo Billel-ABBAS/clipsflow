@@ -12,7 +12,9 @@ const migration = readFileSync(
 
 describe("migration garde de budget ClipsFlow", () => {
   it("est désactivée par défaut et isolée des rôles navigateur", () => {
-    expect(migration).toMatch(/CREATE TABLE public\.clips_budget_guard/i);
+    expect(migration).toMatch(
+      /CREATE TABLE IF NOT EXISTS public\.clips_budget_guard/i,
+    );
     expect(migration).toMatch(
       /ALTER TABLE public\.clips_budget_guard ENABLE ROW LEVEL SECURITY/i,
     );
