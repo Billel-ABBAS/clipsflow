@@ -29,6 +29,11 @@ le suivant si le précédent est encore actif.
   travail lorsqu'il est désactivé.
 - `CLIPS_AI_BUDGET_AUTHORIZED` est `false` par défaut : aucun média n'est
   envoyé à Groq ou OpenAI tant qu'un budget n'a pas été approuvé.
+- La table privée `clips_budget_guard` est désactivée par défaut. Lorsqu'elle
+  est activée avec un plafond chiffré après les mesures, `clips_submit_job`
+  réserve de façon transactionnelle le coût estimé de chaque rendu. À plafond
+  atteint, seuls les nouveaux rendus ClipsFlow reçoivent une indisponibilité
+  temporaire : aucun projet Railway voisin n'est affecté.
 
 ## Préparation d'un environnement de test autorisé
 
@@ -72,10 +77,15 @@ le suivant si le précédent est encore actif.
 3. Vérifier MP4, VTT, transcription, sous-titres et watermark du forfait dans
    la galerie. Tester interruption/reprise, URL lente, fichier trop gros,
    timeout FFmpeg et nettoyage des fichiers temporaires.
-4. Pour la production seulement après ces preuves : activer
+4. Mesurer le coût Railway d'un lancement vide, puis d'un rendu représentatif,
+   et seulement ensuite régler puis activer `clips_budget_guard`. Le plafond
+   est exprimé en USD car `clips.cost_usd` est dans cette unité ; ne pas le
+   présenter comme une facture Railway ni utiliser un coupe-circuit global du
+   workspace.
+5. Pour la production seulement après ces preuves : activer
    `CLIPS_WORKER_ENABLED=true` côté site, déployer le garde de coupure, définir
    `CLIPS_WORKER_BACKEND=railway` côté Vercel, puis supprimer le cron Vercel
    dans un déploiement suivant. Cela évite tout double drain.
-5. Les trois anciens services Railway sont déjà supprimés comme indiqué plus
+6. Les trois anciens services Railway sont déjà supprimés comme indiqué plus
    haut. Calpyra-AI et Cal-Halal restent hors de ce projet et ne doivent pas
    être modifiés.

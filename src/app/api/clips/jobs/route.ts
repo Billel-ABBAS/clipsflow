@@ -303,6 +303,7 @@ export async function POST(request: Request): Promise<Response> {
 
   // 4. Résolution de l'épisode source.
   let episodeId: string;
+  let createdSourceEpisodeId: string | null = null;
   if (input.source) {
     // SSRF guard sur l'URL externe AVANT toute persistance — hosts
     // privés / loopback / metadata / non-HTTPS rejetés.
@@ -345,6 +346,7 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
     episodeId = episode.id as string;
+    createdSourceEpisodeId = episodeId;
   } else {
     // Épisode existant — client user (RLS scope ownership) + .eq user_id
     // explicite (defence-in-depth si la policy évolue).
@@ -386,6 +388,31 @@ export async function POST(request: Request): Promise<Response> {
     });
   } catch (error) {
     if (error instanceof SubmitClipJobError) {
+      // A URL-source episode is created immediately before the transactional
+      // submission RPC.  When that RPC rejects before creating any clip/job
+      // (quota or operational budget), remove only this request's new source
+      // row so a blocked render does not accumulate orphaned episodes.
+      if (
+        createdSourceEpisodeId &&
+        (error.code === "quota_exceeded" ||
+          error.code === "budget_exceeded" ||
+          error.code === "budget_unconfigured")
+      ) {
+        const { error: cleanupError } = await admin
+          .from("episodes")
+          .delete()
+          .eq("id", createdSourceEpisodeId)
+          .eq("user_id", user.id);
+        if (cleanupError) {
+          console.error(
+            JSON.stringify({
+              level: "error",
+              source: "api-clips-jobs",
+              message: "rejected source episode cleanup failed",
+            }),
+          );
+        }
+      }
       if (error.code === "quota_exceeded") {
         return NextResponse.json(
           { error: "quota_exceeded", remaining: error.remaining ?? 0 },
@@ -396,6 +423,21 @@ export async function POST(request: Request): Promise<Response> {
         return NextResponse.json(
           { error: "episode_not_found" },
           { status: 404 },
+        );
+      }
+      if (
+        error.code === "budget_exceeded" ||
+        error.code === "budget_unconfigured"
+      ) {
+        return NextResponse.json(
+          {
+            error: "rendering_temporarily_unavailable",
+            retry_after_seconds: 300,
+          },
+          {
+            status: 503,
+            headers: { "Retry-After": "300" },
+          },
         );
       }
       if (error.code === "profile_not_found") {

@@ -75,6 +75,42 @@ describe("submitClipJob", () => {
     });
   });
 
+  it("expose un refus de budget sans en révéler le détail de base", async () => {
+    const client = rpcClient({
+      data: [
+        {
+          clip_id: null,
+          job_id: null,
+          remaining_seconds: 0,
+          error_code: "budget_exceeded",
+        },
+      ],
+      error: null,
+    });
+
+    await expect(submitClipJob(client, validInput)).rejects.toMatchObject({
+      code: "budget_exceeded",
+    });
+  });
+
+  it("traite une configuration de budget invalide comme un refus contrôlé", async () => {
+    const client = rpcClient({
+      data: [
+        {
+          clip_id: null,
+          job_id: null,
+          remaining_seconds: 0,
+          error_code: "budget_unconfigured",
+        },
+      ],
+      error: null,
+    });
+
+    await expect(submitClipJob(client, validInput)).rejects.toMatchObject({
+      code: "budget_unconfigured",
+    });
+  });
+
   it("convertit une erreur PostgREST en erreur contrôlée sans fuite de détail", async () => {
     const client = rpcClient({
       data: null,

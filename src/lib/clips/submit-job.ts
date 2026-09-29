@@ -19,6 +19,8 @@ export interface SubmitClipJobResult {
 }
 
 export type SubmitClipJobErrorCode =
+  | "budget_exceeded"
+  | "budget_unconfigured"
   | "episode_not_found"
   | "profile_not_found"
   | "quota_exceeded"
@@ -77,6 +79,12 @@ export async function submitClipJob(
     typeof row.remaining_seconds === "number" ? row.remaining_seconds : 0;
   if (row.error_code === "quota_exceeded") {
     throw new SubmitClipJobError("quota_exceeded", remaining);
+  }
+  if (row.error_code === "budget_exceeded") {
+    throw new SubmitClipJobError("budget_exceeded");
+  }
+  if (row.error_code === "budget_unconfigured") {
+    throw new SubmitClipJobError("budget_unconfigured");
   }
   if (row.error_code === "profile_not_found") {
     throw new SubmitClipJobError("profile_not_found");

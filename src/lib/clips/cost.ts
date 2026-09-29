@@ -6,8 +6,8 @@
 // monthly cost per user and plan.
 //
 // **Why an estimate, not a measurement** : the actual COGS is split
-// across 3 vendors (Groq Whisper API call, Vercel lambda compute,
-// Supabase Storage egress + storage). Vercel + Supabase don't expose
+// across 3 vendors (Groq Whisper API call, Railway worker compute,
+// Supabase Storage egress + storage). Railway + Supabase don't expose
 // per-request cost in real time — billing is monthly aggregated.
 // So we compute a deterministic estimate based on durationSeconds.
 // Order of magnitude correct (±20 %) ; good enough for margin tracking
@@ -19,7 +19,8 @@
 //   - Groq Whisper Large v3 Turbo : $0.04 / hour audio = $0.0000111 / s
 //   - Supabase Storage : $0.021 / GB-month (Pro plan beyond 100 GB free)
 //   - Supabase egress : $0.09 / GB (Pro plan beyond 250 GB free)
-//   - Vercel function compute : amortized $0.000005 / s on 2-vCPU lambda
+//   - Railway worker compute : conservative legacy amortization of
+//     $0.000005 / s, to be recalibrated after measured Railway usage
 //
 // Ported from VidiaFlow src/lib/clipflow/cost.ts.
 // Adaptation : mono-resolution 1080p — the `ResolutionTier` type and the
