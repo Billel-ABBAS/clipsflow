@@ -73,6 +73,7 @@ describe("translateCues", () => {
       expect.objectContaining({
         model: "gpt-5-mini",
         store: false,
+        max_output_tokens: 2048,
         text: expect.objectContaining({
           format: expect.objectContaining({
             type: "json_schema",
@@ -80,6 +81,41 @@ describe("translateCues", () => {
           }),
         }),
       }),
+    );
+  });
+
+  it("scales the output budget for longer cue batches", async () => {
+    const longWords = Array.from({ length: 102 }, (_, index) => ({
+      text: `word${index}`,
+      start: index,
+      end: index + 0.5,
+    }));
+    const { client, create } = clientFor({
+      translations: Array.from({ length: 34 }, (_, index) => ({
+        index: index + 1,
+        text: `translated ${index + 1}`,
+      })),
+    });
+
+    await translateCues(longWords, "french", "english", 3, client);
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ max_output_tokens: 2176 }),
+    );
+  });
+
+  it("explains incomplete Responses API output without accepting partial cues", async () => {
+    const create = vi.fn().mockResolvedValue({
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output_text: "",
+    });
+    const client: OpenAITranslationClient = { responses: { create } };
+
+    await expect(
+      translateCues(words, "french", "english", 3, client),
+    ).rejects.toThrow(
+      "translation_partial: OpenAI response finished with status 'incomplete' (max_output_tokens)",
     );
   });
 
