@@ -26,7 +26,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 
 ENV NODE_ENV=production
-# `--silent` keeps pnpm's script banner out of stderr. Railway otherwise
-# classifies an intentionally successful cron run as an error before the
-# structured worker log is emitted.
-CMD ["pnpm", "--silent", "worker:clips"]
+# Invoke tsx directly: pnpm writes the expanded script command to stderr even
+# with `--silent`, which Railway misclassifies as a failed cron run. The local
+# dependency is deliberately retained in the worker image for this command.
+CMD ["node_modules/.bin/tsx", "scripts/clips-worker.ts"]
