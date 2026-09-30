@@ -88,6 +88,7 @@ import type { ClipJob, QueueJob } from "./types";
 import type { OverlayElement } from "./overlays";
 import { attachFfmpegTimeout } from "./ffmpeg-timeout";
 import { verifySourceMagicBytes } from "./verify-magic-bytes";
+import { recordClipSubtitleDisclosure } from "./clip-disclosure";
 
 // ----------------------------------------------------------------------------
 // Minimal structured logger. VidiaFlow used `@/lib/observability/logger` ;
@@ -1225,23 +1226,20 @@ export async function runRenderJob(
     const captionsVttUrl = vttSignedRes.data?.signedUrl ?? null;
 
     // ── Step 9 — Disclosure (AI Act art. 50 — synthetic subtitle overlay)
-    // TODO(P2) : ClipsFlow has no disclosure audit table yet. The VidiaFlow
-    // source wrote a best-effort `logDisclosure()` row here. Until the
-    // disclosure schema lands, emit a structured console.warn so the
-    // forensic trail exists in platform logs (NO phantom table writes).
-    console.warn(
-      JSON.stringify({
-        level: "warn",
-        source: "clips-run-job",
-        message: "disclosure_log_todo_p2",
-        detail:
-          "AI Act art. 50 disclosure not persisted — disclosure table absent in P1",
-        surface: "clip_subtitle",
-        user_id: clip.user_id,
-        clip_id: clip.id,
-        locale: clip.language,
-      }),
-    );
+    // Persist before returning success. If the compliance record cannot be
+    // written, fail the job rather than leave a customer-visible artefact with
+    // no audit evidence; render-worker then refunds once and removes this
+    // fenced attempt's MP4/VTT files.
+    await recordClipSubtitleDisclosure(supabase, {
+      userId: clip.user_id,
+      clipId: clip.id,
+      locale: clip.language,
+    });
+    logger.info("clip subtitle disclosure recorded", {
+      job_id: job.id,
+      clip_id: clip.id,
+      surface: "clip_subtitle",
+    });
 
     // Cost estimate rolled up for the admin dashboard (mono-1080p).
     const { computeClipCost } = await import("./cost");
