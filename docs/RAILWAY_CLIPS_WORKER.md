@@ -1,7 +1,7 @@
 # Worker vidéo ClipsFlow sur Railway
 
 Le site reste sur son hébergement actuel. Ce document ne décrit que le worker
-one-shot `pnpm --silent worker:clips` : il réclame au plus un rendu, ferme ses
+one-shot `node_modules/.bin/tsx scripts/clips-worker.ts` : il réclame au plus un rendu, ferme ses
 connexions et termine. Railway Cron le relance au plus tôt toutes les cinq
 minutes ; un lancement peut être décalé de quelques minutes et Railway ignore
 le suivant si le précédent est encore actif.
@@ -40,7 +40,7 @@ le suivant si le précédent est encore actif.
 1. Publier un commit issu de `fix/p0-security-hardening`, jamais l'ancien
    `main`, dans une branche de test revue.
 2. Créer le projet Railway `clipsflow` et son unique service `clips-worker`.
-   Utiliser `Dockerfile.worker`, la commande `pnpm --silent worker:clips`, aucun domaine
+   Utiliser `Dockerfile.worker`, la commande `node_modules/.bin/tsx scripts/clips-worker.ts`, aucun domaine
    public et aucun volume.
 3. Régler Railway Cron sur `*/5 * * * *` (UTC), une réplique, au plus 1 vCPU
    et 1 Go de mémoire. Ne pas créer de règle de coupure globale du workspace.
