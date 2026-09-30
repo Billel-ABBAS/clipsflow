@@ -82,10 +82,12 @@ le suivant si le précédent est encore actif.
    est exprimé en USD car `clips.cost_usd` est dans cette unité ; ne pas le
    présenter comme une facture Railway ni utiliser un coupe-circuit global du
    workspace.
-5. Pour la production seulement après ces preuves : activer
-   `CLIPS_WORKER_ENABLED=true` côté site, déployer le garde de coupure, définir
-   `CLIPS_WORKER_BACKEND=railway` côté Vercel, puis supprimer le cron Vercel
-   dans un déploiement suivant. Cela évite tout double drain.
+5. Pour la production seulement après ces preuves : appliquer les migrations
+   contrôlées, activer `CLIPS_WORKER_ENABLED=true` côté worker Railway, déployer
+   le garde de coupure et définir `CLIPS_WORKER_BACKEND=railway` côté Vercel.
+   Le fichier `vercel.json` ne déclare plus de cron de traitement : Railway est
+   l'unique dispatcher. Ne livrer cette suppression qu'après avoir vérifié que
+   le worker Railway de production est prêt, afin d'éviter une interruption.
 6. Les trois anciens services Railway sont déjà supprimés comme indiqué plus
    haut. Calpyra-AI et Cal-Halal restent hors de ce projet et ne doivent pas
    être modifiés.

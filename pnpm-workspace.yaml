@@ -1,4 +1,9 @@
 allowBuilds:
+  "@ffmpeg-installer/darwin-arm64": false
+  "@ffmpeg-installer/darwin-x64": false
+  "@ffmpeg-installer/linux-arm": false
+  "@ffmpeg-installer/linux-arm64": false
+  "@ffmpeg-installer/linux-ia32": false
   "@ffmpeg-installer/linux-x64": true
   "@parcel/watcher": true
   "@sentry/cli": true
