@@ -281,9 +281,11 @@ async function main(): Promise<void> {
       }),
     );
   } finally {
-    // Never delete a non-terminal job: a scheduler may own it. A terminal job
-    // is safe to remove through the auth-user cascade and is verified after.
-    if (userId && terminal) {
+    // The staging Railway worker is paused for this smoke test, so no scheduler
+    // can own this uniquely tagged user/job. Always remove the synthetic user,
+    // even if an assertion failed midway; user-owned rows cascade and the
+    // explicit count checks below prove that the temporary data is gone.
+    if (userId) {
       const deleted = await supabase.auth.admin.deleteUser(userId);
       await assertNoError("delete_test_user", deleted);
       await Promise.all([
@@ -296,14 +298,7 @@ async function main(): Promise<void> {
         JSON.stringify({
           event: "staging_lease_fencing_cleanup_verified",
           run_tag: runTag,
-        }),
-      );
-    } else if (userId) {
-      console.error(
-        JSON.stringify({
-          event: "staging_lease_fencing_cleanup_deferred",
-          run_tag: runTag,
-          reason: "non_terminal_job",
+          completed: terminal,
         }),
       );
     }
