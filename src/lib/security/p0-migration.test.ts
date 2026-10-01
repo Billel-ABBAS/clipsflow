@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const migration = readFileSync(
   join(
     process.cwd(),
-    "supabase/migrations/20260816133249_p0_security_hardening.sql",
+    "supabase/migrations/20260923074633_clipsflow_p0_security_hardening.sql",
   ),
   "utf8",
 ).replace(/\s+/g, " ");

@@ -26,11 +26,14 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { computeClipCost } from "../src/lib/clips/cost";
 import { submitClipJob } from "../src/lib/clips/submit-job";
 
-const EXPECTED_PROJECT_REF = "hkbzphqdplddlvlkbxus";
+// `ifwdzqzoqwitahffrvcr` is the Supabase project promoted from controlled
+// staging to ClipsFlow production. Keep this assertion exact: a production
+// canary must never run against a similarly named project by accident.
+const EXPECTED_PROJECT_REF = "ifwdzqzoqwitahffrvcr";
 const EXPECTED_FIXTURE_NAME = "clipsflow-staging-render-test.mp4";
-const EXPECTED_FIXTURE_BYTES = 2_256_506;
+const EXPECTED_FIXTURE_BYTES = 77_994;
 const EXPECTED_FIXTURE_SHA256 =
-  "73d9004a2bdc7e359f2e606f0f30e66c447e93c48f4f8e696471b9d00f20f76c";
+  "1459dc39a3f45c49a31ed3a3ba68761f5d1f88274c1f4f2860ca949d1edbee00";
 const CANARY_DURATION_SECONDS = 12;
 const REQUIRED_BUDGET_USD = 10;
 const POLL_INTERVAL_MS = 15_000;

@@ -25,7 +25,7 @@ Confirme au début : « J'applique d'abord le lot P0 sécurité/stabilité produ
 - architecture : `docs/ARCHITECTURE.md` ;
 - runbook : `docs/OPERATIONS.md` ;
 - plan d'origine : `docs/superpowers/plans/2026-08-16-p0-security-hardening.md` ;
-- migration P0 : `supabase/migrations/20260816133249_p0_security_hardening.sql` ;
+- migration P0 : `supabase/migrations/20260923074633_clipsflow_p0_security_hardening.sql` ;
 - tests SQL : `supabase/tests/p0_security.sql`.
 
 Commence par `git status`, `git branch --show-current`, `git log --oneline`, la lecture des instructions `AGENTS.md` éventuelles et la lecture des documents ci-dessus. Préserve toutes les modifications utilisateur. Ne réinitialise, ne supprime et ne déplace rien de large. Si la branche a évolué, audite le diff réel plutôt que de faire confiance à ce prompt.

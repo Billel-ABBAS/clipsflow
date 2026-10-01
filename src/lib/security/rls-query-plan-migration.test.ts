@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const migration = readFileSync(
   join(
     process.cwd(),
-    "supabase/migrations/20260929125737_clipsflow_rls_query_plan_indexes.sql",
+    "supabase/migrations/20260929125822_clipsflow_rls_query_plan_indexes.sql",
   ),
   "utf8",
 ).replace(/\s+/g, " ");

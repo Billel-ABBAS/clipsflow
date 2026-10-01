@@ -44,7 +44,8 @@ Avant une migration distante, consulter la liste et le SQL prévu. Utiliser le m
 ## 3. Ordre de déploiement
 
 1. Créer et vérifier une sauvegarde de la base visée.
-2. Appliquer les migrations jusqu'à `20260925000000_explicit_data_api_grants.sql`.
+2. Comparer `supabase_migrations.schema_migrations` avec les fichiers actifs de
+   `supabase/migrations/` ; ne rejouer aucune version déjà enregistrée.
 3. Vérifier les RPC, privilèges et politiques RLS sur la cible.
 4. Configurer les variables serveur et publiques dans le gestionnaire de secrets de l'environnement.
 5. Déployer l'application sur un environnement de prévisualisation ou de staging.
@@ -54,32 +55,26 @@ Avant une migration distante, consulter la liste et le SQL prévu. Utiliser le m
 
 La migration P0 est additive pour les tables et RPC, mais retire des privilèges directs aux rôles navigateur. Le code compatible RPC doit donc être prêt au moment de son application.
 
-### Historique des deux nouveaux projets Supabase
+### Historique du projet Supabase actuellement accessible
 
-`clipsflow-staging` (`nbktlyedezpkyamgjmhy`) et `clipsflow-production`
-(`hkbzphqdplddlvlkbxus`) ont reçu leur schéma par l'éditeur SQL. Leur liste
-de migrations suivies par la CLI est donc vide, même si les objets existent.
-**Ne jamais lancer `db push` sur ces bases tant que cette divergence persiste** :
-les migrations initiales pourraient être rejouées sur les tables existantes.
+Le projet visible dans le compte Billel-ABBAS est `clipsflow-staging`
+(`ifwdzqzoqwitahffrvcr`). Son registre `supabase_migrations.schema_migrations`
+contient 11 versions suivies. Les 11 fichiers SQL actifs ont été renommés pour
+refléter exactement ces versions distantes ; cette réconciliation a modifié le
+dépôt uniquement et n'a exécuté aucun SQL distant.
 
-Le workflow manuel [supabase-migrations.yml](../.github/workflows/supabase-migrations.yml)
-offre `inspect` et `apply`, avec un dry-run et un refus explicite si une
-migration initiale reste en attente. Il doit d'abord être présent sur la branche
-par défaut. Chaque environnement GitHub (`supabase-staging`,
-`supabase-production`) doit avoir
-ses propres secrets `SUPABASE_ACCESS_TOKEN` (jeton Supabase à portée limitée)
-et `SUPABASE_DB_PASSWORD`. Ne pas copier les clés `service_role` dans ces
-secrets : elles servent aux API et au worker, pas à la CLI. La production est
-limitée à la branche `main` revue.
+`supabase/archived-migrations/20260925000000_explicit_data_api_grants.superseded.sql`
+est conservé pour audit, mais n'est pas une migration active : le registre
+ne contient pas cette version et ses grants sont repris par la
+migration enregistrée `20260928203332_restrict_data_api_roles.sql`. Ne pas le
+rejouer séparément.
 
-Après audit de la **cible exacte** et comparaison de son schéma avec les sept
-fichiers SQL du dépôt, réconcilier uniquement les versions réellement
-appliquées avec la commande officielle `supabase migration repair --status
-applied <version>`, projet lié explicitement. Cette opération ne rejoue pas le
-SQL ; elle modifie seulement l'historique. Refaire `migration list` et le
-dry-run : il ne doit plus proposer les migrations initiales. Vérifier d'abord
-sur staging, puis répéter séparément sur production. Toute divergence de schéma
-doit être corrigée par une nouvelle migration revue, pas masquée par `repair`.
+Avant tout futur `db push`, vérifier explicitement le projet et exécuter
+`supabase migration list` puis un dry-run avec la CLI Supabase installée. Le
+dry-run ne doit annoncer aucune des 11 versions déjà appliquées. Si un écart
+réapparaît, comparer les versions, noms et SQL enregistrés avant toute
+réparation ; une réparation ne rejoue pas le SQL, mais modifie l'historique et
+ne doit jamais masquer une divergence de schéma.
 
 ## 4. Contrôles après déploiement
 

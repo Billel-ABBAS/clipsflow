@@ -11,8 +11,10 @@
  *   CLIPS_SMOKE_ENV_FILE   Absolute path to an env file for staging.
  *   CLIPS_SMOKE_SOURCE     Absolute path to a short spoken MP4 fixture.
  *
+ * Required:
+ *   CLIPS_SMOKE_EXPECTED_REF  Must equal the authorized Billel staging ref.
+ *
  * Optional:
- *   CLIPS_SMOKE_EXPECTED_REF  Expected Supabase project ref.
  *   CLIPS_SMOKE_TIMEOUT_MS    Queue wait timeout (default: 15 minutes).
  *   CLIPS_SMOKE_ARTIFACT_DIR  Save the synthetic MP4/VTT locally for review.
  */
@@ -26,6 +28,12 @@ import {
   toGalleryRow,
   type ClipRowRaw,
 } from "../src/components/clips/clip-rows";
+import {
+  assertAuthorizedStagingRef,
+  isStagingBudgetGuardReady,
+  STAGING_RENDER_BUDGET_CAP_USD,
+  validateStagingSupabaseUrl,
+} from "../src/lib/security/staging-smoke-config";
 import { refreshClipUrls } from "../src/lib/clips/refresh-urls";
 import { submitClipJob } from "../src/lib/clips/submit-job";
 
@@ -66,6 +74,9 @@ function envValue(contents: string, name: string): string | null {
 }
 
 async function loadStagingClient(): Promise<SupabaseClient> {
+  const expectedRef = process.env.CLIPS_SMOKE_EXPECTED_REF;
+  assertAuthorizedStagingRef(expectedRef);
+
   const envFile = process.env.CLIPS_SMOKE_ENV_FILE;
   if (!envFile) fail("missing_env_file");
   const contents = await readFile(envFile, "utf8");
@@ -73,17 +84,17 @@ async function loadStagingClient(): Promise<SupabaseClient> {
   const serviceRoleKey = envValue(contents, "SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !serviceRoleKey) fail("missing_staging_supabase_settings");
 
-  const expectedRef = process.env.CLIPS_SMOKE_EXPECTED_REF;
-  if (expectedRef && !url.includes(`https://${expectedRef}.supabase.co`)) {
-    fail("unexpected_supabase_project");
-  }
+  const validatedUrl = validateStagingSupabaseUrl(url, expectedRef);
 
-  return createClient(url, serviceRoleKey, {
+  return createClient(validatedUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
 
 async function loadStagingGalleryClient(): Promise<SupabaseClient> {
+  const expectedRef = process.env.CLIPS_SMOKE_EXPECTED_REF;
+  assertAuthorizedStagingRef(expectedRef);
+
   const envFile = process.env.CLIPS_SMOKE_ENV_FILE;
   if (!envFile) fail("missing_env_file");
   const contents = await readFile(envFile, "utf8");
@@ -93,12 +104,9 @@ async function loadStagingGalleryClient(): Promise<SupabaseClient> {
     envValue(contents, "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
   if (!url || !anonKey) fail("missing_staging_public_supabase_settings");
 
-  const expectedRef = process.env.CLIPS_SMOKE_EXPECTED_REF;
-  if (expectedRef && !url.includes(`https://${expectedRef}.supabase.co`)) {
-    fail("unexpected_supabase_project");
-  }
+  const validatedUrl = validateStagingSupabaseUrl(url, expectedRef);
 
-  return createClient(url, anonKey, {
+  return createClient(validatedUrl, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
@@ -126,6 +134,27 @@ async function assertNoError(
     const status =
       typeof error.status === "number" ? `_http_${error.status}` : "";
     fail(`${operation}_failed_${code}${status}`);
+  }
+}
+
+async function assertStagingBudgetGuard(
+  supabase: SupabaseClient,
+): Promise<void> {
+  const guard = await supabase
+    .from("clips_budget_guard")
+    .select("enabled, monthly_budget_usd")
+    .eq("singleton", true)
+    .maybeSingle();
+  await assertNoError("read_staging_budget_guard", guard);
+  if (
+    !isStagingBudgetGuardReady(
+      guard.data?.enabled,
+      guard.data?.monthly_budget_usd,
+    )
+  ) {
+    fail(
+      `staging_budget_guard_must_be_enabled_at_or_below_usd_${STAGING_RENDER_BUDGET_CAP_USD.toFixed(2)}`,
+    );
   }
 }
 
@@ -219,6 +248,8 @@ async function main(): Promise<void> {
 
   const supabase = await loadStagingClient();
   const galleryClient = await loadStagingGalleryClient();
+  // Fail closed before creating any synthetic auth, episode, clip, or job rows.
+  await assertStagingBudgetGuard(supabase);
   const runTag = `railway-smoke-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;
   const email = `${runTag}@example.invalid`;
   const password = `${randomUUID()}aA9!`;
@@ -295,7 +326,9 @@ async function main(): Promise<void> {
       endSeconds: 12,
       styleKey: "viral",
       aspectRatio: "9:16",
-      language: "en",
+      // Keep the detected source language to avoid an unnecessary paid
+      // subtitle-translation call during this smoke test.
+      language: "auto",
       customizations: {},
       overlays: [],
     });
