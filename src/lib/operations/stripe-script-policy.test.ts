@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { resolveStripeSetupPolicy } from "./stripe-script-policy";
 
+const syntheticStripeKey = (prefix: string) => `${prefix}${"x".repeat(32)}`;
+
 describe("resolveStripeSetupPolicy", () => {
   it("autorise un dry-run sans aucune clé", () => {
     expect(
@@ -14,19 +16,20 @@ describe("resolveStripeSetupPolicy", () => {
     ).toThrow("stripe_setup:key_missing");
   });
 
-  it.each(["sk_live_abcdef123456", "rk_live_abcdef123456", "bad-key"])(
-    "rejette toute clé non test: %s",
-    (secretKey) => {
-      expect(() => resolveStripeSetupPolicy({ secretKey, args: [] })).toThrow(
-        "stripe_setup:test_key_required",
-      );
-    },
-  );
+  it.each([
+    syntheticStripeKey("sk_live_"),
+    syntheticStripeKey("rk_live_"),
+    "bad-key",
+  ])("rejette toute clé non test: %s", (secretKey) => {
+    expect(() => resolveStripeSetupPolicy({ secretKey, args: [] })).toThrow(
+      "stripe_setup:test_key_required",
+    );
+  });
 
   it("reste en dry-run sans --apply", () => {
     expect(
       resolveStripeSetupPolicy({
-        secretKey: "sk_test_abcdef123456",
+        secretKey: syntheticStripeKey("sk_test_"),
         args: [],
       }),
     ).toEqual({ apply: false, mode: "test" });
@@ -35,7 +38,7 @@ describe("resolveStripeSetupPolicy", () => {
   it("autorise les mutations test uniquement avec --apply", () => {
     expect(
       resolveStripeSetupPolicy({
-        secretKey: "sk_test_abcdef123456",
+        secretKey: syntheticStripeKey("sk_test_"),
         args: ["--apply"],
       }),
     ).toEqual({ apply: true, mode: "test" });
@@ -44,7 +47,7 @@ describe("resolveStripeSetupPolicy", () => {
   it("rejette les arguments inconnus", () => {
     expect(() =>
       resolveStripeSetupPolicy({
-        secretKey: "sk_test_abcdef123456",
+        secretKey: syntheticStripeKey("sk_test_"),
         args: ["--live"],
       }),
     ).toThrow("stripe_setup:unknown_argument");
