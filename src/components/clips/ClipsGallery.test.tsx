@@ -29,7 +29,11 @@ vi.mock("./ReclipMenu", () => ({ ReclipMenu: () => null }));
 vi.mock("./RetryClipButton", () => ({ RetryClipButton: () => null }));
 vi.mock("./ShareButton", () => ({ ShareButton: () => null }));
 
-import { ClipsGallery, type GalleryClipRow } from "./ClipsGallery";
+import {
+  ClipsGallery,
+  seekGalleryPreviewFrame,
+  type GalleryClipRow,
+} from "./ClipsGallery";
 
 const completedClip: GalleryClipRow = {
   id: "clip-test-1",
@@ -62,5 +66,33 @@ describe("ClipsGallery completed render", () => {
     expect(html).toContain(completedClip.captions_vtt_url);
     expect(html).toContain("gallery_download_vtt");
     expect(html).toContain(completedClip.episode_title);
+    expect(html).toContain("aspect-[9/16]");
+    expect(html).toContain("object-contain");
+  });
+});
+
+describe("gallery video preview frame", () => {
+  it("seeks when metadata was ready before React attached its event handler", () => {
+    const video = {
+      readyState: 1,
+      duration: 12,
+      currentTime: 0,
+    } as HTMLVideoElement;
+
+    seekGalleryPreviewFrame(video);
+
+    expect(video.currentTime).toBeCloseTo(1.2);
+  });
+
+  it("waits for media metadata before seeking", () => {
+    const video = {
+      readyState: 0,
+      duration: 12,
+      currentTime: 0,
+    } as HTMLVideoElement;
+
+    seekGalleryPreviewFrame(video);
+
+    expect(video.currentTime).toBe(0);
   });
 });
