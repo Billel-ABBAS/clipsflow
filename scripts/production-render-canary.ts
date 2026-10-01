@@ -49,6 +49,7 @@ type JobRow = {
 
 type ClipRow = {
   status: string;
+  cost_usd: number | string | null;
   video_storage_path: string | null;
   captions_vtt_storage_path: string | null;
 };
@@ -459,6 +460,7 @@ async function main(): Promise<void> {
     const createdEpisodeId = episode.data.id;
     episodeId = createdEpisodeId;
 
+    const submittedAt = Date.now();
     const submitted = await submitClipJob(supabase, {
       userId,
       episodeId: createdEpisodeId,
@@ -489,18 +491,23 @@ async function main(): Promise<void> {
       ? Math.min(Math.max(requestedTimeout, 60_000), 20 * 60_000)
       : DEFAULT_TIMEOUT_MS;
     const job = await waitForTerminalJob(supabase, jobId, timeoutMs);
+    const queueToTerminalMs = Date.now() - submittedAt;
     if (job.status !== "completed") fail("render_failed_terminally");
     if (job.clip_id && job.clip_id !== clipId) fail("job_clip_mismatch");
 
     const clipResult = await supabase
       .from("clips")
-      .select("status, video_storage_path, captions_vtt_storage_path")
+      .select("status, cost_usd, video_storage_path, captions_vtt_storage_path")
       .eq("id", clipId)
       .eq("user_id", userId)
       .single();
     assertNoError("read_completed_canary_clip", clipResult);
     const clip = clipResult.data as ClipRow | null;
     if (clip?.status !== "completed") fail("clip_not_completed");
+    const appCostEstimateUsd = Number(clip.cost_usd);
+    if (!Number.isFinite(appCostEstimateUsd) || appCostEstimateUsd < 0) {
+      fail("invalid_persisted_cost_estimate");
+    }
     if (!clip.video_storage_path || !clip.captions_vtt_storage_path) {
       fail("mp4_or_vtt_path_missing");
     }
@@ -549,6 +556,9 @@ async function main(): Promise<void> {
         mp4_bytes: mp4.data.size,
         vtt_bytes: vtt.data.size,
         vtt_cue_count: vttCueCount,
+        queue_to_terminal_ms: queueToTerminalMs,
+        app_cost_estimate_usd: appCostEstimateUsd,
+        cost_measurement: "application_estimate_not_vendor_invoice",
         profile_plan: "free",
         watermark_policy_path: "completed",
         transcription_provider: "groq_whisper_large_v3_turbo",
