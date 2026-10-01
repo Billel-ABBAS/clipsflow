@@ -9,6 +9,13 @@ const migration = readFileSync(
   ),
   "utf8",
 ).replace(/\s+/g, " ");
+const canaryReadMigration = readFileSync(
+  join(
+    process.cwd(),
+    "supabase/migrations/20261001060647_grant_service_role_read_clips_budget_guard.sql",
+  ),
+  "utf8",
+).replace(/\s+/g, " ");
 
 describe("migration garde de budget ClipsFlow", () => {
   it("est désactivée par défaut et isolée des rôles navigateur", () => {
@@ -28,6 +35,18 @@ describe("migration garde de budget ClipsFlow", () => {
       /REVOKE ALL ON TABLE public\.clips_budget_guard FROM anon, authenticated/i,
     );
     expect(migration).toMatch(/VALUES \(true, false, NULL\)/i);
+  });
+
+  it("autorise seulement la lecture du garde de budget par le serveur", () => {
+    expect(canaryReadMigration).toMatch(
+      /REVOKE ALL PRIVILEGES ON TABLE public\.clips_budget_guard FROM PUBLIC, anon, authenticated, service_role/i,
+    );
+    expect(canaryReadMigration).toMatch(
+      /GRANT SELECT ON TABLE public\.clips_budget_guard TO service_role/i,
+    );
+    expect(canaryReadMigration).not.toMatch(
+      /GRANT (?!SELECT\b)[^;]* ON TABLE public\.clips_budget_guard TO service_role/i,
+    );
   });
 
   it("garde la soumission atomique derrière le seul service_role", () => {
