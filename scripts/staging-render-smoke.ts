@@ -12,7 +12,10 @@
  *   CLIPS_SMOKE_SOURCE     Absolute path to a short spoken MP4 fixture.
  *
  * Required:
- *   CLIPS_SMOKE_EXPECTED_REF  Must equal the authorized Billel staging ref.
+ *   CLIPS_SMOKE_EXPECTED_REF  Must equal the authorized Billel project ref.
+ *   CLIPS_SMOKE_ALLOW_PRODUCTION_DATA_WRITES=true
+ *                             Explicit opt-in: this target Supabase project
+ *                             is production and receives temporary test rows.
  *
  * Optional:
  *   CLIPS_SMOKE_TIMEOUT_MS    Queue wait timeout (default: 15 minutes).
@@ -29,7 +32,8 @@ import {
   type ClipRowRaw,
 } from "../src/components/clips/clip-rows";
 import {
-  assertAuthorizedStagingRef,
+  assertAuthorizedRenderTestRef,
+  assertProductionTestDataWriteOptIn,
   isStagingBudgetGuardReady,
   STAGING_RENDER_BUDGET_CAP_USD,
   validateStagingSupabaseUrl,
@@ -75,7 +79,10 @@ function envValue(contents: string, name: string): string | null {
 
 async function loadStagingClient(): Promise<SupabaseClient> {
   const expectedRef = process.env.CLIPS_SMOKE_EXPECTED_REF;
-  assertAuthorizedStagingRef(expectedRef);
+  assertAuthorizedRenderTestRef(expectedRef);
+  assertProductionTestDataWriteOptIn(
+    process.env.CLIPS_SMOKE_ALLOW_PRODUCTION_DATA_WRITES,
+  );
 
   const envFile = process.env.CLIPS_SMOKE_ENV_FILE;
   if (!envFile) fail("missing_env_file");
@@ -93,7 +100,10 @@ async function loadStagingClient(): Promise<SupabaseClient> {
 
 async function loadStagingGalleryClient(): Promise<SupabaseClient> {
   const expectedRef = process.env.CLIPS_SMOKE_EXPECTED_REF;
-  assertAuthorizedStagingRef(expectedRef);
+  assertAuthorizedRenderTestRef(expectedRef);
+  assertProductionTestDataWriteOptIn(
+    process.env.CLIPS_SMOKE_ALLOW_PRODUCTION_DATA_WRITES,
+  );
 
   const envFile = process.env.CLIPS_SMOKE_ENV_FILE;
   if (!envFile) fail("missing_env_file");

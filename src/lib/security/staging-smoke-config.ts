@@ -1,5 +1,5 @@
-/** Restrict the staging smoke test to the authorized Billel project. */
-export const AUTHORIZED_STAGING_PROJECT_REF = "ifwdzqzoqwitahffrvcr";
+/** Exact Billel-ABBAS Supabase project selected for ClipsFlow production. */
+export const AUTHORIZED_RENDER_TEST_PROJECT_REF = "ifwdzqzoqwitahffrvcr";
 export const STAGING_RENDER_BUDGET_CAP_USD = 0.01;
 
 /** Accept only an enabled, finite staging budget within the one-cent test cap. */
@@ -17,12 +17,23 @@ export function isStagingBudgetGuardReady(
 }
 
 /** Fail before a smoke-test env file is opened unless its project is pinned. */
-export function assertAuthorizedStagingRef(
+export function assertAuthorizedRenderTestRef(
   expectedRef: string | undefined,
 ): void {
-  if (expectedRef !== AUTHORIZED_STAGING_PROJECT_REF) {
+  if (expectedRef !== AUTHORIZED_RENDER_TEST_PROJECT_REF) {
     throw new Error(
-      "staging_render_smoke:expected_staging_project_ref_required",
+      "staging_render_smoke:expected_authorized_project_ref_required",
+    );
+  }
+}
+
+/** The selected Supabase project is production; never write smoke data implicitly. */
+export function assertProductionTestDataWriteOptIn(
+  allowProductionDataWrites: string | undefined,
+): void {
+  if (allowProductionDataWrites !== "true") {
+    throw new Error(
+      "staging_render_smoke:production_test_data_write_opt_in_required",
     );
   }
 }
@@ -36,7 +47,7 @@ export function validateStagingSupabaseUrl(
   rawUrl: string,
   expectedRef: string | undefined,
 ): string {
-  assertAuthorizedStagingRef(expectedRef);
+  assertAuthorizedRenderTestRef(expectedRef);
 
   let parsed: URL;
   try {
@@ -45,7 +56,7 @@ export function validateStagingSupabaseUrl(
     throw new Error("staging_render_smoke:invalid_supabase_url");
   }
 
-  const expectedOrigin = `https://${AUTHORIZED_STAGING_PROJECT_REF}.supabase.co`;
+  const expectedOrigin = `https://${AUTHORIZED_RENDER_TEST_PROJECT_REF}.supabase.co`;
   if (
     parsed.origin !== expectedOrigin ||
     parsed.pathname !== "/" ||

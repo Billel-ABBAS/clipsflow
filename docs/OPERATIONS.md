@@ -57,8 +57,10 @@ La migration P0 est additive pour les tables et RPC, mais retire des privilèges
 
 ### Historique du projet Supabase actuellement accessible
 
-Le projet visible dans le compte Billel-ABBAS est `clipsflow-staging`
-(`ifwdzqzoqwitahffrvcr`). Son registre `supabase_migrations.schema_migrations`
+Le projet visible dans le compte Billel-ABBAS est désormais nommé
+`clipsflow-production` (`ifwdzqzoqwitahffrvcr`). Seul son nom d'affichage a été
+modifié; sa référence API et ses données sont inchangées. Son registre
+`supabase_migrations.schema_migrations`
 contient 11 versions suivies. Les 11 fichiers SQL actifs ont été renommés pour
 refléter exactement ces versions distantes ; cette réconciliation a modifié le
 dépôt uniquement et n'a exécuté aucun SQL distant.

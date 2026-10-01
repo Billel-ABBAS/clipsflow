@@ -1,19 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
-  AUTHORIZED_STAGING_PROJECT_REF,
+  assertProductionTestDataWriteOptIn,
+  AUTHORIZED_RENDER_TEST_PROJECT_REF,
   isStagingBudgetGuardReady,
   STAGING_RENDER_BUDGET_CAP_USD,
   validateStagingSupabaseUrl,
 } from "./staging-smoke-config";
 
 describe("staging render smoke project guard", () => {
-  it("accepts only the explicitly selected Billel staging project", () => {
+  it("accepts only the explicitly selected Billel production project", () => {
     expect(
       validateStagingSupabaseUrl(
-        `https://${AUTHORIZED_STAGING_PROJECT_REF}.supabase.co/`,
-        AUTHORIZED_STAGING_PROJECT_REF,
+        `https://${AUTHORIZED_RENDER_TEST_PROJECT_REF}.supabase.co/`,
+        AUTHORIZED_RENDER_TEST_PROJECT_REF,
       ),
-    ).toBe(`https://${AUTHORIZED_STAGING_PROJECT_REF}.supabase.co`);
+    ).toBe(`https://${AUTHORIZED_RENDER_TEST_PROJECT_REF}.supabase.co`);
   });
 
   it.each([undefined, "luympnrbthbcgbemxykp", "hkbzphqdplddlvlkbxus"])(
@@ -21,10 +22,12 @@ describe("staging render smoke project guard", () => {
     (expectedRef) => {
       expect(() =>
         validateStagingSupabaseUrl(
-          `https://${AUTHORIZED_STAGING_PROJECT_REF}.supabase.co`,
+          `https://${AUTHORIZED_RENDER_TEST_PROJECT_REF}.supabase.co`,
           expectedRef,
         ),
-      ).toThrow("staging_render_smoke:expected_staging_project_ref_required");
+      ).toThrow(
+        "staging_render_smoke:expected_authorized_project_ref_required",
+      );
     },
   );
 
@@ -36,8 +39,20 @@ describe("staging render smoke project guard", () => {
     "https://ifwdzqzoqwitahffrvcr.supabase.co?project=other",
   ])("rejects unsafe Supabase URLs without echoing them", (url) => {
     expect(() =>
-      validateStagingSupabaseUrl(url, AUTHORIZED_STAGING_PROJECT_REF),
+      validateStagingSupabaseUrl(url, AUTHORIZED_RENDER_TEST_PROJECT_REF),
     ).toThrow("staging_render_smoke:unexpected_supabase_project");
+  });
+});
+
+describe("production synthetic-data write opt-in", () => {
+  it("requires a precise opt-in before creating smoke-test rows", () => {
+    expect(() => assertProductionTestDataWriteOptIn(undefined)).toThrow(
+      "staging_render_smoke:production_test_data_write_opt_in_required",
+    );
+    expect(() => assertProductionTestDataWriteOptIn("false")).toThrow(
+      "staging_render_smoke:production_test_data_write_opt_in_required",
+    );
+    expect(() => assertProductionTestDataWriteOptIn("true")).not.toThrow();
   });
 });
 
