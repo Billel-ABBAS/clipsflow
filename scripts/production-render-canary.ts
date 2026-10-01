@@ -15,8 +15,9 @@
  * Supabase project-ref assertion; it never reads a local env file.
  *
  * Expected cost estimate for the 12-second canary: USD 0.002968. The script
- * requires the database guard to be enabled at USD 10 and the render queue to
- * be empty before it creates any data. The RPC re-checks the budget atomically.
+ * requires the database guard to be enabled at or below USD 10, with enough
+ * remaining headroom for the estimate, and the render queue to be empty before
+ * it creates any data. The RPC re-checks the budget atomically.
  */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -24,6 +25,7 @@ import { readFile, stat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { computeClipCost } from "../src/lib/clips/cost";
+import { getProductionCanaryBudgetFailure } from "../src/lib/clips/production-canary-budget";
 import { submitClipJob } from "../src/lib/clips/submit-job";
 
 // `ifwdzqzoqwitahffrvcr` is the Supabase project promoted from controlled
@@ -35,7 +37,6 @@ const EXPECTED_FIXTURE_BYTES = 77_994;
 const EXPECTED_FIXTURE_SHA256 =
   "1459dc39a3f45c49a31ed3a3ba68761f5d1f88274c1f4f2860ca949d1edbee00";
 const CANARY_DURATION_SECONDS = 12;
-const REQUIRED_BUDGET_USD = 10;
 const POLL_INTERVAL_MS = 15_000;
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1_000;
 
@@ -146,12 +147,6 @@ async function assertBudgetAndQueue(supabase: SupabaseClient): Promise<void> {
     .eq("singleton", true)
     .maybeSingle();
   assertNoError("read_budget_guard", guard);
-  if (
-    !guard.data?.enabled ||
-    Number(guard.data.monthly_budget_usd) !== REQUIRED_BUDGET_USD
-  ) {
-    fail("production_budget_guard_must_be_enabled_at_usd_10");
-  }
 
   const activeJobs = await supabase
     .from("jobs")
@@ -179,8 +174,14 @@ async function assertBudgetAndQueue(supabase: SupabaseClient): Promise<void> {
     return total + value;
   }, 0);
   const canaryEstimate = computeClipCost(CANARY_DURATION_SECONDS);
-  if (spent + canaryEstimate > REQUIRED_BUDGET_USD) {
-    fail("production_budget_headroom_insufficient");
+  const budgetFailure = getProductionCanaryBudgetFailure({
+    guardEnabled: guard.data?.enabled,
+    monthlyBudgetUsd: guard.data?.monthly_budget_usd,
+    monthlySpendUsd: spent,
+    estimatedCostUsd: canaryEstimate,
+  });
+  if (budgetFailure) {
+    fail(budgetFailure);
   }
 }
 
