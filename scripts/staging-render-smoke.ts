@@ -168,6 +168,18 @@ async function assertStagingBudgetGuard(
   }
 }
 
+async function assertNoActiveRenderJobs(
+  supabase: SupabaseClient,
+): Promise<void> {
+  const active = await supabase
+    .from("jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("type", "render")
+    .in("status", ["pending", "processing"]);
+  await assertNoError("read_active_render_jobs", active);
+  if (active.count !== 0) fail("staging_queue_not_idle");
+}
+
 async function waitForTerminalJob(
   supabase: SupabaseClient,
   jobId: string,
@@ -260,6 +272,7 @@ async function main(): Promise<void> {
   const galleryClient = await loadStagingGalleryClient();
   // Fail closed before creating any synthetic auth, episode, clip, or job rows.
   await assertStagingBudgetGuard(supabase);
+  await assertNoActiveRenderJobs(supabase);
   const runTag = `railway-smoke-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;
   const email = `${runTag}@example.invalid`;
   const password = `${randomUUID()}aA9!`;
