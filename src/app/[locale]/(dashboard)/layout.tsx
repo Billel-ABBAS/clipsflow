@@ -10,6 +10,7 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { SignOutButton } from "@/components/auth/SignOutButton";
 import { Toaster } from "@/components/ui/sonner";
 import { Link, redirect } from "@/i18n/navigation";
+import { hasAdminAccess } from "@/lib/security/admin-access";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function DashboardLayout({
@@ -29,6 +30,8 @@ export default async function DashboardLayout({
   if (!user) {
     redirect({ href: "/login", locale });
   }
+
+  const isAdmin = hasAdminAccess(user);
 
   const t = await getTranslations("clips.shell");
 
@@ -53,6 +56,14 @@ export default async function DashboardLayout({
               >
                 {t("nav_pricing")}
               </Link>
+              {isAdmin ? (
+                <Link
+                  href="/admin"
+                  className="text-muted-foreground hover:text-foreground text-sm transition-colors"
+                >
+                  Admin
+                </Link>
+              ) : null}
             </nav>
           </div>
           <SignOutButton label={t("sign_out")} />
