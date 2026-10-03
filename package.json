@@ -11,6 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "worker:clips": "tsx scripts/clips-worker.ts",
+    "smoke:staging:render": "tsx scripts/staging-render-smoke.ts",
+    "smoke:staging:failure": "tsx scripts/staging-render-failure-smoke.ts",
     "smoke:staging:leases": "tsx scripts/staging-render-lease-fencing-smoke.ts",
     "stripe:setup:test": "node scripts/setup-stripe-test.mjs",
     "format": "prettier --write .",

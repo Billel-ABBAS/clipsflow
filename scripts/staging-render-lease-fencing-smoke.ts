@@ -5,15 +5,25 @@
  * renderer or uploads a media file.
  *
  * Required environment variables:
- *   CLIPS_SMOKE_ENV_FILE     Absolute path to a staging-only env file.
- * Optional:
- *   CLIPS_SMOKE_EXPECTED_REF Expected Supabase project ref.
+ *   CLIPS_SMOKE_ENV_FILE    Absolute path to the selected Supabase env file.
+ *   CLIPS_SMOKE_EXPECTED_REF Must match the exact authorized project ref.
+ *   CLIPS_SMOKE_ALLOW_PRODUCTION_DATA_WRITES=true
+ *                             Required because the selected project is production.
+ *   The app budget guard must be enabled at or below USD 0.01 and the render
+ *   queue must be empty before the test creates any temporary data.
  */
 
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { submitClipJob } from "../src/lib/clips/submit-job";
+import {
+  assertAuthorizedRenderTestRef,
+  assertProductionTestDataWriteOptIn,
+  isStagingBudgetGuardReady,
+  STAGING_RENDER_BUDGET_CAP_USD,
+  validateStagingSupabaseUrl,
+} from "../src/lib/security/staging-smoke-config";
 
 const LEASE_SECONDS = 120;
 
@@ -38,6 +48,12 @@ function envValue(contents: string, name: string): string | null {
 }
 
 async function loadStagingClient(): Promise<SupabaseClient> {
+  const expectedRef = process.env.CLIPS_SMOKE_EXPECTED_REF;
+  assertAuthorizedRenderTestRef(expectedRef);
+  assertProductionTestDataWriteOptIn(
+    process.env.CLIPS_SMOKE_ALLOW_PRODUCTION_DATA_WRITES,
+  );
+
   const envFile = process.env.CLIPS_SMOKE_ENV_FILE;
   if (!envFile) fail("missing_env_file");
   const contents = await readFile(envFile, "utf8");
@@ -45,12 +61,9 @@ async function loadStagingClient(): Promise<SupabaseClient> {
   const serviceRoleKey = envValue(contents, "SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !serviceRoleKey) fail("missing_staging_supabase_settings");
 
-  const expectedRef = process.env.CLIPS_SMOKE_EXPECTED_REF;
-  if (expectedRef && !url.includes(`https://${expectedRef}.supabase.co`)) {
-    fail("unexpected_supabase_project");
-  }
+  const validatedUrl = validateStagingSupabaseUrl(url, expectedRef);
 
-  return createClient(url, serviceRoleKey, {
+  return createClient(validatedUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
@@ -60,6 +73,27 @@ async function assertNoError(
   result: { error: { message: string } | null },
 ): Promise<void> {
   if (result.error) fail(`${operation}_failed`);
+}
+
+async function assertStagingBudgetGuard(
+  supabase: SupabaseClient,
+): Promise<void> {
+  const guard = await supabase
+    .from("clips_budget_guard")
+    .select("enabled, monthly_budget_usd")
+    .eq("singleton", true)
+    .maybeSingle();
+  await assertNoError("read_staging_budget_guard", guard);
+  if (
+    !isStagingBudgetGuardReady(
+      guard.data?.enabled,
+      guard.data?.monthly_budget_usd,
+    )
+  ) {
+    fail(
+      `staging_budget_guard_must_be_enabled_at_or_below_usd_${STAGING_RENDER_BUDGET_CAP_USD.toFixed(2)}`,
+    );
+  }
 }
 
 function asClaim(data: unknown, expectedJobId: string): ClaimedJob {
@@ -127,6 +161,7 @@ async function assertCleanup(
 
 async function main(): Promise<void> {
   const supabase = await loadStagingClient();
+  await assertStagingBudgetGuard(supabase);
   await assertNoActiveRenderJobs(supabase);
 
   const runTag = `railway-lease-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;

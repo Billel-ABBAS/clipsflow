@@ -60,7 +60,7 @@ le suivant si le précédent est encore actif.
    ```
 
 6. Après autorisation explicite du projet Supabase de test, appliquer la
-   migration `20260922153033_railway_render_worker_leases.sql` et vérifier les
+   migration `20260923074634_clipsflow_render_worker_leases.sql` et vérifier les
    grants des quatre RPC. Garder le worker désactivé tant que cette étape n'est
    pas confirmée.
 

@@ -303,7 +303,7 @@
     "gallery_download": "Télécharger",
     "gallery_download_vtt": "VTT",
     "gallery_hook_score_label": "Hook",
-    "gallery_hook_score_tooltip": "Score basé sur : question d'ouverture (+20), verbe d'action (+15), mention « tu » (+10), longueur 5-12 mots (+10), chiffre (+10). 80+ = viral, 50-79 = correct, <50 = à retravailler.",
+    "gallery_hook_score_tooltip": "Estimation de la force de l'ouverture du clip, de 0 à 100. Ce score ne prédit pas le nombre de vues.",
     "gallery_section_title": "Tes clips précédents",
     "toolbar": {
       "filter_label": "Filtrer",

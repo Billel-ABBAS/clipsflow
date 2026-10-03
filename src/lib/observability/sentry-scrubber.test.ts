@@ -13,6 +13,7 @@ describe("sentryBeforeSend", () => {
       Buffer.from(JSON.stringify({ sub: "1" })).toString("base64url"),
       Buffer.from("test-signature").toString("base64url"),
     ].join(".");
+    const stripeWebhookFixture = `whsec_${"a".repeat(32)}`;
     const event = {
       message: "request failed for alice@example.com Bearer secret-bearer",
       user: { id: "user-1", email: "alice@example.com" },
@@ -37,7 +38,7 @@ describe("sentryBeforeSend", () => {
       },
       contexts: {
         custom: {
-          values: ["safe", "whsec_abcdefghijklmnopqrstuvwxyz"],
+          values: ["safe", stripeWebhookFixture],
         },
       },
       breadcrumbs: [
@@ -61,7 +62,7 @@ describe("sentryBeforeSend", () => {
       "secret-cookie",
       jwtFixture,
       "gsk_super-secret",
-      "whsec_",
+      stripeWebhookFixture,
       '"nope"',
     ]) {
       expect(serialized).not.toContain(secret);

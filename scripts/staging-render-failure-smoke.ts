@@ -5,9 +5,13 @@
  * persisted outputs, and complete test-user cleanup.
  *
  * Required environment variables:
- *   CLIPS_SMOKE_ENV_FILE    Absolute path to a staging-only env file.
+ *   CLIPS_SMOKE_ENV_FILE    Absolute path to the selected Supabase env file.
+ *   CLIPS_SMOKE_EXPECTED_REF Must match the exact authorized project ref.
+ *   CLIPS_SMOKE_ALLOW_PRODUCTION_DATA_WRITES=true
+ *                             Required because the selected project is production.
+ *   The app budget guard must be enabled at or below USD 0.01 and the render
+ *   queue must be empty before the test creates any temporary data.
  * Optional:
- *   CLIPS_SMOKE_EXPECTED_REF Expected Supabase project ref.
  *   CLIPS_SMOKE_TIMEOUT_MS  Queue wait timeout (default: 15 minutes).
  */
 
@@ -15,6 +19,13 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { submitClipJob } from "../src/lib/clips/submit-job";
+import {
+  assertAuthorizedRenderTestRef,
+  assertProductionTestDataWriteOptIn,
+  isStagingBudgetGuardReady,
+  STAGING_RENDER_BUDGET_CAP_USD,
+  validateStagingSupabaseUrl,
+} from "../src/lib/security/staging-smoke-config";
 
 const POLL_INTERVAL_MS = 15_000;
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1_000;
@@ -52,6 +63,12 @@ function envValue(contents: string, name: string): string | null {
 }
 
 async function loadStagingClient(): Promise<SupabaseClient> {
+  const expectedRef = process.env.CLIPS_SMOKE_EXPECTED_REF;
+  assertAuthorizedRenderTestRef(expectedRef);
+  assertProductionTestDataWriteOptIn(
+    process.env.CLIPS_SMOKE_ALLOW_PRODUCTION_DATA_WRITES,
+  );
+
   const envFile = process.env.CLIPS_SMOKE_ENV_FILE;
   if (!envFile) fail("missing_env_file");
   const contents = await readFile(envFile, "utf8");
@@ -59,12 +76,9 @@ async function loadStagingClient(): Promise<SupabaseClient> {
   const serviceRoleKey = envValue(contents, "SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !serviceRoleKey) fail("missing_staging_supabase_settings");
 
-  const expectedRef = process.env.CLIPS_SMOKE_EXPECTED_REF;
-  if (expectedRef && !url.includes(`https://${expectedRef}.supabase.co`)) {
-    fail("unexpected_supabase_project");
-  }
+  const validatedUrl = validateStagingSupabaseUrl(url, expectedRef);
 
-  return createClient(url, serviceRoleKey, {
+  return createClient(validatedUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
@@ -78,6 +92,39 @@ async function assertNoError(
   result: { error: { message: string } | null },
 ): Promise<void> {
   if (result.error) fail(`${operation}_failed`);
+}
+
+async function assertStagingBudgetGuard(
+  supabase: SupabaseClient,
+): Promise<void> {
+  const guard = await supabase
+    .from("clips_budget_guard")
+    .select("enabled, monthly_budget_usd")
+    .eq("singleton", true)
+    .maybeSingle();
+  await assertNoError("read_staging_budget_guard", guard);
+  if (
+    !isStagingBudgetGuardReady(
+      guard.data?.enabled,
+      guard.data?.monthly_budget_usd,
+    )
+  ) {
+    fail(
+      `staging_budget_guard_must_be_enabled_at_or_below_usd_${STAGING_RENDER_BUDGET_CAP_USD.toFixed(2)}`,
+    );
+  }
+}
+
+async function assertNoActiveRenderJobs(
+  supabase: SupabaseClient,
+): Promise<void> {
+  const active = await supabase
+    .from("jobs")
+    .select("id", { count: "exact", head: true })
+    .eq("type", "render")
+    .in("status", ["pending", "processing"]);
+  await assertNoError("read_active_render_jobs", active);
+  if (active.count !== 0) fail("staging_queue_not_idle");
 }
 
 async function waitForTerminalJob(
@@ -155,6 +202,8 @@ async function assertCountZero(
 
 async function main(): Promise<void> {
   const supabase = await loadStagingClient();
+  await assertStagingBudgetGuard(supabase);
+  await assertNoActiveRenderJobs(supabase);
   const runTag = `railway-failure-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;
   const email = `${runTag}@example.invalid`;
   let userId: string | null = null;

@@ -303,7 +303,7 @@
     "gallery_download": "Download",
     "gallery_download_vtt": "VTT",
     "gallery_hook_score_label": "Hook",
-    "gallery_hook_score_tooltip": "Score based on: opening question (+20), action verb (+15), 'you' mention (+10), 5-12 word length (+10), digit (+10). 80+ = viral, 50-79 = solid, <50 = needs work.",
+    "gallery_hook_score_tooltip": "Estimate of the clip opening's strength, from 0 to 100. This score does not predict views.",
     "gallery_section_title": "Your recent clips",
     "toolbar": {
       "filter_label": "Filter",

@@ -15,7 +15,7 @@
 //   - i18n namespace → clips ; status colours kept identical to source.
 // ============================================================================
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   AlertCircle,
   CheckCircle,
@@ -76,6 +76,20 @@ export interface ClipsGalleryProps {
   clips: GalleryClipRow[];
   /** Hide the sort/filter/search toolbar (embedded recent strip). */
   hideToolbar?: boolean;
+}
+
+/** Seek a loaded gallery video off its often-black first frame. */
+export function seekGalleryPreviewFrame(video: HTMLVideoElement): void {
+  if (video.readyState < 1) return;
+
+  const target = Math.min(2, (video.duration || 30) * 0.1);
+  if (Math.abs(video.currentTime - target) < 0.05) return;
+
+  try {
+    video.currentTime = target;
+  } catch {
+    // Some browsers reject seeks until the media timeline is fully available.
+  }
 }
 
 // ---- helpers ---------------------------------------------------------------
@@ -163,6 +177,9 @@ export function ClipsGallery({
     () => applyToolbar(clips, toolbar),
     [clips, toolbar],
   );
+  const setPreviewVideo = useCallback((video: HTMLVideoElement | null) => {
+    if (video) seekGalleryPreviewFrame(video);
+  }, []);
 
   const formatDate = (iso: string): string => {
     try {
@@ -206,28 +223,32 @@ export function ClipsGallery({
               className="border-border bg-card flex flex-col gap-3 overflow-hidden rounded-xl border p-4"
             >
               {/* Preview / placeholder */}
-              <div className="from-card to-muted relative aspect-video w-full overflow-hidden rounded-lg bg-gradient-to-br">
+              <div
+                className={cn(
+                  "from-card to-muted relative w-full overflow-hidden rounded-lg bg-gradient-to-br",
+                  clip.aspect_ratio === "9:16"
+                    ? "aspect-[9/16]"
+                    : clip.aspect_ratio === "1:1"
+                      ? "aspect-square"
+                      : "aspect-video",
+                )}
+              >
                 {clip.status === "completed" && clip.video_url ? (
                   // preload="metadata" + seek-to-2s poster strategy bounds
                   // the gallery-load bandwidth (~50 KB/card). thumbnail_url
                   // is used as the poster when the pipeline produced one.
                   <video
+                    ref={setPreviewVideo}
                     src={clip.video_url}
                     poster={clip.thumbnail_url ?? undefined}
                     controls
                     playsInline
                     preload="metadata"
                     muted
-                    onLoadedMetadata={(e) => {
-                      const v = e.currentTarget;
-                      const target = Math.min(2, (v.duration || 30) * 0.1);
-                      try {
-                        v.currentTime = target;
-                      } catch {
-                        /* some browsers reject seek before duration known */
-                      }
-                    }}
-                    className="h-full w-full object-cover"
+                    onLoadedMetadata={(e) =>
+                      seekGalleryPreviewFrame(e.currentTarget)
+                    }
+                    className="h-full w-full object-contain"
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center">

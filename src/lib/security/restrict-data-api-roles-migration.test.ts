@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const migrationPath = resolve(
   process.cwd(),
-  "supabase/migrations/20260928224500_restrict_data_api_roles.sql",
+  "supabase/migrations/20260928203332_restrict_data_api_roles.sql",
 );
 
 describe("restricted Data API role migration", () => {
