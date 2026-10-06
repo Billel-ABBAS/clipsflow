@@ -174,6 +174,7 @@ async function main(): Promise<void> {
     const submitted = await submitClipJob(supabase, {
       userId,
       episodeId: episode.data.id,
+      requestId: randomUUID(),
       startSeconds: 0,
       endSeconds: 12,
       styleKey: "viral",

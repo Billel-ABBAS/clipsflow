@@ -3,8 +3,13 @@
 !.env.example
 .git
 .next
+.next-*/
 node_modules
 coverage
 .worktrees
 *.log
 README.md
+/.agents/
+/.claude/
+/.tmp-staging-render-test-valid/
+/skills-lock.json

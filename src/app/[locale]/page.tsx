@@ -1,4 +1,11 @@
-import { ArrowRight, Check, Scissors, Subtitles, Zap } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  Film,
+  Scissors,
+  Subtitles,
+  Zap,
+} from "lucide-react";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import Link from "next/link";
 
@@ -20,8 +27,15 @@ export default async function HomePage({
   const { locale } = await params;
   setRequestLocale(locale);
   const t = await getTranslations("home");
+  const shortsLoginHref = `/${locale}/login?next=%2Fshorts`;
 
   const features = [
+    {
+      icon: Film,
+      title: t("feature_shorts_title"),
+      description: t("feature_shorts_desc"),
+      color: "text-violet-600",
+    },
     {
       icon: Scissors,
       title: t("feature_clips_title"),
@@ -64,13 +78,13 @@ export default async function HomePage({
               Pricing
             </Link>
             <Link
-              href={`/${locale}/login`}
+              href={shortsLoginHref}
               className="text-muted-foreground hover:text-foreground text-sm font-medium transition-colors"
             >
               Sign in
             </Link>
             <Link
-              href={`/${locale}/login`}
+              href={shortsLoginHref}
               className="bg-primary text-primary-foreground hover:bg-primary/80 inline-flex h-8 items-center rounded-md px-3 text-sm font-medium transition-colors"
             >
               {t("cta_primary")}
@@ -139,7 +153,7 @@ export default async function HomePage({
             </p>
           </div>
 
-          <div className="mt-16 grid gap-8 sm:grid-cols-3">
+          <div className="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
             {features.map((feature) => (
               <Card
                 key={feature.title}
@@ -161,6 +175,15 @@ export default async function HomePage({
                 </CardHeader>
               </Card>
             ))}
+          </div>
+          <div className="mt-10 flex justify-center">
+            <Link
+              href={shortsLoginHref}
+              className="text-primary inline-flex items-center gap-2 text-sm font-medium hover:underline"
+            >
+              {t("feature_shorts_cta")}
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         </div>
       </section>
@@ -233,7 +256,7 @@ export default async function HomePage({
               </CardContent>
               <div className="p-6 pt-0">
                 <Link
-                  href={`/${locale}/login`}
+                  href={shortsLoginHref}
                   className="border-input bg-background hover:bg-accent hover:text-accent-foreground inline-flex h-8 w-full items-center justify-center rounded-md border text-sm font-medium transition-colors"
                 >
                   {t("pricing_free_cta")}
@@ -267,7 +290,7 @@ export default async function HomePage({
               </CardContent>
               <div className="p-6 pt-0">
                 <Link
-                  href={`/${locale}/login`}
+                  href={shortsLoginHref}
                   className="bg-primary text-primary-foreground hover:bg-primary/80 inline-flex h-8 w-full items-center justify-center rounded-md text-sm font-medium transition-colors"
                 >
                   {t("pricing_solo_cta")}
@@ -306,7 +329,7 @@ export default async function HomePage({
               </CardContent>
               <div className="p-6 pt-0">
                 <Link
-                  href={`/${locale}/login`}
+                  href={shortsLoginHref}
                   className="bg-primary text-primary-foreground hover:bg-primary/80 inline-flex h-8 w-full items-center justify-center rounded-md text-sm font-medium transition-colors"
                 >
                   {t("pricing_pro_cta")}
@@ -340,7 +363,7 @@ export default async function HomePage({
               </CardContent>
               <div className="p-6 pt-0">
                 <Link
-                  href={`/${locale}/login`}
+                  href={shortsLoginHref}
                   className="bg-primary text-primary-foreground hover:bg-primary/80 inline-flex h-8 w-full items-center justify-center rounded-md text-sm font-medium transition-colors"
                 >
                   {t("pricing_studio_cta")}
@@ -402,7 +425,7 @@ export default async function HomePage({
           </p>
           <div className="mt-10 flex items-center justify-center gap-x-6">
             <Link
-              href={`/${locale}/login`}
+              href={shortsLoginHref}
               className="group bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-10 items-center justify-center rounded-md px-8 text-sm font-medium shadow transition-colors focus-visible:outline-none"
             >
               {t("final_cta")}

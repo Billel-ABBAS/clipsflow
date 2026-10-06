@@ -61,6 +61,70 @@ Les tables utilisateur ont la RLS activée et forcée. Les rôles de navigateur 
 5. Un plan gratuit ou inconnu doit recevoir le watermark ClipsFlow. Un échec de watermark fait échouer le job : il n'existe plus de chemin « fail-open » sans marque.
 6. La réussite écrit les artefacts privés et finalise le job. L'échec rembourse le quota selon la logique du pipeline.
 
+## Parcours Shorts long format
+
+Cette extension conserve le pipeline Clips pour les rendus et lui ajoute une
+file d'analyse dédiée. Le code et les migrations sont présents localement ;
+cela ne confirme ni l'application des migrations distantes ni le provisionnement
+des workers.
+
+1. `POST /api/shorts/uploads` crée un chemin appartenant à l'utilisateur et un
+   jeton d'upload signé. Le navigateur envoie le fichier par TUS directement au
+   bucket privé `clip-sources`; `/complete` vérifie l'objet, son propriétaire et
+   sa taille avant de rendre l'épisode analysable.
+2. `POST /api/shorts/projects` vérifie session, feature flag, limite de débit,
+   budget fournisseur, plan et quota source, puis réserve projet et job par RPC
+   idempotente. La transcription et l'analyse ne tournent pas dans la requête
+   HTTP : `scripts/shorts-analysis-worker.ts` réclame un job sous bail.
+3. Le worker télécharge et contrôle la source, transcrit sa piste audio via
+   Whisper/Groq ou OpenAI, découpe toute la transcription en fenêtres
+   déterministes puis demande à OpenAI de classer les identifiants de candidats
+   dans une réponse structurée. Le modèle peut choisir/résumer les fenêtres,
+   mais ne peut inventer leurs timestamps.
+4. En mode audio + vidéo seulement, les images fixes sont extraites des fenêtres
+   déjà classées par l'audio et analysées par Gemini. Seules ces images bornées
+   sont envoyées; l'audio source n'est pas joint à cette requête, la
+   reconnaissance faciale est désactivée et les images ne sont pas conservées.
+5. Jev peut évaluer le classement après consentement explicite. Son ordre est
+   stocké comme mesure privée shadow et ne remplace pas le classement remis au
+   créateur. Un échec ou une configuration absente de Jev n'échoue pas l'analyse.
+6. Le créateur examine les propositions et consignes, sélectionne les moments,
+   puis le renderer reçoit les segments sélectionnés. La génération réutilise
+   le worker Clips pour brûler les sous-titres synchronisés et appliquer crop,
+   overlays et motion templates. La direction créative Opus 5.5 utilise
+   l'identifiant Anthropic officiel fixe `claude-opus-5-5`; aucun autre modèle
+   Opus n'est substitué. Même avec un budget autorisé, les appels exigent aussi
+   l'activation du flag serveur et la présence de la clé privée. Seul le
+   transcript du Short sélectionné, les consignes et un résumé visuel borné
+   sont transmis.
+   Le brief sera mis en cache sous le lease de rendu pour permettre les reprises.
+   FFmpeg garde l'exécution visuelle déterministe;
+   ElevenLabs ne génère que musique instrumentale/SFX après consentement et
+   confirmation de licence.
+7. Les URL signées de lecture restent inline; des URL distinctes munies du
+   paramètre Storage `download` servent aux exports MP4/VTT. Le téléchargement
+   groupé passe par un endpoint ZIP propriétaire-scopé.
+8. La connexion YouTube conserve un refresh token chiffré. Une file distincte
+   envoie en blocs reprenables uniquement après confirmation finale dans
+   l'interface; la visibilité initiale est privée. `scripts/youtube-publish-worker.ts`
+   ne doit pas remplacer le worker Clips ou Shorts.
+
+### Fournisseurs et autorisations
+
+| Tâche                                          | Fournisseur/code                                    | Autorisation et comportement                                                               |
+| ---------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Transcription complète                         | Whisper via Groq, OpenAI en fallback/forçage        | Worker serveur, budget autorisé, durée source plafonnée par plan                           |
+| Classement des extraits à partir du transcript | OpenAI Responses, `gpt-5.4-mini` par défaut         | `store: false`, schéma JSON strict, IDs/timestamps bornés au catalogue                     |
+| Vérification visuelle des meilleurs extraits   | Gemini `gemini-3.8-flash`                           | Option audio + vidéo, échantillons bornés, budget et flag indépendants                     |
+| Classement comparatif                          | Jev via TypeSafe System One                         | Consentement, `CLIPS_JEV_HOOK_SCORE=shadow`, jamais décisionnel avant évaluation           |
+| Direction créative / plan motion               | Anthropic Claude Opus 5.5 (`claude-opus-5-5`)       | ID officiel fixe; budget, flag et clé serveur requis; aucun Opus différent n'est substitué |
+| Musique instrumentale et effets                | ElevenLabs `music_v2_5` / `eleven_text_to_sound_v2` | Consentement distinct, licence commerciale confirmée, budget et worker serveur             |
+| Rendu final                                    | FFmpeg existant                                     | Motion templates déterministes, sous-titres synchronisés et audio mixé côté serveur        |
+
+Toutes les clés fournisseur restent serveur uniquement. Une option visuelle,
+sonore ou créative désactivée doit laisser le chemin de repli déterministe
+utilisable, sans transformer une analyse indisponible en faux succès.
+
 ## Facturation
 
 Checkout et portail n'acceptent que l'origine applicative configurée. En production, `NEXT_PUBLIC_APP_URL` doit être une URL HTTPS explicite ; le `Host` fourni par la requête n'est pas une source de confiance.

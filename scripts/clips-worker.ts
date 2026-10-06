@@ -1,6 +1,8 @@
 // Railway Cron entrypoint. It deliberately processes at most one render and
 // then exits, so Railway's five-minute scheduler remains the only dispatcher.
 
+export {};
+
 async function main(): Promise<void> {
   if (
     process.env.CLIPS_WORKER_ENABLED !== "true" &&

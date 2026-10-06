@@ -1,10 +1,150 @@
 # Worker vidéo ClipsFlow sur Railway
 
 Le site reste sur son hébergement actuel. Ce document ne décrit que le worker
-one-shot `node_modules/.bin/tsx scripts/clips-worker.ts` : il réclame au plus un rendu, ferme ses
+one-shot `scripts/clips-worker.ts` : il réclame au plus un rendu, ferme ses
 connexions et termine. Railway Cron le relance au plus tôt toutes les cinq
 minutes ; un lancement peut être décalé de quelques minutes et Railway ignore
 le suivant si le précédent est encore actif.
+
+## Worker Shorts long format (code local, service non provisionné)
+
+Le traitement des épisodes de 20 minutes à 2 heures utilise une file distincte
+et un processus one-shot distinct. En local, `pnpm worker:shorts-analysis`
+charge `.env.local` s'il existe; le fichier n'est pas requis en staging ou en
+production. Sur Railway, lancer directement
+`node_modules/.bin/tsx scripts/shorts-analysis-worker.ts` et fournir les secrets
+via les variables du service. Ne pas remplacer la commande du worker Clips
+existant. Provisionner un second service Railway dédié, construit depuis
+`Dockerfile.worker`, avec FFmpeg, puis régler sa commande de démarrage sur le
+worker Shorts. Le code réclame au plus une analyse par lancement; planifier le
+Cron selon la charge et la capacité du service.
+
+Variables non secrètes de ce service :
+
+```text
+SHORTS_ANALYSIS_WORKER_ENABLED=false
+SHORTS_MAX_SOURCE_BYTES=8589934592
+CLIPS_AI_BUDGET_AUTHORIZED=false
+CLIPS_VISUAL_ANALYSIS_ENABLED=false
+```
+
+Le quota mensuel est résolu par l'application web, pas par ce worker, via
+`SHORTS_ANALYSIS_MONTHLY_SOURCE_SECONDS_FREE`, `_SOLO`, `_PRO` et `_STUDIO`.
+Les valeurs sont des secondes de source et doivent être choisies selon l'offre
+commerciale; l'absence de valeur bloque les nouvelles analyses, tandis que `0`
+désactive volontairement l'analyse pour le plan concerné. Ne pas copier ces
+valeurs dans le dépôt.
+
+Configurer côté serveur les clés Supabase, Groq/OpenAI et, uniquement si le
+mode audio + vidéo est validé, Gemini. Ne jamais recopier de secret dans Git ou
+les logs. Le worker télécharge la source complète dans son espace temporaire;
+un plafond applicatif de 8 Gio exige donc un disque temporaire de plus de 8 Gio
+avec une marge adaptée aux extractions audio/vidéo et au nombre de traitements
+simultanés. `SHORTS_MAX_SOURCE_BYTES` peut réduire cette taille, pas dépasser
+8 Gio. Supabase Free plafonne la taille globale à 50 Mio; un plafond source de
+8 Gio nécessite donc un projet Pro ou supérieur et une limite globale Storage
+d'au moins 8 Gio. Les envois utilisent TUS, dont la limite documentée est de
+50 Gio; le plafond applicatif reste volontairement plus bas. La configuration
+locale aligne sa limite globale sur 8 Gio, mais la migration locale ne modifie
+pas le réglage global du projet distant.
+
+Le worker Clips peut préparer une direction créative à partir d’un Short déjà
+sélectionné avec l’identifiant Anthropic officiel `claude-opus-5-5`, derrière
+le flag serveur et l’autorisation explicite du budget fournisseur. L'identifiant
+est fixé dans le code : aucun autre modèle Opus ne sera substitué. Les appels
+réels demeurent fermés tant que le budget, le flag et la clé serveur ne sont pas
+explicitement configurés. Le résultat validé est
+mis en cache sous le lease de rendu; le rendu visuel reste assuré par les
+templates FFmpeg allow-listés.
+
+Variables du worker Clips (secrets à saisir uniquement dans l’environnement du
+service, jamais dans ce document ni dans Git) :
+
+```text
+CLIPS_CREATIVE_DIRECTOR_ENABLED=false
+CLIPS_CREATIVE_DIRECTOR_MODEL=
+ANTHROPIC_API_KEY=<secret serveur>
+CLIPS_AI_BUDGET_AUTHORIZED=false
+```
+
+Pour Docker local, Compose ne charge pas `.env.local` implicitement; si le
+fichier contient déjà la clé Anthropic, passe-le explicitement avec
+`docker compose --env-file .env.local -f compose.workers.yaml ...`. Les services
+restent désactivés par défaut. La présence du code ou de la migration ne
+signifie pas que ce service Railway ou une base distante est configuré.
+
+## Worker de publication YouTube (code local, service non provisionné)
+
+Les publications confirmées par le créateur utilisent une troisième file et le
+processus one-shot `pnpm worker:youtube-publish`, qui charge `.env.local` en
+local lorsqu'il existe. Ne remplacez ni le worker Clips
+ni celui d’analyse Shorts. Le worker télécharge un MP4 privé (maximum 512 Mio)
+dans un dossier temporaire, envoie-le en blocs résumables à YouTube, chiffre
+l’URL de reprise en base et utilise un bail renouvelable pour empêcher deux
+envois concurrents. Chaque publication doit passer par le récapitulatif et la
+confirmation explicite dans l’interface; la visibilité par défaut est privée.
+
+Variables serveur à configurer sans les inscrire dans Git :
+
+```text
+YOUTUBE_PUBLISH_WORKER_ENABLED=false
+YOUTUBE_PUBLIC_UPLOADS_ENABLED=false
+YOUTUBE_OAUTH_CLIENT_ID=…
+YOUTUBE_OAUTH_CLIENT_SECRET=…
+YOUTUBE_OAUTH_REDIRECT_URI=https://<app>/api/youtube/oauth/callback
+YOUTUBE_OAUTH_STATE_SECRET=<secret aléatoire d'au moins 32 caractères>
+YOUTUBE_TOKEN_ENCRYPTION_KEY=<base64 canonique de 32 octets aléatoires>
+```
+
+Le consentement OAuth demande `youtube.upload` et `youtube.readonly`; la
+deuxième portée sert uniquement à afficher le canal lié. Google Cloud doit
+autoriser exactement l’URI de callback configurée. Le worker n’est pas
+provisionné, les clés ne sont pas présentes et la migration de file doit être
+appliquée dans un environnement Supabase explicitement autorisé avant activation.
+Laisser `YOUTUBE_PUBLIC_UPLOADS_ENABLED=false` tant que le projet YouTube API
+n’a pas passé l’audit de Google : les projets non vérifiés sont limités aux
+vidéos privées. Aucun envoi YouTube n’a été exécuté pendant la validation locale.
+
+## Vérifier le parcours Shorts local dans Docker
+
+Sur Windows, les ports hôtes Supabase peuvent être réservés même quand les
+conteneurs sont sains. `pnpm smoke:shorts:docker` reconstruit alors une image
+temporaire depuis le worktree et exécute Next ainsi que les smokes dans le
+réseau Docker Supabase. Le script lit les clés de `supabase status -o env`,
+vérifie que l'URL Supabase est en loopback, ne lit pas `.env.local`, et supprime
+son conteneur et son image temporaires à la fin.
+
+Le smoke couvre l'accès authentifié au Studio, le refus quand le budget IA est
+fermé, l'upload TUS et sa reprise, l'analyse audio et audio + vidéo avec
+fournisseurs simulés, la sélection, deux rendus et téléchargements, le motion
+design FFmpeg, la publication YouTube simulée et les 18 assertions SQL Shorts.
+Il n'appelle aucun fournisseur payant ni l'API Google réelle. La commande est
+locale et ne provisionne pas de service Railway.
+
+## Exécution locale isolée des workers
+
+`compose.workers.yaml` fournit les trois commandes one-shot dans le profil
+`local-workers`; aucun port n’est exposé et chaque traitement reste désactivé
+par défaut. Docker Desktop peut joindre l’API Supabase locale via
+`host.docker.internal:54321` lorsque ce port hôte est disponible. Sur une
+machine où Windows le réserve, définir explicitement
+`CLIPSFLOW_DOCKER_SUPABASE_URL` vers un relais **local** contrôlé ; ne jamais
+le remplacer par l'URL Supabase distante de `.env.local`. Cette configuration
+facilite les vérifications locales mais ne provisionne aucun worker Railway.
+
+Valider le fichier sans afficher les valeurs d’environnement :
+
+```powershell
+docker compose -f compose.workers.yaml config --quiet
+```
+
+Les secrets viennent de l’environnement du shell et ne sont pas inscrits dans
+le fichier. Les protections locales restent codées en dur à `false` pour le
+budget IA, l’analyse Shorts, le rendu et la publication YouTube. Ne pas activer
+un worker avant d’avoir vérifié que sa file ne contient aucun travail
+utilisateur non autorisé. Toute activation payante exige l’approbation
+préalable du budget; la publication YouTube garde aussi son contrôle OAuth et
+sa confirmation par l’utilisateur.
 
 ## État Railway constaté le 22 septembre 2026
 

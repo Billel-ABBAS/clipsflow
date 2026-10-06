@@ -93,4 +93,36 @@ describe("safeFetch — SSRF et redirections", () => {
     ).rejects.toBeInstanceOf(OutboundUrlError);
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
+
+  it("permet le stockage Docker HTTP exact sans DNS et bloque sa redirection", async () => {
+    const allowHttpOrigin = "http://127.0.0.1:54321";
+    const lookup = vi.fn();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+    const response = await safeFetch(`${allowHttpOrigin}/storage/file`, {
+      allowHttpOrigin,
+      lookup,
+      fetchImpl,
+    });
+
+    expect(await response.text()).toBe("ok");
+    expect(lookup).not.toHaveBeenCalled();
+
+    const redirectFetch = vi.fn().mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://example.com/file" },
+      }),
+    );
+    await expect(
+      safeFetch(`${allowHttpOrigin}/storage/file`, {
+        allowHttpOrigin,
+        fetchImpl: redirectFetch,
+      }),
+    ).rejects.toThrow(
+      "Local storage fetch left the configured Supabase origin",
+    );
+    expect(redirectFetch).toHaveBeenCalledTimes(1);
+  });
 });

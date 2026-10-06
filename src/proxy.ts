@@ -1,7 +1,8 @@
 import createIntlMiddleware from "next-intl/middleware";
-import type { NextRequest } from "next/server";
+import { NextRequest } from "next/server";
 
 import { routing } from "@/i18n/routing";
+import { AUTH_REQUEST_PATH_HEADER } from "@/lib/auth/return-path";
 import { updateSession } from "@/lib/supabase/middleware";
 
 // Next 16 : la convention `middleware.ts` est dépréciée et renommée `proxy.ts`
@@ -9,11 +10,15 @@ import { updateSession } from "@/lib/supabase/middleware";
 const intlMiddleware = createIntlMiddleware(routing);
 
 export default async function proxy(request: NextRequest) {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set(AUTH_REQUEST_PATH_HEADER, request.nextUrl.pathname);
+  const requestWithPath = new NextRequest(request, { headers: requestHeaders });
+
   // 1. next-intl : normalise /pricing → /en/pricing (redirect/rewrite + headers locale)
-  const response = intlMiddleware(request);
+  const response = intlMiddleware(requestWithPath);
 
   // 2. Supabase : layer les cookies de session SUR la réponse intl (ordre critique)
-  return updateSession(request, response);
+  return updateSession(requestWithPath, response);
 }
 
 export const config = {

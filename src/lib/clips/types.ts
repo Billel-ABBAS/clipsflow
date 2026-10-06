@@ -14,6 +14,8 @@
 // ============================================================================
 
 import type { OverlayElement } from "./overlays";
+import type { ShortsMusicMood } from "@/lib/shorts/project-contract";
+import type { CreativeDirectorResult } from "./creative-director";
 
 // 15-preset closed enum — identical to VidiaFlow STYLE_KEYS.
 // The DB column `clips.style_key` carries a CHECK constraint in 0002_clips_schema.sql
@@ -158,6 +160,42 @@ export type SubtitleCustomizations = {
    * rotate through the array (mod N).
    */
   emphasis_colors?: string[];
+  /** Shorts-only metadata created server-side after candidate selection. */
+  shorts?: {
+    project_id: string;
+    candidate_id: string;
+    title: string;
+    hook: string;
+    music_mood: ShortsMusicMood;
+    music_prompt?: string;
+    motion_direction: string;
+    motion_template:
+      | "punchy-cuts"
+      | "kinetic-captions"
+      | "editorial-focus"
+      | "calm-focus"
+      | "audiogram-waveform"
+      | "minimal-static";
+    reduced_motion: boolean;
+    elevenlabs: {
+      enabled: boolean;
+      explicit_consent: boolean;
+      commercial_license_confirmed: boolean;
+      use_cases: readonly ("instrumental_music" | "sound_effects")[];
+      synthetic_voice: false;
+    };
+    creative_direction: {
+      enabled: boolean;
+      explicit_consent: boolean;
+      user_instructions: string;
+      visual_summary: string | null;
+      cache?: {
+        input_hash: string;
+        model_id: "claude-opus-5-5";
+        result: CreativeDirectorResult;
+      };
+    };
+  };
 };
 
 /**

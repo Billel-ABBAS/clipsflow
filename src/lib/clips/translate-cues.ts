@@ -54,7 +54,7 @@ const WHISPER_SUPPORTED_LANGUAGES = new Set([
   "ukrainian",
 ]);
 
-const DEFAULT_OPENAI_TRANSLATION_MODEL = "gpt-5-mini";
+const DEFAULT_OPENAI_TRANSLATION_MODEL = "gpt-5.4-mini";
 const OPENAI_MODEL_NAME_RE = /^[a-zA-Z0-9._:-]{1,64}$/;
 
 const CUE_TRANSLATIONS_SCHEMA: Record<string, unknown> = {

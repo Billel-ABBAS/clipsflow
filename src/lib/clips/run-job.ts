@@ -79,9 +79,18 @@ import { spawn } from "node:child_process";
 import * as Sentry from "@sentry/nextjs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { safeFetch } from "@/lib/utils/safe-fetch";
+import { transcriptWindow } from "./transcript-window";
+import {
+  getOrCreateShortsAudioAsset,
+  resolveShortsMotionEffect,
+  resolveShortsMusicPrompt,
+} from "./elevenlabs-render";
+import { mixShortAudio } from "./mix-short-audio";
+import { shouldReduceShortsMotion } from "./motion-preferences";
 import {
   validateOutboundUrl,
   defaultClipsAllowedHosts,
+  localSupabaseHttpOrigin,
   OutboundUrlError,
 } from "@/lib/security/validate-outbound-url";
 import type { ClipJob, QueueJob } from "./types";
@@ -89,6 +98,19 @@ import type { OverlayElement } from "./overlays";
 import { attachFfmpegTimeout } from "./ffmpeg-timeout";
 import { verifySourceMagicBytes } from "./verify-magic-bytes";
 import { recordClipSubtitleDisclosure } from "./clip-disclosure";
+import {
+  CLAUDE_OPUS_5_5_MODEL_API_ID,
+  createCreativeDirection,
+  creativeDirectorInputHash,
+  parseCreativeDirectorResult,
+  type CreativeDirectorResult,
+} from "./creative-director";
+import {
+  applyCreativeDirectionToShortsProfile,
+  creativeMotionAnimationSpeed,
+  resolveCreativeSoundAccent,
+} from "@/lib/shorts/creative-render";
+import { shortsTitleCardOverlay } from "@/lib/shorts/render-submission";
 
 // ----------------------------------------------------------------------------
 // Minimal structured logger. VidiaFlow used `@/lib/observability/logger` ;
@@ -241,6 +263,8 @@ export interface RunRenderJobResult {
   score: number | null; // hook score 0-100
   hook_text: string | null; // first sentence of the clip transcript
   detected_language: string | null;
+  /** Word timestamps rebased to source-episode time for later clip suggestions. */
+  transcript_segments: import("./whisper").WordTimestamp[];
 }
 
 export type RenderJobOptions = {
@@ -250,6 +274,8 @@ export type RenderJobOptions = {
    * with the retry that replaced it.
    */
   leaseToken?: string;
+  /** Persist the upload/finalization phase when a fenced worker is used. */
+  markFinalizing?: () => Promise<void>;
 };
 
 export function getRenderArtifactPaths(
@@ -271,6 +297,8 @@ type EpisodeSourceRow = {
   source_url: string | null;
   source_storage_path: string | null;
   status: string;
+  transcript_segments: unknown;
+  transcript_language: string | null;
 };
 
 /**
@@ -428,7 +456,9 @@ export async function runRenderJob(
 
   const { data: episodeRow } = await supabase
     .from("episodes")
-    .select("id, user_id, source_type, source_url, source_storage_path, status")
+    .select(
+      "id, user_id, source_type, source_url, source_storage_path, status, transcript_segments, transcript_language",
+    )
     .eq("id", clip.episode_id)
     .eq("user_id", clip.user_id) // defence in depth (RLS bypassed by service role)
     .single();
@@ -477,6 +507,7 @@ export async function runRenderJob(
   //       it against the Supabase allowlist (defence in depth).
   let sourceUrl: string;
   let sourceAllowedHosts: string[] | undefined;
+  let sourceAllowHttpOrigin: string | undefined;
   try {
     if (episode.source_url) {
       validateOutboundUrl(episode.source_url);
@@ -491,9 +522,13 @@ export async function runRenderJob(
           `source_download_failed: could not sign source storage path (${signErr?.message ?? "no URL returned"})`,
         );
       }
-      sourceAllowedHosts = defaultClipsAllowedHosts();
+      sourceAllowHttpOrigin = localSupabaseHttpOrigin();
+      sourceAllowedHosts = sourceAllowHttpOrigin
+        ? undefined
+        : defaultClipsAllowedHosts();
       validateOutboundUrl(signed.signedUrl, {
         allowedHosts: sourceAllowedHosts,
+        allowHttpOrigin: sourceAllowHttpOrigin,
       });
       sourceUrl = signed.signedUrl;
     } else {
@@ -550,6 +585,7 @@ export async function runRenderJob(
     const sourceRes = await safeFetch(sourceUrl, {
       timeoutMs: 30_000,
       allowedHosts: sourceAllowedHosts,
+      allowHttpOrigin: sourceAllowHttpOrigin,
     });
     if (!sourceRes.ok) {
       throw new Error(
@@ -786,45 +822,52 @@ export async function runRenderJob(
     });
     let words: import("./whisper").WordTimestamp[];
     let detectedLanguage: string;
-    try {
-      const result = await transcribeWithWhisper(
-        sourceUrl, // label only — sourcePath takes precedence below
-        undefined,
-        undefined,
-        segmentPath,
-      );
-      words = result.words;
-      detectedLanguage = result.detectedLanguage;
-      logger.info("whisper transcription done", {
-        job_id: job.id,
-        clip_id: clip.id,
-        detected_language: detectedLanguage,
-        word_count: words.length,
-        model: result.model,
-        latency_ms: result.latencyMs,
-      });
-      // OBS — Whisper exit breadcrumb. Word count + detected language
-      // are the most useful diagnostic signals at this stage (no
-      // transcript content — PII risk).
-      addPipelineBreadcrumb("whisper_transcribe_complete", "info", {
+    const cachedWords = transcriptWindow(
+      episode.transcript_segments,
+      clip.start_seconds,
+      clip.end_seconds,
+    );
+    if (cachedWords) {
+      words = cachedWords;
+      detectedLanguage = episode.transcript_language?.trim() || "unknown";
+      addPipelineBreadcrumb("shorts_transcript_reused", "info", {
         word_count: words.length,
         detected_language: detectedLanguage,
-        model: result.model,
-        latency_ms: result.latencyMs,
       });
-      // NOTE : the VidiaFlow source fire-and-forgot an `llm_usage_logs`
-      // insert here (whisper audio-seconds cost telemetry). ClipsFlow P1
-      // has no llm_usage_logs table — the per-clip estimate returned in
-      // `cost_usd` (computeClipCost) already includes the Whisper share.
-    } catch (err) {
-      const errMsg = (err as Error).message;
-      logger.error("whisper transcription failed", {
-        job_id: job.id,
-        clip_id: clip.id,
-        error: errMsg,
-      });
-      captureRunJobError(err, job, clip, "whisper_transcription");
-      throw new Error(`whisper_failed: ${errMsg.slice(0, 400)}`);
+    } else {
+      try {
+        const result = await transcribeWithWhisper(
+          sourceUrl, // label only — sourcePath takes precedence below
+          undefined,
+          undefined,
+          segmentPath,
+        );
+        words = result.words;
+        detectedLanguage = result.detectedLanguage;
+        logger.info("whisper transcription done", {
+          job_id: job.id,
+          clip_id: clip.id,
+          detected_language: detectedLanguage,
+          word_count: words.length,
+          model: result.model,
+          latency_ms: result.latencyMs,
+        });
+        addPipelineBreadcrumb("whisper_transcribe_complete", "info", {
+          word_count: words.length,
+          detected_language: detectedLanguage,
+          model: result.model,
+          latency_ms: result.latencyMs,
+        });
+      } catch (err) {
+        const errMsg = (err as Error).message;
+        logger.error("whisper transcription failed", {
+          job_id: job.id,
+          clip_id: clip.id,
+          error: errMsg,
+        });
+        captureRunJobError(err, job, clip, "whisper_transcription");
+        throw new Error(`whisper_failed: ${errMsg.slice(0, 400)}`);
+      }
     }
 
     // Step 5.5 — Empty-words guard. Whisper returns `words=[]` for
@@ -840,6 +883,120 @@ export async function runRenderJob(
       throw new Error(
         "no_speech_detected: Whisper returned 0 words. Source likely has no detectable speech (music-only, silent track, or unsupported audio language).",
       );
+    }
+
+    let shortsProfile = clip.customizations?.shorts;
+    let creativeDirection: CreativeDirectorResult | null = null;
+    if (shortsProfile?.creative_direction?.enabled === true) {
+      if (!shortsProfile.creative_direction.explicit_consent) {
+        throw new Error("creative_direction_consent_required");
+      }
+      if (!options.leaseToken) {
+        throw new Error("creative_direction_requires_fenced_worker");
+      }
+
+      const creativeInput = {
+        candidateId: shortsProfile.candidate_id,
+        startSeconds: clip.start_seconds,
+        endSeconds: clip.end_seconds,
+        transcript: words.map((word) => word.text).join(" "),
+        userInstructions: shortsProfile.creative_direction.user_instructions,
+        visualSummary: shortsProfile.creative_direction.visual_summary,
+      };
+      const inputHash = creativeDirectorInputHash(creativeInput);
+      const cached = shortsProfile.creative_direction.cache;
+      if (cached) {
+        if (
+          cached.input_hash !== inputHash ||
+          cached.model_id !== CLAUDE_OPUS_5_5_MODEL_API_ID
+        ) {
+          throw new Error("creative_direction_cache_conflict");
+        }
+        creativeDirection = parseCreativeDirectorResult(
+          cached.result,
+          segmentDuration,
+        );
+      } else {
+        addPipelineBreadcrumb("shorts_creative_direction_start", "info", {
+          model: CLAUDE_OPUS_5_5_MODEL_API_ID,
+          transcript_characters: creativeInput.transcript.length,
+        });
+        creativeDirection = await createCreativeDirection(creativeInput);
+        const { data: stored, error: storeError } = await supabase.rpc(
+          "clips_store_shorts_creative_direction",
+          {
+            p_job_id: job.id,
+            p_lease_token: options.leaseToken,
+            p_clip_id: clip.id,
+            p_user_id: clip.user_id,
+            p_input_hash: inputHash,
+            p_model_id: CLAUDE_OPUS_5_5_MODEL_API_ID,
+            p_direction: creativeDirection,
+          },
+        );
+        if (storeError) {
+          throw new Error("creative_direction_cache_persist_failed");
+        }
+        if (stored !== true) {
+          const { data: latestClip, error: latestError } = await supabase
+            .from("clips")
+            .select("customizations")
+            .eq("id", clip.id)
+            .eq("user_id", clip.user_id)
+            .maybeSingle();
+          const latestShorts = (
+            latestClip?.customizations as ClipJob["customizations"] | undefined
+          )?.shorts;
+          const latestCache = latestShorts?.creative_direction?.cache;
+          if (latestError) {
+            throw new Error("creative_direction_cache_read_failed");
+          }
+          if (
+            latestCache?.input_hash !== inputHash ||
+            latestCache.model_id !== CLAUDE_OPUS_5_5_MODEL_API_ID
+          ) {
+            throw new Error(
+              "stale_render_lease: creative direction cache write was fenced",
+            );
+          }
+          creativeDirection = parseCreativeDirectorResult(
+            latestCache.result,
+            segmentDuration,
+          );
+        }
+        shortsProfile = {
+          ...shortsProfile,
+          creative_direction: {
+            ...shortsProfile.creative_direction,
+            cache: {
+              input_hash: inputHash,
+              model_id: CLAUDE_OPUS_5_5_MODEL_API_ID,
+              result: creativeDirection,
+            },
+          },
+        };
+      }
+
+      if (creativeDirection) {
+        const adjustedProfile = applyCreativeDirectionToShortsProfile(
+          shortsProfile,
+          creativeDirection,
+        );
+        shortsProfile = adjustedProfile;
+        clip.customizations = {
+          ...clip.customizations,
+          animation_speed: creativeMotionAnimationSpeed(
+            shortsProfile,
+            creativeDirection,
+          ),
+          shorts: shortsProfile,
+        };
+        addPipelineBreadcrumb("shorts_creative_direction_complete", "info", {
+          model: CLAUDE_OPUS_5_5_MODEL_API_ID,
+          motion_template: shortsProfile.motion_template,
+          motion_intensity: creativeDirection.motion.intensity,
+        });
+      }
     }
 
     // ── Step 6 — Translate cues when source language ≠ target ──────────
@@ -956,6 +1113,7 @@ export async function runRenderJob(
     // canonical dims). renderAudiogramBase throws `audiogram_failed:` —
     // already prefixed, rethrown untouched.
     let burnInputPath = segmentPath;
+    shortsProfile = clip.customizations?.shorts;
     if (!hasVideo) {
       addPipelineBreadcrumb("audiogram_start", "info", {
         aspect_ratio: clip.aspect_ratio,
@@ -967,6 +1125,10 @@ export async function runRenderJob(
           segmentPath,
           clip.aspect_ratio,
           segmentDuration,
+          !shouldReduceShortsMotion(
+            shortsProfile?.reduced_motion,
+            shortsProfile?.motion_template,
+          ),
         );
         burnInputPath = audiogramPath;
         addPipelineBreadcrumb("audiogram_complete", "info", {
@@ -987,9 +1149,21 @@ export async function runRenderJob(
     // User-supplied overlays (clips.overlays) are composited on top of
     // the caption track in the order they were supplied. (The VidiaFlow
     // brand-kit logo auto-injection is removed — no brand kits in P1.)
-    const overlays: OverlayElement[] = Array.isArray(clip.overlays)
+    let overlays: OverlayElement[] = Array.isArray(clip.overlays)
       ? clip.overlays
       : [];
+    if (creativeDirection && shortsProfile) {
+      const titleCard = shortsTitleCardOverlay(
+        shortsProfile.title,
+        shortsProfile.hook,
+        segmentDuration,
+        shortsProfile.motion_template,
+      );
+      overlays = [
+        ...overlays.filter((overlay) => overlay.type !== "title_card"),
+        ...(titleCard ? [titleCard] : []),
+      ];
+    }
 
     // Railway supplies a unique lease token. Its output paths are immutable
     // per attempt, so an old process cannot overwrite a retry's MP4/VTT.
@@ -1084,6 +1258,89 @@ export async function runRenderJob(
       throw new Error(`subtitle_burn_failed: ${errMsg.slice(0, 400)}`);
     }
 
+    if (shortsProfile?.elevenlabs?.enabled === true) {
+      try {
+        const authorization = shortsProfile.elevenlabs;
+        const music = await getOrCreateShortsAudioAsset(supabase, {
+          userId: clip.user_id,
+          projectId: shortsProfile.project_id,
+          candidateId: shortsProfile.candidate_id,
+          durationSeconds: segmentDuration,
+          kind: "music",
+          prompt:
+            shortsProfile.music_prompt ??
+            resolveShortsMusicPrompt(
+              shortsProfile.title,
+              shortsProfile.hook,
+              shortsProfile.motion_template,
+              shortsProfile.music_mood,
+            ),
+          authorization,
+        });
+        let soundEffect: { bytes: Uint8Array; atSeconds: number } | undefined;
+        if (authorization.use_cases.includes("sound_effects")) {
+          const effectPlan =
+            (creativeDirection
+              ? resolveCreativeSoundAccent(creativeDirection, segmentDuration)
+              : null) ??
+            resolveShortsMotionEffect(shortsProfile.motion_template);
+          if (effectPlan) {
+            const generatedEffect = await getOrCreateShortsAudioAsset(
+              supabase,
+              {
+                userId: clip.user_id,
+                projectId: shortsProfile.project_id,
+                candidateId: shortsProfile.candidate_id,
+                durationSeconds: segmentDuration,
+                kind: "sound_effect",
+                prompt: effectPlan.prompt,
+                atSeconds: Math.min(
+                  effectPlan.atSeconds,
+                  Math.max(0, segmentDuration - effectPlan.durationSeconds),
+                ),
+                authorization,
+              },
+            );
+            soundEffect = {
+              bytes: generatedEffect.bytes,
+              atSeconds: generatedEffect.atSeconds ?? effectPlan.atSeconds,
+            };
+          }
+        }
+        renderedBuf = await mixShortAudio(
+          renderedBuf,
+          music.bytes,
+          segmentDuration,
+          soundEffect,
+        );
+        addPipelineBreadcrumb("shorts_audio_design_complete", "info", {
+          music_model: music.model,
+          sound_effect_added: Boolean(soundEffect),
+          mp4_bytes: renderedBuf.byteLength,
+        });
+      } catch (error) {
+        const mixFailure =
+          error instanceof Error
+            ? error.message.match(
+                /^(shorts_audio_mix_failed:[^:\s]+)(?::\s*([\s\S]*))?$/u,
+              )
+            : null;
+        const errorCode = mixFailure?.[1] ?? "shorts_audio_design_failed";
+        const diagnostic = mixFailure?.[2]?.slice(0, 800);
+        logger.error("Shorts audio design failed", {
+          job_id: job.id,
+          clip_id: clip.id,
+          error_code: errorCode,
+          ...(diagnostic ? { diagnostic } : {}),
+        });
+        captureRunJobError(error, job, clip, "shorts_audio_design", {
+          error_code: errorCode,
+          ...(diagnostic ? { diagnostic } : {}),
+        });
+        throw new Error(`shorts_audio_design_failed: ${errorCode}`);
+      }
+    }
+
     // ── Step 7.5 — Free-tier watermark ──────────────────────────────────
     // Résout le plan réel du user (migration 0003 : colonne profiles.plan).
     // Free = watermark "AI clip · ClipsFlow". Tout autre plan = pas de watermark.
@@ -1119,6 +1376,10 @@ export async function runRenderJob(
       captureRunJobError(err, job, clip, "watermark_apply");
       throw err;
     }
+
+    // Persist finalization before the first storage write. The Railway
+    // callback is lease-fenced; other callers can omit it safely.
+    await options.markFinalizing?.();
 
     // ── Step 8 — Parallel mp4 + vtt uploads to Supabase Storage ────────
     // OBS — upload stage entry breadcrumb.
@@ -1264,6 +1525,11 @@ export async function runRenderJob(
       score,
       hook_text,
       detected_language: detectedLanguage ?? null,
+      transcript_segments: words.map((word) => ({
+        text: word.text,
+        start: Math.round((word.start + clip.start_seconds) * 1000) / 1000,
+        end: Math.round((word.end + clip.start_seconds) * 1000) / 1000,
+      })),
     };
   } finally {
     // Always clean up every /tmp artifact on exit (success or throw).

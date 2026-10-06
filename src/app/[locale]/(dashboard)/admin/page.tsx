@@ -2,6 +2,7 @@ import { setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { isCurrentRenderFinalizing } from "@/lib/clips/history-query";
 import { resolvePlan } from "@/lib/clips/quota";
 import { hasAdminAccess } from "@/lib/security/admin-access";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -56,6 +57,9 @@ export default async function AdminPage({
     clips,
     jobs,
     failedJobs,
+    queuedRenders,
+    processingRenders,
+    finalizingRenders,
     budget,
   ] = await Promise.all([
     supabase
@@ -68,8 +72,28 @@ export default async function AdminPage({
     admin.from("jobs").select("id", { count: "exact", head: true }),
     admin
       .from("jobs")
+      .select("id, type, attempt_count, created_at, error_message", {
+        count: "exact",
+      })
+      .eq("status", "failed")
+      .order("created_at", { ascending: false })
+      .limit(10),
+    admin
+      .from("jobs")
       .select("id", { count: "exact", head: true })
-      .eq("status", "failed"),
+      .eq("type", "render")
+      .eq("status", "pending"),
+    admin
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("type", "render")
+      .eq("status", "processing"),
+    admin
+      .from("jobs")
+      .select("id, attempt_count, render_stage, render_stage_attempt_count")
+      .eq("type", "render")
+      .eq("status", "processing")
+      .eq("render_stage", "completing"),
     admin
       .from("clips_budget_guard")
       .select("enabled, monthly_budget_usd")
@@ -97,6 +121,40 @@ export default async function AdminPage({
           ? "Non défini"
           : "Not set"
         : `$${Number(budgetLimit).toFixed(2)}`;
+  const recentFailures = (failedJobs.data ?? []) as {
+    id: string;
+    type: string;
+    attempt_count: number;
+    created_at: string;
+    error_message: string | null;
+  }[];
+  const finalizingRenderCount = (finalizingRenders.data ?? []).filter((job) =>
+    isCurrentRenderFinalizing(
+      "processing",
+      "render",
+      job.render_stage,
+      job.render_stage_attempt_count,
+      job.attempt_count,
+    ),
+  ).length;
+  const failureLabel = (message: string | null) => {
+    if (!message)
+      return isFrench ? "Erreur non détaillée" : "Unspecified error";
+    const safeCodes = [
+      "worker_interrupted",
+      "source_too_large",
+      "no_speech_detected",
+      "invalid_source_url",
+      "segment_too_long",
+      "whisper_failed",
+      "subtitle_burn_failed",
+      "upload_failed",
+    ];
+    const code = safeCodes.find((candidate) =>
+      message.startsWith(`${candidate}:`),
+    );
+    return code ?? (isFrench ? "Échec du traitement" : "Processing failed");
+  };
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
@@ -179,6 +237,20 @@ export default async function AdminPage({
             label={isFrench ? "Tâches en échec" : "Failed jobs"}
             value={formatCount(failedJobs.count)}
           />
+          <MetricCard
+            label={isFrench ? "Rendus en attente" : "Queued renders"}
+            value={formatCount(queuedRenders.count)}
+          />
+          <MetricCard
+            label={isFrench ? "Rendus en cours" : "Renders processing"}
+            value={formatCount(processingRenders.count)}
+          />
+          <MetricCard
+            label={isFrench ? "Clips en finalisation" : "Clips finalizing"}
+            value={formatCount(
+              finalizingRenders.error ? null : finalizingRenderCount,
+            )}
+          />
         </div>
       </section>
 
@@ -215,6 +287,56 @@ export default async function AdminPage({
               </p>
               <p className="mt-1 font-medium">{budgetLabel}</p>
             </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section aria-labelledby="admin-failures-heading" className="space-y-3">
+        <h2
+          id="admin-failures-heading"
+          className="font-heading text-xl font-medium"
+        >
+          {isFrench ? "Échecs récents" : "Recent failures"}
+        </h2>
+        <Card size="sm">
+          <CardContent className="pt-3">
+            {failedJobs.error ? (
+              <p className="text-muted-foreground text-sm">
+                {isFrench ? "État indisponible" : "Status unavailable"}
+              </p>
+            ) : recentFailures.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                {isFrench ? "Aucun échec récent." : "No recent failures."}
+              </p>
+            ) : (
+              <ul className="divide-border divide-y">
+                {recentFailures.map((failure) => (
+                  <li
+                    key={failure.id}
+                    className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">
+                        {failureLabel(failure.error_message)}
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        {failure.type} · {isFrench ? "tentative" : "attempt"}{" "}
+                        {failure.attempt_count}
+                      </p>
+                    </div>
+                    <time
+                      dateTime={failure.created_at}
+                      className="text-muted-foreground text-xs"
+                    >
+                      {new Intl.DateTimeFormat(isFrench ? "fr-FR" : "en-US", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      }).format(new Date(failure.created_at))}
+                    </time>
+                  </li>
+                ))}
+              </ul>
+            )}
           </CardContent>
         </Card>
       </section>

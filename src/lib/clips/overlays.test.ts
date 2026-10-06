@@ -105,6 +105,41 @@ describe("buildTitleCardDialogue", () => {
     expect(d).toContain("\\fscx");
   });
 
+  it("uses distinct allow-listed entrances for Shorts motion presets", () => {
+    const punch = buildTitleCardDialogue({
+      ...TITLE_CARD,
+      animationPreset: "punch",
+    });
+    const kinetic = buildTitleCardDialogue({
+      ...TITLE_CARD,
+      animationPreset: "kinetic",
+    });
+    const editorial = buildTitleCardDialogue({
+      ...TITLE_CARD,
+      animationPreset: "editorial",
+    });
+    const calm = buildTitleCardDialogue({
+      ...TITLE_CARD,
+      animationPreset: "calm",
+    });
+
+    expect(new Set([punch, kinetic, editorial, calm]).size).toBe(4);
+    expect(punch).toContain("\\fscx58");
+    expect(kinetic).toContain("\\fscx82");
+    expect(editorial).toContain("\\fad(240,280)");
+    expect(calm).toContain("\\fad(520,350)");
+  });
+
+  it("suppresses every title-card animation when reduced motion is enabled", () => {
+    const dialogue = buildTitleCardDialogue(
+      { ...TITLE_CARD, animationPreset: "punch" },
+      "Inter",
+      true,
+    );
+    expect(dialogue).not.toContain("\\fad(");
+    expect(dialogue).not.toContain("\\t(");
+  });
+
   it("start < end dans le timestamp", () => {
     const d = buildTitleCardDialogue(TITLE_CARD);
     // Le format est "Dialogue: 1,START,END,..."
@@ -340,5 +375,20 @@ describe("buildOverlays", () => {
     const result = buildOverlays([TITLE_CARD, LOGO, CTA], 30);
     expect(result.assDialogues).toHaveLength(2); // title + cta
     expect(result.logoPlans).toHaveLength(1); // logo
+  });
+
+  it("rend les overlays textuels sans animation quand reduced motion est actif", () => {
+    const result = buildOverlays(
+      [TITLE_CARD, LOWER_THIRD, STAT, CTA],
+      30,
+      "Inter",
+      true,
+    );
+    const dialogues = result.assDialogues.join("\n");
+
+    expect(dialogues).not.toContain("\\fad(");
+    expect(dialogues).not.toContain("\\move(");
+    expect(dialogues).not.toContain("\\t(");
+    expect(dialogues).toContain("\\pos(80,1000)");
   });
 });

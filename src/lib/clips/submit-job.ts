@@ -10,6 +10,8 @@ export interface SubmitClipJobInput {
   language: string;
   customizations: Record<string, unknown>;
   overlays: unknown[];
+  /** Reused if the client retries the same submission after a network loss. */
+  requestId: string;
 }
 
 export interface SubmitClipJobResult {
@@ -19,6 +21,7 @@ export interface SubmitClipJobResult {
 }
 
 export type SubmitClipJobErrorCode =
+  | "idempotency_conflict"
   | "budget_exceeded"
   | "budget_unconfigured"
   | "episode_not_found"
@@ -58,7 +61,7 @@ export async function submitClipJob(
   supabase: SupabaseClient,
   input: SubmitClipJobInput,
 ): Promise<SubmitClipJobResult> {
-  const { data, error } = await supabase.rpc("clips_submit_job", {
+  const { data, error } = await supabase.rpc("clips_submit_job_idempotent", {
     p_user_id: input.userId,
     p_episode_id: input.episodeId,
     p_start_seconds: input.startSeconds,
@@ -68,6 +71,7 @@ export async function submitClipJob(
     p_language: input.language,
     p_customizations: input.customizations,
     p_overlays: input.overlays,
+    p_request_id: input.requestId,
   });
 
   if (error) throw new SubmitClipJobError("submit_failed");
@@ -91,6 +95,9 @@ export async function submitClipJob(
   }
   if (row.error_code === "episode_not_found") {
     throw new SubmitClipJobError("episode_not_found");
+  }
+  if (row.error_code === "idempotency_conflict") {
+    throw new SubmitClipJobError("idempotency_conflict");
   }
 
   if (

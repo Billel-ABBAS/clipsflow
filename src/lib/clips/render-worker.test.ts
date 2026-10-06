@@ -41,7 +41,7 @@ describe("processOneRenderJob", () => {
   });
 
   it("finalizes a successful render with the exact lease token", async () => {
-    vi.mocked(runRenderJob).mockResolvedValueOnce({
+    const renderResult = {
       video_url: "https://signed.example/video",
       video_storage_path: "user/clip/attempts/lease.mp4",
       captions_vtt_url: "https://signed.example/captions",
@@ -52,17 +52,40 @@ describe("processOneRenderJob", () => {
       score: 80,
       hook_text: "A hook",
       detected_language: "fr",
-    });
+      transcript_segments: [{ text: "Bonjour.", start: 0, end: 1 }],
+    };
+    vi.mocked(runRenderJob).mockImplementationOnce(
+      async (_supabase, _job, options) => {
+        await options?.markFinalizing?.();
+        return renderResult;
+      },
+    );
     const rpc = vi
       .fn()
       .mockResolvedValueOnce({ data: [LEASED_JOB], error: null })
+      .mockResolvedValueOnce({ data: true, error: null })
       .mockResolvedValueOnce({ data: true, error: null });
+    const clipUpdateEq = vi.fn().mockReturnValueOnce({
+      eq: vi.fn().mockReturnValueOnce({
+        eq: vi.fn().mockResolvedValueOnce({ error: null }),
+      }),
+    });
+    const from = vi.fn(() => ({
+      update: vi.fn(() => ({
+        eq: vi.fn().mockReturnValueOnce({ eq: clipUpdateEq }),
+      })),
+    }));
 
-    const result = await processOneRenderJob({ rpc } as never);
+    const result = await processOneRenderJob({ rpc, from } as never);
 
     expect(result).toEqual({ kind: "completed", jobId: "job-1" });
     expect(runRenderJob).toHaveBeenCalledWith(expect.anything(), LEASED_JOB, {
       leaseToken: "lease-1",
+      markFinalizing: expect.any(Function),
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, "clips_mark_render_completing", {
+      p_job_id: "job-1",
+      p_lease_token: "lease-1",
     });
     expect(rpc).toHaveBeenLastCalledWith("clips_complete_render_job", {
       p_job_id: "job-1",
@@ -75,5 +98,35 @@ describe("processOneRenderJob", () => {
       p_score: 80,
       p_hook_text: "A hook",
     });
+    expect(from).toHaveBeenCalledWith("clips");
+  });
+
+  it("does not fail or refund a job when the finalization fence is stale", async () => {
+    vi.mocked(runRenderJob).mockImplementationOnce(
+      async (_supabase, _job, options) => {
+        await options?.markFinalizing?.();
+        throw new Error("unexpected_render_continuation");
+      },
+    );
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({ data: [LEASED_JOB], error: null })
+      .mockResolvedValueOnce({ data: false, error: null });
+    const remove = vi.fn().mockResolvedValue({ data: [], error: null });
+    const storageFrom = vi.fn(() => ({ remove }));
+    const storage = { from: storageFrom };
+
+    const result = await processOneRenderJob({ rpc, storage } as never);
+
+    expect(result).toEqual({ kind: "stale", jobId: "job-1" });
+    expect(rpc).toHaveBeenNthCalledWith(2, "clips_mark_render_completing", {
+      p_job_id: "job-1",
+      p_lease_token: "lease-1",
+    });
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(remove).toHaveBeenCalledWith([
+      "user/clip/attempts/lease.mp4",
+      "user/clip/attempts/lease.vtt",
+    ]);
   });
 });

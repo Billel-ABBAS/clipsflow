@@ -21,6 +21,8 @@ export interface SafeFetchInit extends RequestInit {
   timeoutMs?: number;
   maxRedirects?: number;
   allowedHosts?: string[];
+  /** Exact local Supabase HTTP origin, only supplied by development callers. */
+  allowHttpOrigin?: string;
   /** Injectable seams used by deterministic security tests. */
   lookup?: DnsLookup;
   fetchImpl?: FetchImplementation;
@@ -46,6 +48,7 @@ export async function safeFetch(
     timeoutMs = 30_000,
     maxRedirects = 5,
     allowedHosts,
+    allowHttpOrigin,
     lookup,
     fetchImpl = fetch,
     ...requestInit
@@ -75,8 +78,18 @@ export async function safeFetch(
 
   try {
     for (let redirects = 0; ; redirects++) {
-      current = validateOutboundUrl(current.href, { allowedHosts });
-      await assertPublicDns(current, lookup);
+      if (allowHttpOrigin && current.origin !== allowHttpOrigin) {
+        throw new OutboundUrlError(
+          "Local storage fetch left the configured Supabase origin",
+        );
+      }
+      current = validateOutboundUrl(current.href, {
+        allowedHosts,
+        allowHttpOrigin,
+      });
+      if (current.protocol !== "http:" || current.origin !== allowHttpOrigin) {
+        await assertPublicDns(current, lookup);
+      }
 
       const response = await fetchImpl(current, {
         ...requestInit,

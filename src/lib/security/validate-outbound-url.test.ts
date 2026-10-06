@@ -3,6 +3,7 @@ import {
   OutboundUrlError,
   assertPublicDns,
   defaultClipsAllowedHosts,
+  localSupabaseHttpOrigin,
   validateOutboundUrl,
 } from "./validate-outbound-url";
 
@@ -31,6 +32,25 @@ describe("validateOutboundUrl", () => {
     expect(() =>
       validateOutboundUrl("https://example.com/video.mp4", {
         allowedHosts: [],
+      }),
+    ).toThrow(OutboundUrlError);
+  });
+
+  it("n'autorise que l'origine HTTP exacte de Supabase Docker local", () => {
+    const allowHttpOrigin = "http://127.0.0.1:54321";
+    expect(
+      validateOutboundUrl(`${allowHttpOrigin}/storage/v1/object/sign/file`, {
+        allowHttpOrigin,
+      }).origin,
+    ).toBe(allowHttpOrigin);
+    expect(() =>
+      validateOutboundUrl("http://127.0.0.1:54322/private", {
+        allowHttpOrigin,
+      }),
+    ).toThrow(OutboundUrlError);
+    expect(() =>
+      validateOutboundUrl("http://169.254.169.254:54321/latest/meta-data", {
+        allowHttpOrigin: "http://169.254.169.254:54321",
       }),
     ).toThrow(OutboundUrlError);
   });
@@ -75,5 +95,21 @@ describe("defaultClipsAllowedHosts", () => {
     expect(defaultClipsAllowedHosts()).toEqual([]);
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "not-a-url");
     expect(defaultClipsAllowedHosts()).toEqual([]);
+  });
+});
+
+describe("localSupabaseHttpOrigin", () => {
+  it("returns only the loopback Docker origin outside production", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
+    expect(localSupabaseHttpOrigin()).toBe("http://127.0.0.1:54321");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://example.com:54321");
+    expect(localSupabaseHttpOrigin()).toBeUndefined();
+  });
+
+  it("never enables the HTTP exception in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
+    expect(localSupabaseHttpOrigin()).toBeUndefined();
   });
 });

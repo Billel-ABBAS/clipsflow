@@ -142,6 +142,23 @@ export async function processOneRenderJob(
   try {
     const result = await runRenderJob(supabase, job, {
       leaseToken: job.lease_token,
+      markFinalizing: async () => {
+        const { data: marked, error: markError } = await supabase.rpc(
+          "clips_mark_render_completing",
+          {
+            p_job_id: job.id,
+            p_lease_token: job.lease_token,
+          },
+        );
+        if (markError) {
+          throw new Error(
+            `mark_render_completing_failed: ${markError.message.slice(0, 300)}`,
+          );
+        }
+        if (marked !== true) {
+          throw new Error("stale_render_lease: render phase fence rejected");
+        }
+      },
     });
     finalizing = true;
     clearInterval(heartbeat);
@@ -149,7 +166,6 @@ export async function processOneRenderJob(
       await removeAttemptArtifacts(supabase, job);
       return { kind: "stale", jobId: job.id };
     }
-
     const { data: completed, error: completeError } = await supabase.rpc(
       "clips_complete_render_job",
       {
@@ -174,6 +190,25 @@ export async function processOneRenderJob(
       return { kind: "stale", jobId: job.id };
     }
 
+    // Suggestions reuse words that Whisper already transcribed for this
+    // render. Persist only after the lease-fenced completion succeeds so a
+    // stale worker can never replace the winning attempt's transcript.
+    const { error: transcriptError } = await supabase
+      .from("clips")
+      .update({
+        transcript_segments: result.transcript_segments,
+        transcript_language: result.detected_language,
+      })
+      .eq("id", job.clip_id)
+      .eq("user_id", job.user_id)
+      .eq("status", "completed");
+    if (transcriptError) {
+      log("warn", "completed clip transcript persistence failed", {
+        job_id: job.id,
+        clip_id: job.clip_id,
+      });
+    }
+
     log("info", "render completed", { job_id: job.id });
     return { kind: "completed", jobId: job.id };
   } catch (error) {
@@ -181,6 +216,10 @@ export async function processOneRenderJob(
     finalizing = true;
     clearInterval(heartbeat);
     if (leaseLost) {
+      await removeAttemptArtifacts(supabase, job);
+      return { kind: "stale", jobId: job.id };
+    }
+    if (errorPrefix(error) === "stale_render_lease") {
       await removeAttemptArtifacts(supabase, job);
       return { kind: "stale", jobId: job.id };
     }

@@ -9,8 +9,11 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    ".next-clipsflow-local-smoke/**",
     "out/**",
     "build/**",
+    ".worktrees/**",
+    ".tmp-staging-render-test*/**",
     "next-env.d.ts",
     // Artefacts de coverage (déjà dans .prettierignore) :
     "coverage/**",

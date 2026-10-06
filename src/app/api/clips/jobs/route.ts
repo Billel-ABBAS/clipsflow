@@ -28,6 +28,7 @@
 // Status codes : 202 / 400 / 401 / 402 / 403 / 404 / 500.
 // ============================================================================
 
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
@@ -288,6 +289,16 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
   const input = parsed.data;
+  const requestIdHeader = request.headers.get("Idempotency-Key");
+  const parsedRequestId = requestIdHeader
+    ? z.uuid().safeParse(requestIdHeader)
+    : { success: true as const, data: crypto.randomUUID() };
+  if (!parsedRequestId.success) {
+    return NextResponse.json(
+      { error: "invalid_idempotency_key" },
+      { status: 400 },
+    );
+  }
 
   // Profil — requis par resolvePlan (constant 'pro' en P1, colonne réelle
   // en P3 : le call site ne changera pas) et fail-fast avant de créer une
@@ -318,35 +329,83 @@ export async function POST(request: Request): Promise<Response> {
       }
       return NextResponse.json({ error: "invalid_url" }, { status: 400 });
     }
-    // Row episodes via service_role (status 'ready' : la source est une
-    // URL directe, rien à transcoder avant le render).
-    const { data: episode, error: epErr } = await admin
-      .from("episodes")
-      .insert({
-        user_id: user.id,
-        title: input.source.title,
-        source_type: "url",
-        source_url: input.source.url,
-        status: "ready",
-      })
-      .select("id")
-      .single();
-    if (epErr || !episode) {
+    const sourceRequestFingerprint = createHash("sha256")
+      .update(JSON.stringify([input.source.url, input.source.title]))
+      .digest("hex");
+    const findSourceForRequest = () =>
+      admin
+        .from("episodes")
+        .select("id, source_request_fingerprint")
+        .eq("user_id", user.id)
+        .eq("submission_request_id", parsedRequestId.data)
+        .maybeSingle();
+
+    let { data: episode, error: sourceLookupError } =
+      await findSourceForRequest();
+    if (sourceLookupError) {
       console.error(
         JSON.stringify({
           level: "error",
           source: "api-clips-jobs",
-          message: "episode insert failed",
-          error: epErr?.message?.slice(0, 300),
+          message: "idempotent source lookup failed",
         }),
       );
       return NextResponse.json(
         { error: "episode_create_failed" },
-        { status: 500 },
+        { status: 503 },
+      );
+    }
+    if (!episode) {
+      // URL-backed episodes are created once per idempotency key. If two
+      // identical requests race, the unique index arbitrates and the loser
+      // reads the winner's row below.
+      const inserted = await admin
+        .from("episodes")
+        .insert({
+          user_id: user.id,
+          title: input.source.title,
+          source_type: "url",
+          source_url: input.source.url,
+          status: "ready",
+          submission_request_id: parsedRequestId.data,
+          source_request_fingerprint: sourceRequestFingerprint,
+        })
+        .select("id, source_request_fingerprint")
+        .single();
+      if (inserted.error?.code === "23505") {
+        const raced = await findSourceForRequest();
+        episode = raced.data;
+        sourceLookupError = raced.error;
+      } else if (inserted.error || !inserted.data) {
+        console.error(
+          JSON.stringify({
+            level: "error",
+            source: "api-clips-jobs",
+            message: "episode insert failed",
+          }),
+        );
+        return NextResponse.json(
+          { error: "episode_create_failed" },
+          { status: 500 },
+        );
+      } else {
+        episode = inserted.data;
+        createdSourceEpisodeId = inserted.data.id as string;
+      }
+    }
+    if (sourceLookupError || !episode) {
+      return NextResponse.json(
+        { error: "episode_create_failed" },
+        { status: 503 },
+      );
+    }
+    if (episode.source_request_fingerprint !== sourceRequestFingerprint) {
+      return NextResponse.json(
+        { error: "idempotency_conflict" },
+        { status: 409 },
       );
     }
     episodeId = episode.id as string;
-    createdSourceEpisodeId = episodeId;
   } else {
     // Épisode existant — client user (RLS scope ownership) + .eq user_id
     // explicite (defence-in-depth si la policy évolue).
@@ -385,6 +444,7 @@ export async function POST(request: Request): Promise<Response> {
       language: input.language,
       customizations: allowedCustomizations,
       overlays: input.overlays ?? [],
+      requestId: parsedRequestId.data,
     });
   } catch (error) {
     if (error instanceof SubmitClipJobError) {
@@ -396,7 +456,8 @@ export async function POST(request: Request): Promise<Response> {
         createdSourceEpisodeId &&
         (error.code === "quota_exceeded" ||
           error.code === "budget_exceeded" ||
-          error.code === "budget_unconfigured")
+          error.code === "budget_unconfigured" ||
+          error.code === "idempotency_conflict")
       ) {
         const { error: cleanupError } = await admin
           .from("episodes")
@@ -444,6 +505,12 @@ export async function POST(request: Request): Promise<Response> {
         return NextResponse.json(
           { error: "profile_not_found" },
           { status: 404 },
+        );
+      }
+      if (error.code === "idempotency_conflict") {
+        return NextResponse.json(
+          { error: "idempotency_conflict" },
+          { status: 409 },
         );
       }
     }

@@ -10,11 +10,11 @@
 // objects. Called in the gallery Server Component before rendering so the
 // page never serves a stale URL.
 //
-// Re-signing is cheap (one Supabase call regardless of row count) — the
-// gallery query is capped at 50 rows so the worst case is one batch of 150
-// signed URLs (video + vtt + thumbnail, all in the same `clip-outputs`
-// bucket). The 24h TTL is preserved on the re-sign so the browser bfcache
-// can still hit during a session.
+// Re-signing uses batched Supabase calls regardless of row count — the
+// history page is server-paginated at 20 clips, so the normal worst case is
+// one batch of 60 signed URLs (video + vtt + thumbnail in `clip-outputs`).
+// The 24h TTL is retained for owner-only gallery links; public share links
+// mint their own shorter-lived URLs on each request.
 //
 // Ported from VidiaFlow src/lib/clipflow/refresh-urls.ts.
 // Adaptations : bucket `clip-subtitles` → `clip-outputs` ; column names
@@ -26,13 +26,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 const BUCKET = "clip-outputs";
 
 /**
- * Minimum shape — any object with the three URL fields + the three storage
- * path fields. Wider row shapes are preserved via the generic `T`. Storage
- * paths are nullable (thumbnail is always null in P1 ; vtt is best-effort).
+ * Minimum shape — any object with the URL fields + storage path fields.
+ * Wider row shapes are preserved via the generic `T`. Storage paths are
+ * nullable (thumbnail is always null in P1 ; vtt is best-effort).
  */
 export interface ClipUrlFields {
   video_url?: string | null;
+  video_download_url?: string | null;
   captions_vtt_url?: string | null;
+  captions_vtt_download_url?: string | null;
   thumbnail_url?: string | null;
   video_storage_path?: string | null;
   captions_vtt_storage_path?: string | null;
@@ -40,7 +42,8 @@ export interface ClipUrlFields {
 }
 
 /**
- * Re-sign every `clip-outputs` storage path attached to each clip row.
+ * Re-sign every `clip-outputs` storage path attached to each clip row, with
+ * separate inline and attachment URLs for video and caption downloads.
  * Returns a new array — does not mutate inputs. Failures are silent : if
  * the batch call errors or a specific path isn't returned, the original
  * URL is preserved on the row (so rows with a non-null `video_url` but no
@@ -88,15 +91,50 @@ export async function refreshClipUrls<T extends ClipUrlFields>(
     }
   }
 
+  // Playback URLs must stay inline for the <video> preview. Mint a second
+  // set with Storage's `download` response disposition for browser downloads;
+  // the cross-origin `download` attribute alone is not reliable.
+  const downloadPaths = Array.from(
+    new Set(
+      clips.flatMap((clip) =>
+        [clip.video_storage_path, clip.captions_vtt_storage_path].filter(
+          (path): path is string => Boolean(path),
+        ),
+      ),
+    ),
+  );
+  const downloadResult = downloadPaths.length
+    ? await supabase.storage
+        .from(BUCKET)
+        .createSignedUrls(downloadPaths, expiresIn, { download: true })
+    : { data: [], error: null };
+
+  const downloadUrlByPath = new Map<string, string>();
+  if (!downloadResult.error && downloadResult.data) {
+    for (const entry of downloadResult.data) {
+      if (entry.path && entry.signedUrl) {
+        downloadUrlByPath.set(entry.path, entry.signedUrl);
+      }
+    }
+  }
+
   return clips.map((c) => {
     const next = { ...c };
     if (c.video_storage_path) {
       const fresh = urlByPath.get(c.video_storage_path);
       if (fresh) next.video_url = fresh;
+      next.video_download_url =
+        downloadUrlByPath.get(c.video_storage_path) ?? null;
+    } else {
+      next.video_download_url = c.video_url ?? null;
     }
     if (c.captions_vtt_storage_path) {
       const fresh = urlByPath.get(c.captions_vtt_storage_path);
       if (fresh) next.captions_vtt_url = fresh;
+      next.captions_vtt_download_url =
+        downloadUrlByPath.get(c.captions_vtt_storage_path) ?? null;
+    } else {
+      next.captions_vtt_download_url = c.captions_vtt_url ?? null;
     }
     if (c.thumbnail_storage_path) {
       const fresh = urlByPath.get(c.thumbnail_storage_path);

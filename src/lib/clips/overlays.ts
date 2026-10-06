@@ -26,6 +26,8 @@ export interface TitleCard {
   font?: string;
   /** Optional accent colour for heading (#RRGGBB) — defaults to white */
   color?: string;
+  /** Allow-listed entrance style used by the Shorts motion presets. */
+  animationPreset?: "punch" | "kinetic" | "editorial" | "calm";
 }
 
 /**
@@ -143,6 +145,7 @@ function escapeAss(s: string): string {
 export function buildTitleCardDialogue(
   el: TitleCard,
   defaultFont = "Inter",
+  reducedMotion = false,
 ): string {
   const start = assTime(el.startSec);
   const end = assTime(el.endSec);
@@ -150,7 +153,23 @@ export function buildTitleCardDialogue(
   const font = el.font ?? defaultFont;
   const main = escapeAss(el.text);
   const sub = el.subtitle ? `\\N{\\fs50}${escapeAss(el.subtitle)}` : "";
-  return `Dialogue: 1,${start},${end},Default,,0,0,0,,{\\an5\\fn${font}\\b1\\fs120\\c${color}\\bord4\\shad2\\fad(300,300)\\fscx70\\fscy70\\t(0,400,\\fscx100\\fscy100)}${main}${sub}`;
+  const motion = reducedMotion
+    ? ""
+    : (() => {
+        switch (el.animationPreset) {
+          case "punch":
+            return "\\fad(90,120)\\fscx58\\fscy58\\t(0,140,\\fscx112\\fscy112)\\t(140,240,\\fscx100\\fscy100)";
+          case "kinetic":
+            return "\\fad(80,160)\\fscx82\\fscy82\\t(0,100,\\fscx106\\fscy106)\\t(100,210,\\fscx100\\fscy100)";
+          case "editorial":
+            return "\\fad(240,280)\\fscx96\\fscy96\\t(0,420,\\fscx100\\fscy100)";
+          case "calm":
+            return "\\fad(520,350)\\fscx99\\fscy99\\t(0,600,\\fscx100\\fscy100)";
+          default:
+            return "\\fad(300,300)\\fscx70\\fscy70\\t(0,400,\\fscx100\\fscy100)";
+        }
+      })();
+  return `Dialogue: 1,${start},${end},Default,,0,0,0,,{\\an5\\fn${font}\\b1\\fs120\\c${color}\\bord4\\shad2${motion}}${main}${sub}`;
 }
 
 /**
@@ -159,13 +178,17 @@ export function buildTitleCardDialogue(
 export function buildLowerThirdDialogue(
   el: LowerThird,
   defaultFont = "Inter",
+  reducedMotion = false,
 ): string {
   const start = assTime(el.startSec);
   const end = assTime(el.endSec);
   const slideMs = el.slideInMs ?? 400;
   const name = escapeAss(el.name);
   const role = el.role ? `\\N{\\fs36\\c&H00CCCCCC&}${escapeAss(el.role)}` : "";
-  return `Dialogue: 2,${start},${end},Default,,0,0,0,,{\\an1\\fn${defaultFont}\\b1\\fs56\\bord3\\shad1\\move(-400,1000,80,1000,0,${slideMs})\\fad(0,300)}${name}${role}`;
+  const motion = reducedMotion
+    ? "\\pos(80,1000)"
+    : `\\move(-400,1000,80,1000,0,${slideMs})\\fad(0,300)`;
+  return `Dialogue: 2,${start},${end},Default,,0,0,0,,{\\an1\\fn${defaultFont}\\b1\\fs56\\bord3\\shad1${motion}}${name}${role}`;
 }
 
 /**
@@ -174,6 +197,7 @@ export function buildLowerThirdDialogue(
 export function buildStatCalloutDialogue(
   el: StatCallout,
   defaultFont = "Inter",
+  reducedMotion = false,
 ): string {
   const start = assTime(el.startSec);
   const end = assTime(el.endSec);
@@ -208,10 +232,11 @@ export function buildStatCalloutDialogue(
       posTag = "\\pos(1840,80)";
       break;
   }
-  const animation =
-    "\\fad(200,200)\\fscx50\\fscy50\\frz-15" +
-    "\\t(0,400,\\fscx115\\fscy115\\frz5)" +
-    "\\t(400,600,\\fscx100\\fscy100\\frz0)";
+  const animation = reducedMotion
+    ? ""
+    : "\\fad(200,200)\\fscx50\\fscy50\\frz-15" +
+      "\\t(0,400,\\fscx115\\fscy115\\frz5)" +
+      "\\t(400,600,\\fscx100\\fscy100\\frz0)";
   return `Dialogue: 3,${start},${end},Default,,0,0,0,,{${alignTag}${posTag}\\fn${defaultFont}\\b1\\fs140\\c${valueColor}\\bord4\\shad2${animation}}${value}${labelChunk}`;
 }
 
@@ -221,15 +246,17 @@ export function buildStatCalloutDialogue(
 export function buildCtaOutroDialogue(
   el: CtaOutro,
   defaultFont = "Inter",
+  reducedMotion = false,
 ): string {
   const start = assTime(el.startSec);
   const end = assTime(el.endSec);
   const text = escapeAss(el.text);
   // ClipsFlow accent color — cyan #22D3EE. BGR: EED322 → ASS: &HEED322&
   const ctaColor = hexToAss("#22D3EE", "22D3EE");
-  const animation =
-    "\\move(960,1200,960,1000,0,300)\\fad(200,300)" +
-    "\\t(500,1500,\\frz3)\\t(1500,2000,\\frz-3)";
+  const animation = reducedMotion
+    ? ""
+    : "\\move(960,1200,960,1000,0,300)\\fad(200,300)" +
+      "\\t(500,1500,\\frz3)\\t(1500,2000,\\frz-3)";
   return `Dialogue: 4,${start},${end},Default,,0,0,0,,{\\an2\\fn${defaultFont}\\b1\\fs72\\c${ctaColor}\\bord4\\shad2${animation}}${text}`;
 }
 
@@ -309,6 +336,7 @@ export function buildOverlays(
   overlays: OverlayElement[] | undefined,
   clipDurationSec: number,
   defaultFont = "Inter",
+  reducedMotion = false,
 ): OverlayBuildResult {
   const result: OverlayBuildResult = { assDialogues: [], logoPlans: [] };
   if (!overlays || overlays.length === 0) return result;
@@ -316,19 +344,27 @@ export function buildOverlays(
   for (const el of overlays) {
     switch (el.type) {
       case "title_card":
-        result.assDialogues.push(buildTitleCardDialogue(el, defaultFont));
+        result.assDialogues.push(
+          buildTitleCardDialogue(el, defaultFont, reducedMotion),
+        );
         break;
       case "lower_third":
-        result.assDialogues.push(buildLowerThirdDialogue(el, defaultFont));
+        result.assDialogues.push(
+          buildLowerThirdDialogue(el, defaultFont, reducedMotion),
+        );
         break;
       case "logo_reveal":
         result.logoPlans.push(buildLogoOverlayFilter(el, clipDurationSec));
         break;
       case "stat_callout":
-        result.assDialogues.push(buildStatCalloutDialogue(el, defaultFont));
+        result.assDialogues.push(
+          buildStatCalloutDialogue(el, defaultFont, reducedMotion),
+        );
         break;
       case "cta_outro":
-        result.assDialogues.push(buildCtaOutroDialogue(el, defaultFont));
+        result.assDialogues.push(
+          buildCtaOutroDialogue(el, defaultFont, reducedMotion),
+        );
         break;
     }
   }

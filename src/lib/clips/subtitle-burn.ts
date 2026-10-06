@@ -56,6 +56,7 @@ import {
   FFMPEG_SINGLE_CORE_X264_ARGS,
 } from "./ffmpeg-timeout";
 import type { AspectRatio, StyleKey, SubtitleCustomizations } from "./types";
+import { shouldReduceShortsMotion } from "./motion-preferences";
 import {
   assTime,
   hexToAss,
@@ -1021,6 +1022,10 @@ export async function burnSubtitles(
       0.5,
       Math.min(2, params.customizations?.animation_speed ?? 1),
     );
+    const reducedMotion = shouldReduceShortsMotion(
+      params.customizations?.shorts?.reduced_motion,
+      params.customizations?.shorts?.motion_template,
+    );
     // Higher speed = SHORTER duration values → divide by multiplier.
     const speedScale = (ms: number) =>
       Math.max(1, Math.round(ms / animationSpeed));
@@ -1031,7 +1036,7 @@ export async function burnSubtitles(
     const overshootSettleMs = speedScale(100);
     const scaledPopInMs = speedScale(preset.popInMs);
     const popInBody =
-      params.styleKey === "typewriter"
+      reducedMotion || params.styleKey === "typewriter"
         ? ""
         : preset.popInMs === 0
           ? `\\fad(${fadeIn},${fadeOut})`
@@ -1043,8 +1048,9 @@ export async function burnSubtitles(
     // than hardcoding it in the preset table. Other presets just use the
     // static `inlineOverrides` value verbatim.
     const inlineRaw = preset.inlineOverrides ?? "";
-    const inline =
-      params.styleKey === "neon"
+    const inline = reducedMotion
+      ? ""
+      : params.styleKey === "neon"
         ? `\\3c${secondaryAss}${inlineRaw}`
         : inlineRaw;
     const popInPrefix =
@@ -1093,7 +1099,11 @@ export async function burnSubtitles(
       const start = assTime(c.start);
       const end = assTime(c.end);
       let body: string;
-      if (isTypewriter) {
+      if (reducedMotion) {
+        // Keep the complete, synchronized cue visible without karaoke,
+        // typewriter, fade, pop, or pulse effects.
+        body = escapeAss(transformText(c.text));
+      } else if (isTypewriter) {
         // Typewriter — distribute per-character `\k` across the cue
         // duration so letters appear sequentially. libass `\k` per-letter
         // is heavy on the parser ; cues stay short (wordsPerCue=4).
@@ -1187,6 +1197,7 @@ export async function burnSubtitles(
       params.overlays,
       clipDuration,
       fontFamily,
+      reducedMotion,
     );
 
     const assBody =
@@ -1203,7 +1214,7 @@ export async function burnSubtitles(
     //     escaping (POSIX paths on Lambda are no-ops). Use `subtitles=`
     //     filter (libass-backed).
     const escapeFilterPath = (p: string) =>
-      p.replace(/\\/g, "/").replace(/:/g, "\\:");
+      p.replace(/\\/g, "/").replace(/:/g, "\\\\:");
     const assForFilter = escapeFilterPath(assPath);
     const fontsDirForFilter = escapeFilterPath(dir);
 

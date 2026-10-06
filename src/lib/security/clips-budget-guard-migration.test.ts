@@ -9,8 +9,24 @@ const migration = readFileSync(
   ),
   "utf8",
 ).replace(/\s+/g, " ");
+const serviceRoleGrantMigration = readFileSync(
+  join(
+    process.cwd(),
+    "supabase/migrations/20261005034254_clips_budget_guard_service_role_select.sql",
+  ),
+  "utf8",
+).replace(/\s+/g, " ");
 
 describe("migration garde de budget ClipsFlow", () => {
+  it("grants only the admin's required service-role read access", () => {
+    expect(serviceRoleGrantMigration).toMatch(
+      /REVOKE ALL ON TABLE public\.clips_budget_guard FROM PUBLIC, anon, authenticated, service_role/i,
+    );
+    expect(serviceRoleGrantMigration).toMatch(
+      /GRANT SELECT ON TABLE public\.clips_budget_guard TO service_role/i,
+    );
+  });
+
   it("est désactivée par défaut et isolée des rôles navigateur", () => {
     expect(migration).toMatch(
       /CREATE TABLE IF NOT EXISTS public\.clips_budget_guard/i,

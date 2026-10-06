@@ -3,10 +3,8 @@
 // ============================================================================
 // Login minimal P1 — remplacé par l'auth UI complète en Phase 3.
 // ============================================================================
-// DEV-ONLY scaffold : email + password via supabase.auth.signInWithPassword
-// with a sign-up toggle (signUp). Success → router.push("/clips"). Errors
-// render inline. Neutral shadcn — no provider buttons, no forgot-password,
-// no marketing split-screen.
+// Email + password authentication with sign-up and recovery. Successful
+// sign-in resumes only an allow-listed in-app destination from the login URL.
 // ============================================================================
 
 import { useState } from "react";
@@ -22,6 +20,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { useRouter } from "@/i18n/navigation";
 import { getPasswordRecoveryRedirectUrl } from "@/lib/auth/password-recovery";
+import {
+  getAuthCallbackRedirectUrl,
+  getSafeAuthReturnPath,
+} from "@/lib/auth/return-path";
 import { createClient } from "@/lib/supabase/client";
 
 type Mode = "signin" | "signup" | "recovery";
@@ -42,6 +44,9 @@ export default function LoginPage() {
     setError(null);
     setInfo(null);
     setLoading(true);
+    const returnPath = getSafeAuthReturnPath(
+      new URLSearchParams(window.location.search).get("next"),
+    );
     try {
       const supabase = createClient();
       if (mode === "recovery") {
@@ -71,12 +76,19 @@ export default function LoginPage() {
           setError(err.message || t("error_generic"));
           return;
         }
-        router.push("/clips");
+        router.push(returnPath);
         router.refresh();
       } else {
         const { data, error: err } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            emailRedirectTo: getAuthCallbackRedirectUrl(
+              process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin,
+              returnPath,
+              locale,
+            ),
+          },
         });
         if (err) {
           setError(err.message || t("error_generic"));
@@ -87,7 +99,7 @@ export default function LoginPage() {
           setInfo(t("signup_success"));
           return;
         }
-        router.push("/clips");
+        router.push(returnPath);
         router.refresh();
       }
     } catch {
@@ -118,8 +130,14 @@ export default function LoginPage() {
           onClick={() => {
             // OAuth must use a full-page navigation so the API route can set
             // cookies and redirect the browser to Google's authorization page.
+            const searchParams = new URLSearchParams({
+              next: getSafeAuthReturnPath(
+                new URLSearchParams(window.location.search).get("next"),
+              ),
+              locale,
+            });
             // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-            window.location.href = "/api/auth/google";
+            window.location.href = `/api/auth/google?${searchParams.toString()}`;
           }}
         >
           <span className="mr-2 h-4 w-4">

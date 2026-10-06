@@ -27,6 +27,8 @@ const plans: PlanKey[] = ["free", "solo", "pro", "studio"];
 export function PricingCards({ locale, isLoggedIn }: PricingCardsProps) {
   const t = useTranslations("pricing");
   const router = useRouter();
+  const shortsLoginHref = `/${locale}/login?next=%2Fshorts`;
+  const shortsHref = `/${locale}/shorts`;
   const [loading, setLoading] = useState<PlanKey | null>(null);
   const checkoutRequestIds = useRef<Partial<Record<PlanKey, string>>>({});
   async function handleSelect(plan: PlanKey) {
@@ -34,7 +36,7 @@ export function PricingCards({ locale, isLoggedIn }: PricingCardsProps) {
       return;
     }
     if (!isLoggedIn) {
-      router.push(`/${locale}/login`);
+      router.push(shortsLoginHref);
       return;
     }
     setLoading(plan);
@@ -80,7 +82,9 @@ export function PricingCards({ locale, isLoggedIn }: PricingCardsProps) {
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={() => router.push(`/${locale}/clips`)}
+                onClick={() =>
+                  router.push(isLoggedIn ? shortsHref : shortsLoginHref)
+                }
               >
                 {t("free.cta")}
               </Button>

@@ -1,5 +1,5 @@
 // ClipsFlow — GET /api/auth/callback
-// OAuth callback — récupère la session, redirige vers /clips
+// OAuth callback — récupère la session, puis redirige vers un chemin local sûr
 
 import { NextResponse } from "next/server";
 

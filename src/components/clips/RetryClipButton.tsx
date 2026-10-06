@@ -1,70 +1,65 @@
 "use client";
 
 // ============================================================================
-// RetryClipButton — re-enqueue a failed clip.
-// Ported from VidiaFlow src/components/clipflow/RetryClipButton.tsx.
-// Adaptation P1 (no dedicated retry API in ClipsFlow) : instead of calling
-// POST /api/clipflow/jobs/[id]/retry, the button re-POSTs
-// /api/clips/jobs with the SAME parameters as the failed clip (episode_id,
-// segment, style, aspect, language, customizations, overlays). A fresh
-// `clips` row is created ; the failed row stays in the gallery as the
-// audit trail. Quota is re-reserved — a 402 surfaces a dedicated message.
+// Retry a failed clip through an idempotent server operation. Concurrent
+// clicks reuse one active retry, while a later retry after another failure
+// becomes a new explicitly charged attempt.
 // ============================================================================
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { useRouter } from "@/i18n/navigation";
-import type { OverlayElement } from "@/lib/clips/overlays";
-import type { SubtitleCustomizations } from "@/lib/clips/types";
-
-/** Everything needed to re-submit the failed clip as a fresh job. */
-export interface RetryClipSeed {
-  episode_id: string;
-  start_seconds: number;
-  end_seconds: number;
-  style_key: string;
-  aspect_ratio: string;
-  language: string;
-  customizations: SubtitleCustomizations | null;
-  overlays: OverlayElement[] | null;
-}
-
 interface RetryClipButtonProps {
-  seed: RetryClipSeed;
+  clipId: string;
 }
 
-export function RetryClipButton({ seed }: RetryClipButtonProps) {
+export function RetryClipButton({ clipId }: RetryClipButtonProps) {
   const t = useTranslations("clips.retry");
   const router = useRouter();
   const [running, setRunning] = useState(false);
+  const requestIdRef = useRef<string | null>(null);
 
   const handleClick = async () => {
     setRunning(true);
     try {
-      const res = await fetch("/api/clips/jobs", {
+      const requestId = requestIdRef.current ?? crypto.randomUUID();
+      requestIdRef.current = requestId;
+      const res = await fetch("/api/clips/jobs/retry", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          episode_id: seed.episode_id,
-          start_seconds: seed.start_seconds,
-          end_seconds: seed.end_seconds,
-          style_key: seed.style_key,
-          aspect_ratio: seed.aspect_ratio,
-          language: seed.language,
-          customizations: seed.customizations ?? {},
-          overlays: seed.overlays ?? [],
-        }),
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": requestId,
+        },
+        body: JSON.stringify({ clip_id: clipId }),
       });
+      const result = (await res.json().catch(() => null)) as {
+        error?: string;
+        data?: { status?: string };
+      } | null;
       if (res.status === 402) {
         toast.error(t("quota_exceeded"));
         return;
       }
-      if (res.status !== 202) throw new Error(`retry_failed_${res.status}`);
-      toast.success(t("success"));
+      if (
+        res.status === 503 &&
+        result?.error === "rendering_temporarily_unavailable"
+      ) {
+        toast.error(t("worker_unavailable"));
+        return;
+      }
+      if (res.status !== 202 && res.status !== 200) {
+        throw new Error(`retry_failed_${res.status}`);
+      }
+      requestIdRef.current = null;
+      if (result?.data?.status === "failed") {
+        toast.error(t("error"));
+      } else {
+        toast.success(t("success"));
+      }
       router.refresh();
     } catch {
       toast.error(t("error"));

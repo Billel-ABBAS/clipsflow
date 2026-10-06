@@ -75,6 +75,7 @@ const dynamicFamilies = [
   "clips.gallery_status_completing",
   "clips.gallery_status_completed",
   "clips.gallery_status_failed",
+  "clips.history.episode_failed_detail",
   // upload errorKey values
   "clips.upload_error_too_large",
   "clips.upload_error_unsupported_type",
@@ -118,26 +119,40 @@ for (const k of dynamicFamilies) {
 
 // Static usages : resolve the namespace per file from
 // useTranslations("ns") / getTranslations("ns") declarations.
-const nsRe =
-  /(?:useTranslations|getTranslations)\(\s*(?:\{[^}]*namespace:\s*)?"([^"]+)"/g;
-const tCallRe = /\bt(?:\.rich)?\(\s*"([^"]+)"/g;
+const namespaceBindingRe =
+  /\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?(?:useTranslations|getTranslations)\(\s*(?:\{[^}]*namespace:\s*)?"([^"]+)"/g;
+const translationCallRe =
+  /\b([A-Za-z_$][\w$]*)(?:\.rich)?\(\s*"([^"]+)"/g;
 let checked = 0;
 for (const f of files) {
   const src = readFileSync(f, "utf8");
-  const namespaces = [...src.matchAll(nsRe)].map((m) => m[1]);
-  if (namespaces.length === 0) continue;
-  // One namespace per file in this codebase (verified by review) — take
-  // the first ; files with multiple t() scopes would need an AST pass.
-  const ns = namespaces[0];
-  for (const m of src.matchAll(tCallRe)) {
-    const full = `${ns}.${m[1]}`;
+  const translatorNamespaces = new Map();
+  for (const binding of src.matchAll(namespaceBindingRe)) {
+    const namespaces = translatorNamespaces.get(binding[1]) ?? new Set();
+    namespaces.add(binding[2]);
+    translatorNamespaces.set(binding[1], namespaces);
+  }
+  if (translatorNamespaces.size === 0) continue;
+
+  // Files may hold more than one translator (for example `clips` and
+  // `clips.history`). Associate each call with the unique namespace whose
+  // key exists in both locale bundles rather than assuming one namespace per
+  // file or relying on the first translator declaration.
+  for (const m of src.matchAll(translationCallRe)) {
+    const namespaces = translatorNamespaces.get(m[1]);
+    if (!namespaces) continue;
+    const matchingNamespaces = [...namespaces].filter((namespace) => {
+      const key = `${namespace}.${m[2]}`;
+      return enKeys.has(key) && frKeys.has(key);
+    });
     checked++;
-    if (!enKeys.has(full)) {
-      console.error(`EN missing: ${full}  (${path.relative(root, f)})`);
-      failures++;
-    }
-    if (!frKeys.has(full)) {
-      console.error(`FR missing: ${full}  (${path.relative(root, f)})`);
+    if (matchingNamespaces.length !== 1) {
+      const candidates = [...namespaces]
+        .map((namespace) => `${namespace}.${m[2]}`)
+        .join(", ");
+      console.error(
+        `Expected one matching translation key for ${m[1]}("${m[2]}"); found ${matchingNamespaces.length} among: ${candidates}  (${path.relative(root, f)})`,
+      );
       failures++;
     }
   }

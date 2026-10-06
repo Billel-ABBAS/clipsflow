@@ -35,6 +35,23 @@ import { ASPECT_RATIO_DIMENSIONS, type AspectRatio } from "./types";
 import { attachFfmpegTimeout } from "./ffmpeg-timeout";
 
 /**
+ * Build the audio visualization graph. With motion reduced, preserve the
+ * audio and background but skip `showwaves`, which animates every frame.
+ */
+export function buildAudiogramFilterComplex(
+  width: number,
+  waveHeight: number,
+  animateWaveform = true,
+): string {
+  if (!animateWaveform) return "[0:v]null[outv]";
+
+  return (
+    `[1:a]showwaves=s=${width}x${waveHeight}:mode=cline:colors=white@0.85:rate=30[waves];` +
+    "[0:v][waves]overlay=x=0:y=(H-h)/2[outv]"
+  );
+}
+
+/**
  * Render the audiogram base video for an audio-only clip segment.
  *
  * @param audioPath       /tmp path of the extracted audio segment (AAC m4a
@@ -51,6 +68,7 @@ export async function renderAudiogramBase(
   audioPath: string,
   aspectRatio: AspectRatio,
   durationSeconds: number,
+  animateWaveform = true,
 ): Promise<string> {
   const [width, height] = ASPECT_RATIO_DIMENSIONS[aspectRatio];
   // Waveform band = ~25 % of frame height, rounded to even (libx264 and
@@ -60,12 +78,11 @@ export async function renderAudiogramBase(
 
   const duration = Math.max(0.1, durationSeconds);
   const colorSrc = `color=c=0x0a0a0a:size=${width}x${height}:rate=30:duration=${duration.toFixed(2)}`;
-  // showwaves cline mode : centered filled waveform. `colors=white@0.85`
-  // = white at 0.85 opacity over the dark background. Full-ratio width.
-  // The overlay centers the band vertically ((H-h)/2) on the canvas.
-  const filterComplex =
-    `[1:a]showwaves=s=${width}x${waveHeight}:mode=cline:colors=white@0.85:rate=30[waves];` +
-    `[0:v][waves]overlay=x=0:y=(H-h)/2[outv]`;
+  const filterComplex = buildAudiogramFilterComplex(
+    width,
+    waveHeight,
+    animateWaveform,
+  );
 
   const args = [
     "-f",

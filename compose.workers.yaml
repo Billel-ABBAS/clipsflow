@@ -1,0 +1,62 @@
+name: clipsflow-local-workers
+
+x-worker-base: &worker-base
+  profiles: [local-workers]
+  build:
+    context: .
+    dockerfile: Dockerfile.worker
+  image: clipsflow-worker:local
+  init: true
+  restart: "no"
+  stop_grace_period: 30s
+  environment: &worker-environment
+    # Docker Desktop resolves this name back to the Windows host, where the
+    # local Supabase API is bound at port 54321.
+    NEXT_PUBLIC_SUPABASE_URL: ${CLIPSFLOW_DOCKER_SUPABASE_URL:-http://host.docker.internal:54321}
+    SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+    # Local containers fail closed. Override only for an explicitly approved
+    # paid-provider test; never rely on .env.local being loaded implicitly.
+    CLIPS_AI_BUDGET_AUTHORIZED: ${CLIPS_AI_BUDGET_AUTHORIZED:-false}
+
+services:
+  clips-render-worker:
+    <<: *worker-base
+    command: [node_modules/.bin/tsx, scripts/clips-worker.ts]
+    environment:
+      <<: *worker-environment
+      CLIPS_WORKER_ENABLED: "false"
+      CLIPS_ELEVENLABS_ENABLED: "false"
+      CLIPS_CREATIVE_DIRECTOR_ENABLED: ${CLIPS_CREATIVE_DIRECTOR_ENABLED:-false}
+      CLIPS_CREATIVE_DIRECTOR_MODEL: ${CLIPS_CREATIVE_DIRECTOR_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      CLIPS_MAX_SOURCE_BYTES: "209715200"
+      CLIPS_FFMPEG_TIMEOUT_MS: "300000"
+      CLIPS_BURN_PNG_OVERLAY: "0"
+
+  shorts-analysis-worker:
+    <<: *worker-base
+    command: [node_modules/.bin/tsx, scripts/shorts-analysis-worker.ts]
+    environment:
+      <<: *worker-environment
+      SHORTS_ANALYSIS_WORKER_ENABLED: "false"
+      SHORTS_MAX_SOURCE_BYTES: "8589934592"
+      CLIPS_VISUAL_ANALYSIS_ENABLED: "false"
+      CLIPS_JEV_HOOK_SCORE: "off"
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+
+  youtube-publish-worker:
+    <<: *worker-base
+    command: [node_modules/.bin/tsx, scripts/youtube-publish-worker.ts]
+    environment:
+      <<: *worker-environment
+      YOUTUBE_PUBLISH_WORKER_ENABLED: "false"
+      YOUTUBE_PUBLIC_UPLOADS_ENABLED: "false"
+      YOUTUBE_OAUTH_CLIENT_ID: ${YOUTUBE_OAUTH_CLIENT_ID:-}
+      YOUTUBE_OAUTH_CLIENT_SECRET: ${YOUTUBE_OAUTH_CLIENT_SECRET:-}
+      YOUTUBE_OAUTH_REDIRECT_URI: ${YOUTUBE_OAUTH_REDIRECT_URI:-}
+      YOUTUBE_OAUTH_STATE_SECRET: ${YOUTUBE_OAUTH_STATE_SECRET:-}
+      YOUTUBE_TOKEN_ENCRYPTION_KEY: ${YOUTUBE_TOKEN_ENCRYPTION_KEY:-}

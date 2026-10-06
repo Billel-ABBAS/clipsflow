@@ -114,8 +114,8 @@ port = 54324
 
 [storage]
 enabled = true
-# The maximum file size allowed (e.g. "5MB", "500KB").
-file_size_limit = "50MiB"
+# Keep local storage aligned with the 8 GiB long-form Shorts source cap.
+file_size_limit = "8GiB"
 
 # Uncomment to configure local storage buckets
 # [storage.buckets.images]
@@ -386,7 +386,10 @@ deno_version = 2
 # secret_key = "env(SECRET_VALUE)"
 
 [analytics]
-enabled = true
+# Docker Desktop on this Windows host cannot route the local Vector collector
+# to its Docker API over IPv6. Analytics is not required by ClipsFlow's local
+# API/Auth/Storage/Postgres workflow, so keep the development stack stable.
+enabled = false
 port = 54327
 # Configure one of the supported backends: `postgres`, `bigquery`.
 backend = "postgres"

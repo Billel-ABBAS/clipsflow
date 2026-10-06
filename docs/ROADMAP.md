@@ -1,68 +1,96 @@
-# Roadmap — ClipsFlow
+# Roadmap — ClipsFlow Shorts
 
-> Produit : transformation de vidéos/épisodes longs en clips courts sous-titrés prêts à poster (TikTok, Reels, Shorts). Pas de doublage, pas de thumbnails IA.
+> Objectif produit : importer une vidéo ou un podcast de 20 minutes à 2 heures, analyser sa transcription en mode audio ou audio + vidéo, proposer les meilleurs extraits avec ou sans consignes, puis générer, télécharger et publier les Shorts après validation du créateur.
 
-## Phases livrées
+## État actuel vérifié dans le dépôt
 
-| Phase  | Objectif                                                         | Statut      |
-| ------ | ---------------------------------------------------------------- | ----------- |
-| **P0** | Scaffold + audit ClipFlow                                        | ✅ done     |
-| **P1** | Port clips end-to-end (upload → Whisper → burn ffmpeg → galerie) | ✅ done     |
-| **P2** | Billing Stripe (3 tiers live) + migrations DB + webhook          | ✅ done     |
-| **P3** | Hardening prod : rate limits, Sentry, RGPD, tests                | 🚧 en cours |
+Le code local contient les parcours d'import reprenable TUS, de projet d'analyse long format, de transcription/analyse asynchrone, de sélection de candidats, de soumission au renderer Clips, de téléchargement individuel/ZIP et de connexion/publication YouTube. L'ancien Clips Studio à segments courts est conservé séparément.
 
-## Ce qui est en place
+Le dépôt comprend aussi des migrations pour le projet Shorts, le stockage de sources volumineuses, les quotas d'analyse et la file de publication YouTube. Leur présence locale ne signifie pas qu'elles sont appliquées à une base distante, ni que les workers Railway sont provisionnés. Voir [RAILWAY_CLIPS_WORKER.md](./RAILWAY_CLIPS_WORKER.md) pour les prérequis d'exploitation.
 
-### Core produit
+Jev est intégré en mode **shadow avec consentement explicite** : il peut être comparé au classement déterministe, mais ne change pas l'ordre affiché ni la sélection rendue avant validation expérimentale. ElevenLabs peut produire musique instrumentale et effets sonores si la clé, les crédits, licences et budget sont validés. Anthropic documente maintenant Claude Opus 5.5 sous l'identifiant exact `claude-opus-5-5` ([catalogue des modèles](https://platform.claude.com/docs/en/models/overview)); le code utilise cet ID, mais l'appel reste fermé par défaut derrière le budget, le flag fournisseur et la clé serveur. L'interface n'expose que les fournisseurs réellement prêts côté serveur.
 
-- **Studio 4 étapes** : source (upload ≤200 Mio / URL HTTPS directe / épisode) → segment (≤3 min) → style (15 prédéfinis) → personnalisation
-- **12 presets** platform-specific (TikTok, Hormozi, LinkedIn, etc.)
-- **Pipeline** : Whisper transcription → OpenAI traduction cues → ffmpeg burn (sous-titres animés) → smart crop → galerie realtime
-- **Overlays** : title card, bandeau intervenant, stat callout, CTA outro
-- **Webhook Stripe** : mise à jour automatique du plan
+## Parcours et preuves requises
 
-### Infra
+| Étape                               | État du code local                                                                           | Preuve encore nécessaire avant livraison complète                                                                                                       |
+| ----------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Import d'une source de 20 min à 2 h | Upload TUS reprenable jusqu'à 8 Gio; parcours API authentifié testé sur Supabase local       | Staging Supabase autorisé, véritables fichiers représentatifs et vérification de capacité disque worker                                                 |
+| Transcription et analyse audio      | Worker d'analyse asynchrone et candidats issus des sous-titres                               | Exécution réelle contrôlée avec clés/budget autorisés, mesure durée/coût et vérification des résultats sur plusieurs formats/langues                    |
+| Analyse audio + vidéo               | Extraction d'images FFmpeg vérifiée sur une source synthétique de 20 min                     | Clé valide, activation staging explicite, qualité/latence/coût et gestion des erreurs vérifiés                                                          |
+| Consignes et choix des extraits     | Instructions, candidats, sélection manuelle/automatique et ranking Jev shadow                | Test authentifié de bout en bout et évaluation humaine avant tout passage de Jev à une décision active                                                  |
+| Génération Shorts                   | Soumission vers la file Clips avec sous-titres, musique/SFX autorisés et motion templates    | Worker de rendu provisionné; synchronisation, cadrage, audio, motion, watermark et reprise testés sur de vraies sorties                                 |
+| Téléchargement individuel et groupé | URL signée d'attachement MP4/VTT et endpoint ZIP                                             | Test navigateur authentifié des téléchargements et limites de taille sur staging                                                                        |
+| Publication YouTube                 | OAuth, vault chiffré, file resumable, confirmation explicite et visibilité privée par défaut | Projet Google autorisé, migration appliquée, test privé dédié et vérification des reprises/erreurs; pas de publication publique sans feu vert explicite |
 
-- **DB** : Supabase (auth, 3 + 1 tables, RPC quotas, storage privé 2 buckets)
-- **Paiement** : Stripe (3 produits live, webhook checkout.session.completed + subscription.updated/deleted)
-- **Deploy** : Vercel prod auto depuis `main`
-- **Monitoring** : Sentry branché (erreurs + breadcrumbs serveur)
-- **Sécurité** : RLS sur toutes les tables, rate limit 30 req/min sur transcribe, SSRF guard, PII scrubber Sentry, policies storage
+## Séquence de livraison
 
-### Plans (quotas seconds de clip rendu / mois)
+1. Appliquer et auditer toutes les migrations sur une base Supabase de test explicitement autorisée; vérifier RLS, grants et limites Storage.
+2. Provisionner les workers séparés (analyse Shorts, rendu Clips, publication YouTube) avec espace temporaire suffisant, budgets, quotas par plan et secrets serveur.
+3. Tester le parcours authentifié de bout en bout : upload, deux modes d'analyse, consignes, sélection, génération, lecture, MP4/VTT, ZIP et reprise après incident.
+4. Tester OAuth YouTube et un upload privé confirmé sans activer la publication publique; vérifier les quotas et le comportement en cas de révocation/expiration.
+5. Autoriser un plafond de dépense fournisseurs avant un test réel Opus/ElevenLabs. Conserver les motion templates déterministes comme moteur de rendu, même lorsque Opus propose la direction créative.
+6. N'activer les fournisseurs payants qu'après autorisation de budget; ne jamais assimiler un test mocké, un build local ou des migrations présentes dans Git à une preuve de production.
 
-| Plan   | $/mois | Quota | Features                                        |
-| ------ | ------ | ----- | ----------------------------------------------- |
-| free   | 0      | 60s   | 15 styles prédéfinis, watermark ClipsFlow       |
-| solo   | 29     | 480s  | 15 styles prédéfinis, pas de watermark          |
-| pro    | 79     | 1800s | + custom colors (palette pro), pas de watermark |
-| studio | 199    | 3600s | + custom hex, fonts, positions, animations      |
+## Garde-fous produit
 
-## Ce qui reste à faire
+- Les clés IA, OAuth et Service Role sont serveur uniquement.
+- Les analyses et rendus sont asynchrones, idempotents, limités en débit et soumis à quotas.
+- Le traitement audio + vidéo est opt-in et doit échouer proprement si le fournisseur n'est pas configuré.
+- Le classement Jev shadow et les motion templates déterministes ne dépendent pas d'un appel Jev réussi.
+- Les publications YouTube requièrent la confirmation finale du créateur et sont privées par défaut.
+- Aucun changement de prix, de visibilité par défaut, de données utilisateur ou de production n'est implicite dans cette roadmap.
 
-### Critique (post-lancement)
+Vérification locale du 4 octobre 2026 : 592 tests Vitest, `pnpm typecheck`, ESLint sur `src`, Prettier ciblé et `git diff --check` réussis. Le build Next 16 a été vérifié après les derniers changements dans une copie temporaire isolée avec Webpack; compilation, TypeScript et génération statique ont réussi. Le serveur 3100 et son `.next` partagé ont été préservés. Les avertissements Sentry d'instrumentation globale restent non bloquants. Le contrôle navigateur en lecture seule a confirmé que `/fr/login` rend du contenu sans erreur console; il ne constitue pas un parcours authentifié Shorts.
 
-- [ ] Tester le flow complet signup → upload → render → download
-- [ ] Vérifier que le webhook Stripe met à jour `profiles.plan` après paiement réel
-- [ ] Sentry : vérifier que les erreurs arrivent dans le dashboard Sentry (https://sentry.io)
+Le stack Supabase local Docker a été réutilisé sans `db reset`. Les 21 migrations sont appliquées localement; `supabase test db --local` passe 19 assertions SQL. Le bucket `clip-sources` est privé et limité à 8 Gio. Le smoke TUS local a interrompu puis repris un fichier synthétique de 12 Mio + 1 Kio avec une nouvelle signature et a vérifié l'objet final. Un smoke authentifié, contre un serveur Next isolé relié uniquement à Docker local, a confirmé le rejet anonyme (401), la création d'upload par session, l'envoi TUS et la finalisation `ready`; il vérifie aussi que l'analyse payante reste fermée sans budget autorisé. FFmpeg a sondé un audio synthétique de 2 h, planifié 13 fenêtres et extrait la dernière, puis sondé une vidéo synthétique de 20 min et extrait des images bornées. Un smoke supplémentaire authentifié a sélectionné deux candidats, rendu leurs MP4 avec sous-titres à partir de transcriptions persistées, réutilisé des pistes musicales synthétiques mises en cache, résolu les liens MP4/VTT et validé le ZIP groupé. Le rendu a aussi révélé puis corrigé la compatibilité Windows du filtre de sous-titres et l'option `amix=normalize=0` absente du FFmpeg empaqueté (build 2018); les volumes sont maintenant rétablis après normalisation et plafonnés par limiteur. Le téléchargement ZIP autorise HTTP uniquement pour l'origine loopback exacte de Supabase Docker, en développement et hors production; les tests gardent les appels réseau externes bloqués. Ces scénarios n'appellent aucun fournisseur IA. Les comptes et objets temporaires des smokes sont nettoyés. Aucune migration distante ni donnée de production n'a été modifiée.
 
-### Recommandé
+Le smoke de rendu rejoué sur le worktree courant a détecté un précontrôle trop strict qui exigeait les identifiants ElevenLabs même si les fichiers exacts existaient déjà en cache. La route vérifie maintenant le couple DB/Storage du cache avant de demander l'autorisation budgétaire et la configuration du fournisseur. Le smoke passe avec budget IA désactivé en réutilisant les deux pistes synthétiques; tous les appels réseau externes restent bloqués.
 
-- [ ] Onboarding : page "premier clip" guidée
-- [ ] Settings : page compte (suppression RGPD, langue, notifications)
-- [ ] Landing : A/B test copy (titre, sous-titre)
-- [ ] Clip edit : régénérer un clip dans un autre style sans re-upload
+Un smoke distinct du fournisseur Jev/TypeSafe a réussi sur un candidat entièrement synthétique (modèle retourné `jev-1.13.0`, 861 tokens d'entrée et 73 de sortie). Il confirme seulement le contrat API et le calcul du classement en shadow, pas la qualité sur de vrais épisodes; aucune valeur `.env.local` n'a été changée.
 
-### Optionnel
+Limite du stack de test : le conteneur Vector de collecte des logs redémarre, ses logs montrant un endpoint Docker IPv6 injoignable. Cela n'a pas empêché les migrations, Auth, Postgres, Storage ni le smoke TUS; l'observabilité locale n'est donc pas validée.
 
-- [ ] Analytics : PostHog funnel activation (signup → first clip → upgrade)
-- [ ] Email : Resend notification "clip prêt"
-- [ ] API publique (pour intégrateurs)
+Restent à démontrer avant livraison : enchaînement authentifié depuis l'import réel d'une source de 20 min à 2 h jusqu'à son analyse IA, puis sélection et rendu sur plusieurs vrais médias; reprise après incident et worker de rendu provisionné; appels IA réels avec budget autorisé; ElevenLabs avec clé/licences; qualité du brief Opus 5.5 sur de vrais Shorts; OAuth et publication YouTube privée dédiée. Le smoke synthétique valide déjà la sélection, les rendus MP4/VTT et le ZIP, mais ne remplace pas ces validations de staging.
 
-## Standards qualité
+Le 5 octobre 2026, le Studio a été parcouru dans un navigateur local avec un compte synthétique sur Supabase Docker : import TUS d'un fichier audio M4A synthétique de 20 minutes, finalisation `ready`, durée affichée `20:00` et champ prérempli à `1 200` secondes. Une demande d'analyse séparée a répondu 503 conformément au garde-budget désactivé; l'interface précise que le fichier reste conservé. Aucun fournisseur IA n'a été appelé. Le compte, l'épisode et les objets Storage temporaires ont été supprimés après chaque test.
 
-- Typecheck : 0 erreur (`pnpm typecheck`)
-- Tests : 272/272 verts (`pnpm test`)
-- Lint : 0 erreur (`pnpm lint`)
-- Build : vert (`pnpm build`)
-- Secrets : jamais dans le repo, `.env.local` gitignored, `env.example` à jour
+La même date, le smoke authentifié a rendu deux Shorts synthétiques depuis leurs transcriptions persistées et une musique synthétique mise en cache, vérifié les téléchargements MP4/VTT individuels et l'archive ZIP, avec les appels réseau externes bloqués. Les smokes FFmpeg ont couvert les quatre presets animés et le mode reduced-motion, puis un audio de 2 h (13 fenêtres, extraction de la dernière) et une vidéo de 20 min (4 images bornées). Les 19 assertions SQL locales Supabase passent; la configuration Compose est valide; les trois workers conteneurisés sortent avec leurs fonctions désactivées. Le build de production Next a compilé, vérifié TypeScript et généré les 33 pages statiques dans le dossier isolé avec les clés fournisseurs/OAuth vides. Vérifications locales de cette étape : 612 tests dans 73 fichiers, `pnpm typecheck`, ESLint et Prettier ciblés, `git diff --check`.
+
+Le smoke publication YouTube du 5 octobre a ensuite exercé les routes locales avec un clip MP4 synthétique et une connexion dont le refresh token était chiffré : les métadonnées ne divulguent pas le secret, une demande publique non confirmée est refusée, la confirmation privée est à usage unique et le worker envoie le fichier au transport Google simulé avant de marquer la publication privée comme terminée. Le faux transport bloque par défaut tout réseau non local et aucun upload réel n'a eu lieu. Le worker autorise le téléchargement HTTP uniquement depuis l'origine loopback exacte de Supabase Docker hors production; les URLs de stockage hébergées restent soumises à la liste d'hôtes autorisés.
+
+Note historique — première revue de l'intégration créative Opus le 5 octobre : la page alors consultée ne confirmait pas l'ID. Cette observation est supersédée par la vérification officielle directe ci-dessous; aucun modèle Opus différent n'est substitué.
+
+Attention environnement : le `.env.local` racine pointe vers Supabase hébergé. Les tests locaux authentifiés doivent injecter explicitement les variables émises par `supabase status -o env` après avoir vérifié que l'hôte est `127.0.0.1:54321`, et laisser budgets/fournisseurs désactivés; ne pas traiter `.env.local` comme un environnement Docker local.
+
+Un smoke authentifié d'analyse a ensuite couvert le flux intégral sur Docker local : import TUS audio, finalisation de la source, création SQL d'un job, échec de transcription simulé et libération de quota, répétition idempotente qui retrouve le même échec, nouvelle clé qui crée un nouveau projet, puis succès du worker avec transcription horodatée et candidat persistés. La route de détail ne divulgue que les champs de révision utiles. Réseau externe bloqué; fournisseurs IA simulés; utilisateur, projet, épisode et objet temporaire supprimés. Le Studio libère désormais sa clé d'idempotence après un état terminal pour permettre une relance identique; quatre tests unitaires couvrent le renouvellement et la conservation des clés en attente.
+
+Un audit du cycle de soumission a corrigé un cas de reprise : après un résultat terminal, le Studio libère maintenant la clé d'idempotence du projet pour qu'une nouvelle tentative identique crée bien un nouveau job; tant que la réponse initiale reste incertaine ou en cours, cette clé est conservée pour empêcher les doublons. L'interface distingue la relance après échec. Quatre tests ciblent ce cycle. État local après ce correctif : 612 tests Vitest dans 73 fichiers, `pnpm typecheck` et ESLint ciblé réussis; aucune IA payante n'a été appelée.
+
+Le 5 octobre, l'audit de la future règle Supabase Data API (suppression de l'exposition automatique de nouvelles tables à partir du 30 octobre) a trouvé que le tableau de bord admin lit directement `clips_budget_guard` en `service_role`, sans droit explicite prévu pour un nouveau projet. La migration `20261005034254_clips_budget_guard_service_role_select.sql` révoque les droits directs et n'accorde que `SELECT` à `service_role`; elle est appliquée au Docker local. Le contrôle SQL effectif confirme lecture `service_role` autorisée, écritures `service_role` refusées, lecture `anon`/ `authenticated` refusée. `supabase test db --local` passe toujours 19 assertions. Aucun changement n'a été appliqué au projet distant. Voir le [changelog Supabase](https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically).
+
+Vérification Docker locale supplémentaire du 5 octobre : `shorts_studio.sql` passe ses 18 assertions RLS, droits de service, cache Opus/Jev et sécurité des publications YouTube dans une transaction annulée; l'extension pgTAP n'est pas persistée. Après correction de l'interface pour permettre la sauvegarde des moments sans autorisation musicale payante, la suite complète compte 618 tests dans 74 fichiers; `pnpm typecheck`, ESLint ciblé, Prettier et `git diff --check` passent. Postgres, Auth et Storage Docker sont sains; Vector redémarre car son collecteur ne joint pas l'endpoint Docker `192.168.65.254:2375`. Aucun appel IA payant ni publication YouTube réelle n'a été effectué.
+
+Le smoke authentifié `pnpm smoke:shorts:local-analysis` a été rejoué avec un serveur Next isolé sur le port 3104 et Supabase Docker en loopback : import TUS, analyse synthétique avec échec/récupération/idempotence, transcript et candidats persistés, sélection, deux rendus FFmpeg avec sous-titres, téléchargements MP4/VTT et ZIP validés. Les quotas d'analyse (7 200 secondes par plan) n'ont été injectés que dans le processus local de test; les clés fournisseurs étaient vides et les appels externes bloqués dans le smoke. Les fixtures utilisateur et jobs ont été nettoyés (zéro utilisateur de smoke et zéro job pending/processing). Les images des trois workers se construisent; chacun démarre puis quitte proprement avec sa fonction désactivée. Cette preuve synthétique ne valide toujours pas les fournisseurs réels, les workers en staging ni OAuth/publication sur un compte YouTube.
+
+Vérification visuelle locale du 5 octobre avec `agent-browser` : la page d'accueil rend ses sections Shorts et son CTA mène à la connexion; après authentification d'un compte synthétique Supabase Docker, `/fr/shorts` affiche les contrôles d'import, audio/vidéo, consignes, Jev et les étapes de sélection/production/publication. Le panneau Opus/ElevenLabs indique explicitement les prérequis serveur manquants; l'analyse reste désactivée sans budget. Aucun overlay ni erreur console. Le compte a été supprimé après le test.
+
+Le smoke `scripts/youtube-local-publication-smoke.ts` a également été rejoué contre ce serveur isolé : les métadonnées de connexion restent expurgées, la tentative publique sans confirmation est refusée, la publication privée exige une confirmation unique, puis le worker termine l'upload resumable face au faux transport Google. L'utilisateur, le clip et le stockage temporaires ont été nettoyés; il ne reste aucune publication `queued`/`uploading`. Aucun vrai refresh OAuth ni upload YouTube n'a eu lieu.
+
+Le smoke média `pnpm smoke:shorts:local-media` vient d'être rejoué : FFprobe a mesuré 7 200 secondes d'audio, FFmpeg a préparé 13 fenêtres et extrait la dernière; une vidéo de 1 200 secondes a été détectée puis quatre images JPEG bornées ont été extraites. Aucun fournisseur IA n'a été appelé.
+
+Le smoke `pnpm smoke:shorts:local-motion` a aussi été rejoué : FFmpeg produit les quatre presets animés et une variante reduced-motion à partir d'une source synthétique; aucun fournisseur IA n'est requis pour l'animation.
+Extension locale du 5 octobre : `pnpm smoke:shorts:local-analysis` exerce désormais également le mode audio + vidéo via l'upload TUS et les routes authentifiées. Le projet audiovisuel est traité par le worker avec durée/probe et frames de candidats contrôlés par le test, résumés visuels synthétiques, persistance du `visual_summary` et du payload de ranking; les scores visuels font effectivement passer le second candidat devant le premier selon les pondérations 80 % audio / 20 % vidéo. Aucun appel Gemini, OpenAI, Jev, Anthropic ou ElevenLabs n'est effectué; le smoke bloque les destinations réseau externes. Vérification complète après cette extension : 618 tests dans 74 fichiers, `pnpm typecheck`, ESLint sur `src` et le smoke, Prettier sur le script, et `git diff --check`; aucun compte de test ni job local pending/processing ne subsiste. Cette preuve valide l'enchaînement applicatif mocké, pas encore l'analyse de vraies frames par fournisseur.
+
+Retour OAuth YouTube du 5 octobre : la page `/fr/clips` affiche désormais un état accessible et localisé après connexion réussie, annulation ou erreur de configuration, sans exposer le message brut du fournisseur. Le smoke authentifié `scripts/youtube-local-publication-smoke.ts` vérifie ces trois rendus contre Next local et Supabase Docker, puis rejoue le flux de publication sur le faux transport Google bloqué par défaut. L'utilisateur synthétique et le stockage temporaire sont supprimés par le `finally` du smoke. Vérification après ce correctif : 622 tests dans 75 fichiers, `pnpm typecheck`, ESLint sur `src` et le smoke, Prettier ciblé; le port 3104 est fermé. Aucun échange OAuth réel, appel IA payant ou upload YouTube réel n'a été effectué.
+
+Jev et le ranking orienté créateur, le 5 octobre : l'évaluateur shadow mesure maintenant quatre dimensions typées `Score` — accroche, autonomie de l'extrait, lisibilité des sous-titres et adéquation aux consignes — combinées dans le code aux poids respectifs 35/30/15/20 %. La quatrième dimension ne change pas le classement visible; elle rend la comparaison Jev plus pertinente pour les projets guidés par l'utilisateur. Un appel réel TypeSafe, autorisé pour cette validation et limité à deux exemples entièrement synthétiques, a répondu avec `jev-1.13.0`, `shadow_complete`, 1 932 tokens d'entrée et 172 de sortie; l'adéquation aux consignes distinguait nettement les deux exemples. Aucun extrait utilisateur n'a été envoyé. La suite complète compte maintenant 623 tests dans 75 fichiers; `pnpm typecheck`, ESLint sur `src` et Prettier ciblé passent. Cela valide le contrat fournisseur et le calcul, pas encore la qualité du ranking sur des décisions de créateurs ni l'activation de Jev pour réordonner les propositions.
+
+Note de validation antérieure du 5 octobre : une entrée précédente consignait un HTTP 200 pour `claude-opus-5-5` sur un clip fictif. Ce résultat n'était pas traité comme preuve à l'époque; la disponibilité est maintenant confirmée séparément dans le catalogue Anthropic ci-dessus. Aucun transcript utilisateur n'a été transmis lors de cette validation. Les templates FFmpeg déterministes restent disponibles.
+
+Actualisation du 5 octobre 2026 : le catalogue et le guide de migration Anthropic confirment le modèle fixe `claude-opus-5-5`. Les tests locaux valident désormais l'envoi de cet identifiant et la réponse JSON simulée; ils n'effectuent aucun appel réel. Dans l'environnement `.env.local` courant, les appels payants restent désactivés par le garde-budget et la clé ElevenLabs est absente, donc ni Opus ni ElevenLabs n'ont été appelés. Le rendu du motion design demeure déterministe via FFmpeg; ElevenLabs couvre uniquement la musique instrumentale et les effets non verbaux dans l'intégration actuelle.
+
+Reprise Docker du 5 octobre 2026 : Docker Desktop a été mis à jour sur place de 4.63.0 vers 4.93.0, sans réinitialisation ni suppression de volumes. Windows réserve encore la plage dynamique `54238-54337`, qui contient les ports Supabase usuels `54321-54324`; les redirections `localhost` restent donc indisponibles sans élévation administrateur. Cette restriction n'a pas empêché la validation locale : un runner Next éphémère, exécuté dans le réseau Docker Supabase avec des relais loopback internes, a passé les smokes authentifiés d'upload TUS, d'analyse audio et audio + vidéo, de réessai/idempotence, de sélection, de deux rendus MP4/VTT, de téléchargements individuels/ZIP, de reprise TUS 12 Mio + 1 Kio et de publication YouTube simulée. Les tests ont injecté seulement des clés factices, des quotas de 7 200 secondes et des mocks qui bloquent toute destination externe; aucun fournisseur IA ni service Google réel n'a été contacté. Les 21 migrations locales correspondent aux 21 fichiers; les 18 assertions Shorts et l'assertion P0 ont passé avec pgTAP temporaire, retiré ensuite. Les comptes synthétiques et les jobs actifs sont revenus à zéro. L'analytics local Supabase est désactivé dans `supabase/config.toml`, car son collecteur Vector bouclait sur un endpoint Docker IPv6 injoignable, sans impact sur Postgres, Auth, Storage ou les parcours Shorts. Cette preuve reste locale et simulée : les appels IA payants, l'OAuth Google réel, l'upload privé réel et le retour du port Supabase sur l'hôte nécessitent toujours l'autorisation et/ou l'élévation appropriée.
+
+Vérification d'interface ajoutée le 5 octobre 2026 : le smoke d'upload authentifié appelle aussi `/fr/shorts` avec les cookies d'une session Supabase synthétique et vérifie le rendu serveur du titre `Studio Shorts IA` ainsi que du contrôle `Importer une vidéo ou un podcast`. Il confirme que le Studio est réellement accessible après connexion avant de vérifier le rejet anonyme, l'upload TUS et la finalisation. Ce test reste dans le réseau Docker local, supprime son utilisateur et son objet de stockage dans son `finally`, et n'appelle aucun fournisseur externe.
+
+Commande de reprise ajoutée et exécutée le 5 octobre 2026 : `pnpm smoke:shorts:docker` vérifie que `supabase status -o env` pointe vers l'API locale loopback, construit une image éphémère depuis le worktree, puis relance le parcours authentifié dans le réseau Docker Supabase. Le smoke sépare l'import avec budget fermé des analyses avec clés factices, rejoue l'analyse audio et audiovisuelle, la sélection, deux rendus MP4/VTT et leurs téléchargements, l'upload TUS interrompu/repris de 12 Mio + 1 Kio, les médias de 2 h/20 min, les quatre motions plus reduced-motion, la publication privée sur transport Google simulé et les 18 assertions SQL. La commande complète a réussi deux fois; sa version finale ne produit plus l'avertissement Node du shell Windows. Elle a supprimé le runner et l'image temporaires; contrôles après exécution : zéro compte smoke, job analyse/rendu actif ou publication en attente. `pnpm test` passe 625 tests/75 fichiers, `pnpm typecheck`, ESLint, Prettier ciblé et `pnpm build` de production passent aussi. Le port hôte 54322 demeure réservé, donc `supabase test db --local` ne se connecte pas; les 18 assertions sont exécutées directement dans le PostgreSQL du stack Docker avec rollback. Ces validations utilisent des fournisseurs IA et Google simulés et ne valident toujours pas de vrais appels payants, OAuth Google ou upload YouTube réel.

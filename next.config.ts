@@ -5,6 +5,12 @@ import type { NextConfig } from "next";
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 const nextConfig: NextConfig = {
+  // Let an isolated local API smoke server build beside the developer's active
+  // `.next` tree instead of sharing its dev lock or generated manifests.
+  distDir:
+    process.env.CLIPSFLOW_ISOLATED_LOCAL_SMOKE === "true"
+      ? ".next-clipsflow-local-smoke"
+      : ".next",
   // ffmpeg : le binaire @ffmpeg-installer résout son chemin plateforme via
   // un require() dynamique que le bundler ne peut pas analyser — sans
   // serverExternalPackages, le tracer droppe le binaire et le burn meurt

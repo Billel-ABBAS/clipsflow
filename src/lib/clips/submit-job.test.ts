@@ -16,6 +16,7 @@ const validInput: SubmitClipJobInput = {
   language: "fr",
   customizations: { text_color: "#FFFFFF" },
   overlays: [],
+  requestId: "00000000-0000-4000-8000-000000000003",
 };
 
 function rpcClient(result: { data: unknown; error: unknown }): SupabaseClient {
@@ -43,7 +44,7 @@ describe("submitClipJob", () => {
       jobId: "job-1",
       remaining: 30,
     });
-    expect(client.rpc).toHaveBeenCalledWith("clips_submit_job", {
+    expect(client.rpc).toHaveBeenCalledWith("clips_submit_job_idempotent", {
       p_user_id: validInput.userId,
       p_episode_id: validInput.episodeId,
       p_start_seconds: 10,
@@ -53,6 +54,7 @@ describe("submitClipJob", () => {
       p_language: "fr",
       p_customizations: { text_color: "#FFFFFF" },
       p_overlays: [],
+      p_request_id: validInput.requestId,
     });
   });
 
@@ -90,6 +92,24 @@ describe("submitClipJob", () => {
 
     await expect(submitClipJob(client, validInput)).rejects.toMatchObject({
       code: "budget_exceeded",
+    });
+  });
+
+  it("refuse de réutiliser une clé d’idempotence avec une autre requête", async () => {
+    const client = rpcClient({
+      data: [
+        {
+          clip_id: null,
+          job_id: null,
+          remaining_seconds: 0,
+          error_code: "idempotency_conflict",
+        },
+      ],
+      error: null,
+    });
+
+    await expect(submitClipJob(client, validInput)).rejects.toMatchObject({
+      code: "idempotency_conflict",
     });
   });
 

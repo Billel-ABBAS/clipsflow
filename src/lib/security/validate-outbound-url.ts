@@ -14,6 +14,7 @@ const BLOCKED_HOSTNAMES = new Set([
   "metadata.google.internal",
 ]);
 const BLOCKED_TLD_SUFFIXES = [".internal", ".local", ".localhost"];
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 
 function canonicalHostname(hostname: string): string {
   const unwrapped =
@@ -127,6 +128,61 @@ function isBlockedHostname(hostname: string): boolean {
 export interface ValidateOutboundUrlOptions {
   /** Exact host or subdomain suffixes accepted for this request. */
   allowedHosts?: string[];
+  /** Exact local Supabase HTTP origin, only supplied by development callers. */
+  allowHttpOrigin?: string;
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return LOOPBACK_HOSTNAMES.has(canonicalHostname(hostname));
+}
+
+function matchesAllowedLocalHttpOrigin(
+  url: URL,
+  allowHttpOrigin: string | undefined,
+): boolean {
+  if (
+    !allowHttpOrigin ||
+    url.protocol !== "http:" ||
+    url.origin !== allowHttpOrigin
+  ) {
+    return false;
+  }
+  try {
+    const origin = new URL(allowHttpOrigin);
+    return (
+      origin.origin === allowHttpOrigin &&
+      origin.protocol === "http:" &&
+      origin.port === "54321" &&
+      isLoopbackHostname(origin.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Local Docker Supabase is the sole HTTP exception, and never in production. */
+export function localSupabaseHttpOrigin(): string | undefined {
+  if (process.env.NODE_ENV === "production") return undefined;
+  const raw = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!raw) return undefined;
+  try {
+    const url = new URL(raw);
+    if (
+      url.protocol !== "http:" ||
+      url.username ||
+      url.password ||
+      url.port !== "54321" ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash ||
+      !isLoopbackHostname(url.hostname)
+    ) {
+      return undefined;
+    }
+    return url.origin;
+  } catch {
+    return undefined;
+  }
 }
 
 export function validateOutboundUrl(
@@ -140,16 +196,20 @@ export function validateOutboundUrl(
     throw new OutboundUrlError("Invalid outbound URL");
   }
 
-  if (url.protocol !== "https:") {
+  const localHttpAllowed = matchesAllowedLocalHttpOrigin(
+    url,
+    options.allowHttpOrigin,
+  );
+  if (url.protocol !== "https:" && !localHttpAllowed) {
     throw new OutboundUrlError("Only HTTPS outbound URLs are allowed");
   }
   if (url.username || url.password) {
     throw new OutboundUrlError("URL credentials are forbidden");
   }
-  if (url.port) {
+  if (url.port && !localHttpAllowed) {
     throw new OutboundUrlError("Non-standard HTTPS ports are forbidden");
   }
-  if (isBlockedHostname(url.hostname)) {
+  if (isBlockedHostname(url.hostname) && !localHttpAllowed) {
     throw new OutboundUrlError("Private or reserved destination blocked");
   }
 

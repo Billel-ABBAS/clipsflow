@@ -22,6 +22,7 @@ import {
 import type { GalleryClipRow } from "@/components/clips/ClipsGallery";
 import { redirect } from "@/i18n/navigation";
 import { QUOTAS_SECONDS, resolvePlan } from "@/lib/clips/quota";
+import { computeClipCost } from "@/lib/clips/cost";
 import { refreshClipUrls } from "@/lib/clips/refresh-urls";
 import { createClient } from "@/lib/supabase/server";
 
@@ -32,11 +33,17 @@ export default async function NewClipPage({
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ dup?: string; aspect?: string }>;
+  searchParams: Promise<{
+    dup?: string;
+    aspect?: string;
+    episode?: string;
+    start?: string;
+    end?: string;
+  }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
-  const { dup, aspect } = await searchParams;
+  const { dup, aspect, episode, start, end } = await searchParams;
 
   const supabase = await createClient();
   const {
@@ -62,7 +69,7 @@ export default async function NewClipPage({
   // Existing episodes for the Step 1 "episode" tab (30 most recent).
   const { data: episodeRows } = await supabase
     .from("episodes")
-    .select("id, title, source_type, created_at")
+    .select("id, title, source_type, created_at, duration_seconds")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(30);
@@ -98,6 +105,78 @@ export default async function NewClipPage({
     }
   }
 
+  // Suggested moments only prefill the studio; verify ownership and source
+  // bounds server-side instead of trusting the query string.
+  let suggestionSeed: DuplicateSeed | null = null;
+  const startSeconds = Number(start);
+  const endSeconds = Number(end);
+  if (
+    episode &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      episode,
+    ) &&
+    Number.isFinite(startSeconds) &&
+    Number.isFinite(endSeconds) &&
+    startSeconds >= 0 &&
+    endSeconds > startSeconds &&
+    endSeconds - startSeconds <= 180
+  ) {
+    const { data: source } = await supabase
+      .from("episodes")
+      .select("id, status, duration_seconds")
+      .eq("id", episode)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const duration = source?.duration_seconds;
+    const { data: sourceClip } = await supabase
+      .from("clips")
+      .select("id")
+      .eq("episode_id", episode)
+      .eq("user_id", user.id)
+      .eq("status", "completed")
+      .not("transcript_segments", "is", null)
+      .lte("start_seconds", startSeconds)
+      .gte("end_seconds", endSeconds)
+      .limit(1)
+      .maybeSingle();
+    if (
+      source?.status === "ready" &&
+      sourceClip &&
+      (typeof duration !== "number" || endSeconds <= duration)
+    ) {
+      suggestionSeed = {
+        episodeId: source.id,
+        startSeconds,
+        endSeconds,
+        aspectRatio: null,
+        styleKey: null,
+        language: null,
+        estimatedCostUsd: computeClipCost(endSeconds - startSeconds),
+      };
+    }
+  }
+
+  // Reclip and suggestion links may point to an older source outside the
+  // initial 30-row selector window. Keep the preselected source visible so
+  // the form's displayed choice always matches its submitted episode ID.
+  const seedEpisodeId = dupSeed?.episodeId ?? suggestionSeed?.episodeId;
+  if (seedEpisodeId && !episodes.some((item) => item.id === seedEpisodeId)) {
+    const { data: seedEpisode } = await supabase
+      .from("episodes")
+      .select("id, title, source_type, created_at")
+      .eq("id", seedEpisodeId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (seedEpisode) {
+      episodes.unshift({
+        id: seedEpisode.id,
+        title: seedEpisode.title ?? "—",
+        source_type: seedEpisode.source_type ?? "upload",
+        created_at: seedEpisode.created_at,
+      });
+    }
+  }
+
   // Embedded "recent clips" strip — capped at 3 rows (full gallery lives
   // on /clips). Signed URLs re-signed before render (24 h TTL).
   const { data: rows } = await supabase
@@ -121,7 +200,7 @@ export default async function NewClipPage({
         secondsUsed={secondsUsed}
         secondsLimit={secondsLimit}
         resetAt={resetAt}
-        initialDuplicateSeed={dupSeed}
+        initialDuplicateSeed={dupSeed ?? suggestionSeed}
       />
     </div>
   );

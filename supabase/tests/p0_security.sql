@@ -2,6 +2,8 @@
 
 BEGIN;
 
+SELECT plan(1);
+
 DO $$
 DECLARE
   table_name text;
@@ -268,5 +270,8 @@ BEGIN
   END IF;
 END;
 $$;
+
+SELECT pass('all P0 security and lifecycle invariants hold');
+SELECT * FROM finish();
 
 ROLLBACK;

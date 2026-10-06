@@ -71,7 +71,7 @@ describe("translateCues", () => {
     ]);
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: "gpt-5-mini",
+        model: "gpt-5.4-mini",
         store: false,
         max_output_tokens: 2048,
         text: expect.objectContaining({

@@ -51,6 +51,7 @@ import type { BurnSubtitlesParams, BurnSubtitlesResult } from "./subtitle-burn";
 import { hexToAss, detectScriptFont, assTime } from "./ass-format";
 import { ASPECT_RATIO_DIMENSIONS } from "./types";
 import type { StyleKey } from "./types";
+import { shouldReduceShortsMotion } from "./motion-preferences";
 import { safeFetch } from "@/lib/utils/safe-fetch";
 import { defaultClipsAllowedHosts } from "@/lib/security/validate-outbound-url";
 
@@ -676,15 +677,20 @@ export async function burnSubtitlesViaPngOverlay(
       "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ].join("\n");
 
+    const reducedMotion = shouldReduceShortsMotion(
+      params.customizations?.shorts?.reduced_motion,
+      params.customizations?.shorts?.motion_template,
+    );
     const popInBody =
-      params.styleKey === "typewriter"
+      reducedMotion || params.styleKey === "typewriter"
         ? ""
         : preset.popInMs === 0
           ? `\\fad(150,150)`
           : `\\fad(150,150)\\fscx${preset.popInScale}\\fscy${preset.popInScale}\\t(0,${preset.popInMs},\\fscx100\\fscy100)`;
     const inlineRaw = preset.inlineOverrides ?? "";
-    const inline =
-      params.styleKey === "neon"
+    const inline = reducedMotion
+      ? ""
+      : params.styleKey === "neon"
         ? `\\3c${secondaryAss}${inlineRaw}`
         : inlineRaw;
     const popInPrefix =
@@ -709,7 +715,9 @@ export async function burnSubtitlesViaPngOverlay(
       const start = assTime(c.start);
       const end = assTime(c.end);
       let body: string;
-      if (isTypewriter) {
+      if (reducedMotion) {
+        body = escapeAss(transformText(c.text));
+      } else if (isTypewriter) {
         const display = transformText(c.text);
         const chars = [...display];
         if (chars.length === 0) {

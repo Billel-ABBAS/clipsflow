@@ -42,6 +42,7 @@ import {
 } from "@/hooks/use-clip-job-status";
 import { useRouter } from "@/i18n/navigation";
 import { LOCALES_OPTIONS } from "@/lib/clips/locales";
+import { computeClipCost } from "@/lib/clips/cost";
 import type { PresetBundle, PresetCode } from "@/lib/clips/preset-defaults";
 import type { Plan } from "@/lib/clips/quota";
 import {
@@ -136,6 +137,8 @@ export interface DuplicateSeed {
   aspectRatio: string | null;
   styleKey: string | null;
   language: string | null;
+  /** Present only when the source segment was chosen from suggestions. */
+  estimatedCostUsd?: number;
 }
 
 export interface ClipStudioProps {
@@ -417,6 +420,7 @@ export function ClipStudio({
   const [submitting, setSubmitting] = useState(false);
   const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
   const [activeClipId, setActiveClipId] = useState<string | null>(null);
+  const submissionRequestIdRef = useRef<string | null>(null);
   const clipStatus = useClipJobStatus(activeClipId);
   // Deferred resolver — set by handleSubmit before awaiting, called by the
   // effect below when the row goes terminal (source pattern).
@@ -621,14 +625,21 @@ export function ClipStudio({
       }
       if (overlaysPayload.length > 0) body.overlays = overlaysPayload;
 
+      const submissionRequestId =
+        submissionRequestIdRef.current ?? crypto.randomUUID();
+      submissionRequestIdRef.current = submissionRequestId;
       const res = await fetch("/api/clips/jobs", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": submissionRequestId,
+        },
         body: JSON.stringify(body),
       });
       const json = await res.json().catch(() => ({}));
 
       if (res.status === 402) {
+        submissionRequestIdRef.current = null;
         const remaining =
           typeof json.remaining === "number" ? json.remaining : 0;
         setQuotaRemaining(remaining);
@@ -639,7 +650,13 @@ export function ClipStudio({
         res.status === 503 &&
         json?.error === "rendering_temporarily_unavailable"
       ) {
+        submissionRequestIdRef.current = null;
         toast.error(t("worker_unavailable"));
+        return;
+      }
+      if (res.status === 409 && json?.error === "idempotency_conflict") {
+        submissionRequestIdRef.current = null;
+        toast.error(t("submit_error"));
         return;
       }
       if (res.status !== 202 || !json?.data?.clip_id) {
@@ -650,6 +667,7 @@ export function ClipStudio({
       }
 
       const clipId: string = json.data.clip_id;
+      submissionRequestIdRef.current = null;
 
       // Await the terminal status via the Realtime hook (+ its 5 s polling
       // fallback). Railway Cron can wait up to five minutes before it starts
@@ -688,7 +706,7 @@ export function ClipStudio({
         router.refresh();
         return;
       }
-      toast.error(terminal.errorMessage ?? t("submit_error"));
+      toast.error(t("errors.generic_failure"));
     } catch {
       toast.error(t("submit_error_network"));
     } finally {
@@ -989,6 +1007,20 @@ export function ClipStudio({
           secondsLimit={secondsLimit}
           resetAt={resetAt}
         />
+        {seed?.estimatedCostUsd !== undefined &&
+        sourceTab === "episode" &&
+        selectedEpisodeId === seed.episodeId ? (
+          <p className="text-muted-foreground text-xs" role="status">
+            {t("suggestions.estimate", {
+              amount: computeClipCost(
+                Math.max(
+                  0,
+                  mmssToSeconds(segment.endTs) - mmssToSeconds(segment.startTs),
+                ),
+              ).toFixed(4),
+            })}
+          </p>
+        ) : null}
         <Button
           type="button"
           onClick={handleSubmit}

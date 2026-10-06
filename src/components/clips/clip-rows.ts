@@ -20,16 +20,20 @@ export interface ClipRowRaw {
   customizations: GalleryClipRow["customizations"];
   overlays: GalleryClipRow["overlays"];
   video_url: string | null;
+  video_download_url: string | null;
   video_storage_path: string | null;
   thumbnail_url: string | null;
   thumbnail_storage_path: string | null;
   captions_vtt_url: string | null;
+  captions_vtt_download_url: string | null;
   captions_vtt_storage_path: string | null;
   error_message: string | null;
   created_at: string;
   completed_at: string | null;
   duration_seconds: number | null;
   score: number | null;
+  title_override: string | null;
+  is_favorite: boolean;
   episodes: { title: string | null } | null;
 }
 
@@ -38,7 +42,7 @@ export interface ClipRowRaw {
  *  (segment, language, customizations, overlays) consumed by
  *  RetryClipButton. */
 export const CLIP_SELECT_COLUMNS =
-  "id, episode_id, status, style_key, aspect_ratio, language, start_seconds, end_seconds, customizations, overlays, video_url, video_storage_path, thumbnail_url, thumbnail_storage_path, captions_vtt_url, captions_vtt_storage_path, error_message, created_at, completed_at, duration_seconds, score, episodes(title)";
+  "id, episode_id, status, style_key, aspect_ratio, language, start_seconds, end_seconds, customizations, overlays, video_url, video_storage_path, thumbnail_url, thumbnail_storage_path, captions_vtt_url, captions_vtt_storage_path, error_message, created_at, completed_at, duration_seconds, score, title_override, is_favorite, episodes!inner(title)";
 
 /** Map a (URL-refreshed) raw row to the client gallery contract — drops
  *  the storage-path fields, which are internal to the re-sign helper. */
@@ -55,13 +59,21 @@ export function toGalleryRow(r: ClipRowRaw): GalleryClipRow {
     customizations: r.customizations ?? null,
     overlays: r.overlays ?? null,
     video_url: r.video_url,
+    video_download_url:
+      r.video_download_url ?? (r.video_storage_path ? null : r.video_url),
     thumbnail_url: r.thumbnail_url,
     captions_vtt_url: r.captions_vtt_url,
+    captions_vtt_download_url:
+      r.captions_vtt_download_url ??
+      (r.captions_vtt_storage_path ? null : r.captions_vtt_url),
     error_message: r.error_message,
     created_at: r.created_at,
     completed_at: r.completed_at,
     duration_seconds: r.duration_seconds,
     score: r.score,
+    title_override: r.title_override,
+    is_favorite: r.is_favorite,
+    collection_id: null,
     episode_title: r.episodes?.title ?? null,
   };
 }

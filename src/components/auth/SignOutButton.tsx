@@ -37,8 +37,8 @@ export function SignOutButton({ label }: { label: string }) {
       disabled={busy}
       className="text-muted-foreground gap-1.5"
     >
-      <LogOut className="h-4 w-4" />
-      {label}
+      <LogOut className="h-4 w-4" aria-hidden="true" />
+      <span className="sr-only sm:not-sr-only">{label}</span>
     </Button>
   );
 }
