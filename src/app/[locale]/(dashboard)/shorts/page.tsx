@@ -60,6 +60,11 @@ export default async function ShortsPage({
   return (
     <ShortsStudio
       locale={locale}
+      viewerName={
+        typeof user.user_metadata?.full_name === "string"
+          ? user.user_metadata.full_name.slice(0, 100)
+          : undefined
+      }
       episodes={episodes}
       providerCapabilities={resolveShortsProviderCapabilities({
         CLIPS_AI_BUDGET_AUTHORIZED: process.env.CLIPS_AI_BUDGET_AUTHORIZED,

@@ -10,20 +10,23 @@ import {
 } from "react";
 import {
   Check,
+  ArrowRight,
+  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
   CirclePlay,
-  Clapperboard,
   Clock3,
   FileAudio,
   FolderOpen,
   Library,
   LockKeyhole,
+  Maximize,
   MessageSquare,
   MoreHorizontal,
   Music2,
+  Pause,
   Play,
   Plus,
   Search,
@@ -31,6 +34,7 @@ import {
   Sparkles,
   Subtitles,
   UploadCloud,
+  UserRound,
   Video,
   Volume2,
 } from "lucide-react";
@@ -65,6 +69,14 @@ import { CLAUDE_OPUS_5_5_MODEL_API_ID_CONFIRMED } from "@/lib/clips/creative-dir
 import type { ShortsProviderCapabilities } from "@/lib/shorts/provider-capabilities";
 
 import styles from "./ShortsStudio.module.css";
+import {
+  filterShortsCandidates,
+  formatSourceDuration,
+  resolveStudioPhase,
+  searchText,
+  type CandidateFilter,
+  type CandidateSort,
+} from "./studio-presentation";
 
 export const SHORTS_MIN_SOURCE_DURATION_SECONDS = 20 * 60;
 export const SHORTS_MAX_SOURCE_DURATION_SECONDS = 2 * 60 * 60;
@@ -115,14 +127,6 @@ const MOTION_TEMPLATES = [
   "calm-focus",
   "audiogram-waveform",
   "minimal-static",
-] as const;
-
-const WAVEFORM_BAR_HEIGHTS = [
-  21, 38, 55, 28, 67, 40, 72, 31, 48, 64, 27, 39, 58, 83, 51, 33, 68, 45, 77,
-  56, 32, 70, 42, 60, 25, 46, 74, 52, 35, 80, 47, 63, 30, 57, 71, 38, 66, 50,
-  29, 77, 44, 61, 36, 69, 53, 33, 75, 46, 65, 27, 55, 72, 40, 62, 31, 58, 77,
-  49, 34, 67, 45, 79, 54, 26, 59, 70, 37, 64, 48, 29, 74, 42, 63, 36, 68, 51,
-  32, 78, 44, 57, 30, 72, 48, 65, 39, 56, 76, 43, 61,
 ] as const;
 
 type ProjectStatus = (typeof PROJECT_STATUSES)[number];
@@ -215,9 +219,20 @@ export interface ShortsStudioProps {
   episodes: readonly ShortsStudioEpisode[];
   providerCapabilities: ShortsProviderCapabilities;
   sourceLoadError?: boolean;
-  /** Development-only fixture seam for visual regression and local design QA. */
+  /** Optional initial state, also used by the isolated read-only demonstration. */
   initialProject?: ShortsProject;
   initialSelectedEpisodeId?: string;
+  viewerName?: string;
+  /** Read-only demonstration in every environment: never starts remote jobs. */
+  previewOnly?: boolean;
+  /** Original Canva crops, only consumed when previewOnly is explicitly set. */
+  designReference?: Readonly<{
+    sourcePoster: string;
+    candidatePosters: readonly string[];
+    previewPoster: string;
+    waveform: string;
+    transcriptLines?: readonly Readonly<{ time: number; text: string }>[];
+  }>;
 }
 
 type ShortsSourceUploadState =
@@ -992,8 +1007,17 @@ export function ShortsStudio({
   sourceLoadError = false,
   initialProject,
   initialSelectedEpisodeId,
+  viewerName,
+  designReference,
+  previewOnly = false,
 }: ShortsStudioProps) {
   const copy = locale.startsWith("fr") ? COPY.fr : COPY.en;
+  // This server-supplied prop must keep the public demo read-only in production,
+  // too. The authenticated studio does not set it or supply Canva fixture media.
+  const isDesignPreview = previewOnly;
+  const designPreviewNotice = locale.startsWith("fr")
+    ? "Aperçu de design uniquement : aucun import, appel IA ou rendu n’est lancé. Utilisez le Studio connecté pour créer vos Shorts."
+    : "Design preview only: no upload, AI call or render is started. Use the signed-in Studio to create your Shorts.";
   const [selectedEpisodeId, setSelectedEpisodeId] = useState(
     initialSelectedEpisodeId ?? "",
   );
@@ -1036,6 +1060,35 @@ export function ShortsStudio({
   );
   const [activeCandidateId, setActiveCandidateId] = useState<string | null>(
     null,
+  );
+  const [candidateFilter, setCandidateFilter] =
+    useState<CandidateFilter>("all");
+  const [candidateSort, setCandidateSort] = useState<CandidateSort>("rank");
+  const [candidateQuery, setCandidateQuery] = useState("");
+  const [candidateSearchOpen, setCandidateSearchOpen] = useState(false);
+  const [transcriptQuery, setTranscriptQuery] = useState("");
+  const [workspaceTab, setWorkspaceTab] = useState<"transcript" | "timeline">(
+    "transcript",
+  );
+  const [localMediaUrl, setLocalMediaUrl] = useState<string | null>(null);
+  const localMediaUrlRef = useRef<string | null>(null);
+  const sourcePlayerRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackSeconds, setPlaybackSeconds] = useState(0);
+  const [mediaMuted, setMediaMuted] = useState(false);
+  const sourceSectionRef = useRef<HTMLFormElement>(null);
+  const productionSettingsRef = useRef<HTMLDetailsElement>(null);
+  const productionRightsRef = useRef<HTMLDetailsElement>(null);
+  const referenceMedia =
+    isDesignPreview && project?.status === "ready"
+      ? designReference
+      : undefined;
+  useEffect(
+    () => () => {
+      if (localMediaUrlRef.current)
+        URL.revokeObjectURL(localMediaUrlRef.current);
+    },
+    [],
   );
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>("viral");
@@ -1088,7 +1141,7 @@ export function ShortsStudio({
   );
 
   useEffect(() => {
-    if (!projectId) return;
+    if (isDesignPreview || !projectId) return;
     let cancelled = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
@@ -1143,7 +1196,7 @@ export function ShortsStudio({
       controller.abort();
       if (timeout) clearTimeout(timeout);
     };
-  }, [copy.projectError, projectId]);
+  }, [copy.projectError, isDesignPreview, projectId]);
 
   const completeSourceUpload = useCallback(
     async (active: ActiveShortsSourceUpload) => {
@@ -1258,6 +1311,21 @@ export function ShortsStudio({
           status: "error",
           filename: file.name,
           message: copy.uploadError,
+        });
+        return;
+      }
+
+      if (localMediaUrlRef.current)
+        URL.revokeObjectURL(localMediaUrlRef.current);
+      const previewUrl = URL.createObjectURL(file);
+      localMediaUrlRef.current = previewUrl;
+      setLocalMediaUrl(previewUrl);
+
+      if (isDesignPreview) {
+        setSourceUploadState({
+          status: "error",
+          filename: file.name,
+          message: designPreviewNotice,
         });
         return;
       }
@@ -1483,6 +1551,8 @@ export function ShortsStudio({
       copy.uploadError,
       copy.uploadTooLarge,
       copy.uploadUnsupported,
+      designPreviewNotice,
+      isDesignPreview,
       runSourceUpload,
     ],
   );
@@ -1494,6 +1564,10 @@ export function ShortsStudio({
 
   const onEpisodeChange = useCallback(
     (episodeId: string) => {
+      if (localMediaUrlRef.current)
+        URL.revokeObjectURL(localMediaUrlRef.current);
+      localMediaUrlRef.current = null;
+      setLocalMediaUrl(null);
       setSelectedEpisodeId(episodeId);
       const episode = availableEpisodes.find((item) => item.id === episodeId);
       if (episode?.durationSeconds) {
@@ -1509,6 +1583,10 @@ export function ShortsStudio({
       setCreateError(null);
       setSaveError(null);
       setSaveSuccess(null);
+      if (isDesignPreview) {
+        setCreateError(designPreviewNotice);
+        return;
+      }
       if (!selectedEpisodeId) {
         setCreateError(copy.noEpisode);
         return;
@@ -1594,8 +1672,10 @@ export function ShortsStudio({
       copy.genericError,
       copy.noEpisode,
       copy.projectError,
+      designPreviewNotice,
       durationSeconds,
       instructions,
+      isDesignPreview,
       jevShadowConsent,
       selectedEpisodeId,
       validDuration,
@@ -1606,6 +1686,10 @@ export function ShortsStudio({
     setSaveError(null);
     setSaveSuccess(null);
     setActiveCandidateId(candidateId);
+    sourcePlayerRef.current?.pause();
+    if (sourcePlayerRef.current) sourcePlayerRef.current.currentTime = 0;
+    setIsPlaying(false);
+    setPlaybackSeconds(0);
     setSelectedCandidateIds((current) => {
       const next = new Set(current);
       if (next.has(candidateId)) next.delete(candidateId);
@@ -1621,6 +1705,11 @@ export function ShortsStudio({
       currentProject,
     );
     if (!currentProject || currentSelectedCandidateIds.length === 0) return;
+
+    if (isDesignPreview) {
+      setSaveSuccess(designPreviewNotice);
+      return;
+    }
 
     setSavingSelection(true);
     setSaveError(null);
@@ -1671,8 +1760,10 @@ export function ShortsStudio({
     providerCapabilities.creativeDirection,
     providerCapabilities.elevenLabs,
     copy,
+    designPreviewNotice,
     elevenLabsConsent,
     elevenLabsEnabled,
+    isDesignPreview,
     motionTemplate,
     project,
     reducedMotion,
@@ -1689,6 +1780,11 @@ export function ShortsStudio({
     if (!currentProject || currentSelectedCandidateIds.length === 0) return;
     if (!adaptedMusicAuthorized) {
       setSaveError(copy.adaptedMusicRequired);
+      return;
+    }
+
+    if (isDesignPreview) {
+      setSaveSuccess(designPreviewNotice);
       return;
     }
 
@@ -1773,8 +1869,10 @@ export function ShortsStudio({
     providerCapabilities.creativeDirection,
     providerCapabilities.elevenLabs,
     copy,
+    designPreviewNotice,
     elevenLabsConsent,
     elevenLabsEnabled,
+    isDesignPreview,
     motionTemplate,
     project,
     reducedMotion,
@@ -1793,6 +1891,9 @@ export function ShortsStudio({
   const studio = locale.startsWith("fr")
     ? {
         reviewReady: "Prêt à revue",
+        reviewSource: "Nouveau projet",
+        reviewProcessing: "Analyse en cours",
+        reviewFailed: "À vérifier",
         newProject: "Nouveau projet",
         source: "Source",
         analysis: "Analyse",
@@ -1806,10 +1907,12 @@ export function ShortsStudio({
         keyIdeas: "Idées clés",
         strongMoments: "Moments forts",
         questions: "Questions",
-        reels: "Rires",
+        reels: "Ton léger",
         sort: "Trier par : Score",
         reviewAnalysis: "Analyse IA terminée",
         reviewAnalysisPending: "Analyse IA en cours",
+        reviewAnalysisIdle: "Prêt à analyser",
+        reviewAnalysisFailed: "Analyse interrompue",
         analysisSummary: (count: number) =>
           `${count} moment${count > 1 ? "s" : ""} pertinent${count > 1 ? "s" : ""} trouvé${count > 1 ? "s" : ""} dans votre vidéo.`,
         relaunch: "Relancer l’analyse",
@@ -1825,7 +1928,7 @@ export function ShortsStudio({
         listen: "Lire l’extrait complet",
         transcriptTab: "Transcription",
         timelineTab: "Timeline",
-        previewTitle: "Aperçu du Short (9:16)",
+        previewTitle: "Aperçu du Short",
         previewWaiting:
           "L’aperçu réel utilisera le cadrage de votre source au rendu.",
         subtitleOption: "Sous-titres synchronisés",
@@ -1841,9 +1944,27 @@ export function ShortsStudio({
         reset: "Réinitialiser",
         directionOptions: "Direction créative et droits",
         renderGallery: "Voir les rendus dans la galerie",
+        importTitle: "Vos prochains",
+        importAccent: "Shorts commencent ici",
+        importCopy:
+          "Une vidéo longue. Les meilleurs moments. Des Shorts qui captivent.",
+        selectedFilter: "Ma sélection",
+        highScoreFilter: "Score 85+",
+        searchCandidates: "Rechercher dans les extraits…",
+        searchTranscript: "Rechercher dans la transcription…",
+        noSearchResults: "Aucun extrait ne correspond à ces filtres.",
+        mediaUnavailable:
+          "Importez votre média pour activer la lecture. Aucun aperçu vidéo n’a été inventé.",
+        previewEmpty: "Votre prochain Short",
+        previewEmptyCopy:
+          "Importez une source, puis sélectionnez un moment. Votre aperçu vertical prendra place ici.",
+        demoLabel: "Maquette · données de démonstration",
       }
     : {
         reviewReady: "Ready to review",
+        reviewSource: "New project",
+        reviewProcessing: "Analysis in progress",
+        reviewFailed: "Needs attention",
         newProject: "New project",
         source: "Source",
         analysis: "Analysis",
@@ -1857,10 +1978,12 @@ export function ShortsStudio({
         keyIdeas: "Key ideas",
         strongMoments: "Strong moments",
         questions: "Questions",
-        reels: "Humor",
+        reels: "Playful",
         sort: "Sort by: Score",
         reviewAnalysis: "AI analysis complete",
         reviewAnalysisPending: "AI analysis in progress",
+        reviewAnalysisIdle: "Ready to analyze",
+        reviewAnalysisFailed: "Analysis interrupted",
         analysisSummary: (count: number) =>
           `${count} relevant moment${count === 1 ? "" : "s"} found in your source.`,
         relaunch: "Run analysis again",
@@ -1875,7 +1998,7 @@ export function ShortsStudio({
         listen: "Play full excerpt",
         transcriptTab: "Transcript",
         timelineTab: "Timeline",
-        previewTitle: "Short preview (9:16)",
+        previewTitle: "Short preview",
         previewWaiting:
           "The real preview will use your source framing at render time.",
         subtitleOption: "Synchronized subtitles",
@@ -1891,8 +2014,44 @@ export function ShortsStudio({
         reset: "Reset",
         directionOptions: "Creative direction and rights",
         renderGallery: "View renders in the gallery",
+        importTitle: "Your next",
+        importAccent: "Shorts start here",
+        importCopy:
+          "One long video. The strongest moments. Shorts that captivate.",
+        selectedFilter: "My selection",
+        highScoreFilter: "Score 85+",
+        searchCandidates: "Search excerpts…",
+        searchTranscript: "Search the transcript…",
+        noSearchResults: "No excerpts match these filters.",
+        mediaUnavailable:
+          "Import your media to enable playback. No video preview has been invented.",
+        previewEmpty: "Your next Short",
+        previewEmptyCopy:
+          "Import a source, then select a moment. Your vertical preview will appear here.",
+        demoLabel: "Mockup · demonstration data",
       };
+  const filteredCandidates = useMemo(
+    () =>
+      filterShortsCandidates(
+        project?.candidates ?? [],
+        selectedCandidateIds,
+        candidateFilter,
+        candidateQuery,
+        candidateSort,
+      ),
+    [
+      project,
+      selectedCandidateIds,
+      candidateFilter,
+      candidateQuery,
+      candidateSort,
+    ],
+  );
   const activeCandidate =
+    filteredCandidates.find(
+      (candidate) => candidate.id === activeCandidateId,
+    ) ??
+    filteredCandidates[0] ??
     project?.candidates.find(
       (candidate) => candidate.id === activeCandidateId,
     ) ??
@@ -1913,22 +2072,89 @@ export function ShortsStudio({
       .split(/(?<=[.!?])\s+/u)
       .map((sentence) => sentence.trim())
       .filter(Boolean);
-    return (sentences.length > 0 ? sentences : [excerpt]).slice(0, 5);
+    return sentences.length > 0 ? sentences : [excerpt];
   }, [activeCandidate]);
   const sourceTitle = selectedEpisode?.title || copy.sourcePlaceholder;
   const sourceDuration = selectedEpisode?.durationSeconds
-    ? formatShortsTimestamp(selectedEpisode.durationSeconds)
+    ? formatSourceDuration(
+        selectedEpisode.durationSeconds,
+        locale.startsWith("fr"),
+      )
     : validDuration
-      ? formatShortsTimestamp(durationSeconds)
+      ? formatSourceDuration(durationSeconds, locale.startsWith("fr"))
       : copy.unavailableDuration;
   const candidateCount = project?.candidates.length ?? 0;
   const candidatePage = resolveShortsCandidatePage(
-    candidateCount,
-    project?.candidates.findIndex(
+    filteredCandidates.length,
+    filteredCandidates.findIndex(
       (candidate) => candidate.id === activeCandidate?.id,
     ) ?? 0,
   );
   const projectIsReady = project?.status === "ready";
+  const studioPhase = resolveStudioPhase(project, creatingProject);
+  const referencePreview =
+    activeCandidate?.rank === 1
+      ? referenceMedia?.previewPoster
+      : referenceMedia?.candidatePosters[(activeCandidate?.rank ?? 1) - 1];
+  const referenceTranscript =
+    activeCandidate?.rank === 1 ? referenceMedia?.transcriptLines : undefined;
+  const visibleTranscriptLines = transcriptLines.filter(
+    (line) =>
+      !transcriptQuery ||
+      searchText(line).includes(searchText(transcriptQuery)),
+  );
+  const displayedTranscriptLines =
+    referenceTranscript
+      ?.filter(
+        (line) =>
+          !transcriptQuery ||
+          searchText(line.text).includes(searchText(transcriptQuery)),
+      )
+      .map((line) => line.text) ?? visibleTranscriptLines;
+  const sourceDate =
+    selectedEpisode?.createdAt &&
+    !Number.isNaN(Date.parse(selectedEpisode.createdAt))
+      ? new Intl.DateTimeFormat(locale.startsWith("fr") ? "fr-FR" : "en-GB", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        }).format(new Date(selectedEpisode.createdAt))
+      : null;
+  const togglePlayback = () => {
+    const player = sourcePlayerRef.current;
+    if (!player || !localMediaUrl || !activeCandidate) return;
+    if (player.paused) {
+      if (
+        player.currentTime < activeCandidate.startSeconds ||
+        player.currentTime >= activeCandidate.endSeconds
+      )
+        player.currentTime = activeCandidate.startSeconds;
+      void player.play().catch(() => setIsPlaying(false));
+    } else player.pause();
+  };
+
+  const toggleProductionSettings = () => {
+    const settings = productionSettingsRef.current;
+    if (!settings) return;
+    settings.open = !settings.open;
+    settings.scrollIntoView({ block: "nearest" });
+  };
+
+  const resetReviewPlayback = () => {
+    sourcePlayerRef.current?.pause();
+    if (sourcePlayerRef.current) sourcePlayerRef.current.currentTime = 0;
+    setIsPlaying(false);
+    setPlaybackSeconds(0);
+  };
+  const reviewCandidate = (candidate: ShortsCandidate) => {
+    sourcePlayerRef.current?.pause();
+    if (sourcePlayerRef.current && localMediaUrl)
+      sourcePlayerRef.current.currentTime = candidate.startSeconds;
+    setPlaybackSeconds(candidate.startSeconds);
+    setIsPlaying(false);
+    setActiveCandidateId(candidate.id);
+    setTranscriptQuery("");
+  };
 
   const onStartNewProject = useCallback(() => {
     setProjectId(null);
@@ -1941,43 +2167,124 @@ export function ShortsStudio({
     setSaveSuccess(null);
     setRenderStatus(null);
     setCreativeDirectionEnabled(false);
+    setCandidateFilter("all");
+    setCandidateQuery("");
+    setCandidateSort("rank");
+    setTranscriptQuery("");
+    setWorkspaceTab("transcript");
+    setIsPlaying(false);
   }, []);
 
   return (
-    <div className={styles.studio}>
+    <div
+      className={styles.studio}
+      data-preview-only={isDesignPreview || undefined}
+    >
       <div className={styles.shell}>
         <header className={styles.topbar}>
           <a href={`/${encodeURIComponent(locale)}`} className={styles.brand}>
-            <span className={styles.brandMark} aria-hidden="true">
-              <Clapperboard size={16} strokeWidth={2.3} />
-            </span>
+            {/* Supplied Canva mark, not a replacement illustration. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              className={styles.brandMark}
+              src="/images/brand/clipsflow-canva-mark.png"
+              alt=""
+              width={34}
+              height={38}
+            />
             <span>ClipsFlow</span>
           </a>
 
-          <div className={styles.workspaceSelect} title={sourceTitle}>
+          <button
+            type="button"
+            className={styles.workspaceSelect}
+            title={sourceTitle}
+            onClick={() => {
+              if (project) onStartNewProject();
+              sourceSectionRef.current?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              });
+            }}
+            disabled={creatingProject || renderingSelected}
+          >
             <span className={styles.workspacePoster} aria-hidden="true">
-              <Video size={16} />
+              {referenceMedia ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={referenceMedia.sourcePoster} alt="" />
+              ) : (
+                <Video size={16} />
+              )}
             </span>
             <span className={styles.workspaceLabel}>{sourceTitle}</span>
             <ChevronDown size={14} aria-hidden="true" />
-          </div>
+          </button>
 
           <div className={styles.topbarActions}>
-            <span className={styles.reviewStatus}>
-              <span className={styles.statusDot} aria-hidden="true" />
-              {studio.reviewReady}
-            </span>
-            <div className={styles.avatars} aria-label="Équipe ClipsFlow">
-              <span className={styles.avatar}>LR</span>
-              <span className={styles.avatar}>CM</span>
-            </div>
-            <button
-              type="button"
-              className={styles.iconButton}
-              aria-label="Messages"
+            <span
+              className={styles.reviewStatus}
+              data-phase={studioPhase}
+              title={isDesignPreview ? designPreviewNotice : undefined}
             >
-              <MessageSquare size={16} />
-            </button>
+              <span className={styles.statusDot} aria-hidden="true" />
+              {isDesignPreview
+                ? locale.startsWith("fr")
+                  ? "Démo · lecture seule"
+                  : "Demo · read only"
+                : studioPhase === "ready"
+                  ? studio.reviewReady
+                  : studioPhase === "processing"
+                    ? studio.reviewProcessing
+                    : studioPhase === "failed"
+                      ? studio.reviewFailed
+                      : studio.reviewSource}
+            </span>
+            <div
+              className={styles.avatars}
+              aria-label={
+                viewerName ||
+                (locale.startsWith("fr") ? "Votre espace" : "Your workspace")
+              }
+            >
+              <span className={styles.avatar}>
+                {viewerName ? (
+                  viewerName
+                    .trim()
+                    .split(/\s+/u)
+                    .slice(0, 2)
+                    .map((name) => name[0])
+                    .join("")
+                    .toUpperCase()
+                ) : (
+                  <UserRound size={16} />
+                )}
+              </span>
+            </div>
+            <details className={styles.studioHelp}>
+              <summary
+                className={styles.iconButton}
+                aria-label={
+                  locale.startsWith("fr") ? "Aide du Studio" : "Studio help"
+                }
+              >
+                <MessageSquare size={16} />
+              </summary>
+              <p>
+                {isDesignPreview
+                  ? designPreviewNotice
+                  : studio.startAProjectCopy}
+                {isDesignPreview ? (
+                  <>
+                    {" "}
+                    <a href={`/${encodeURIComponent(locale)}/shorts`}>
+                      {locale.startsWith("fr")
+                        ? "Ouvrir le Studio"
+                        : "Open Studio"}
+                    </a>
+                  </>
+                ) : null}
+              </p>
+            </details>
             <button
               type="button"
               className={styles.newProjectButton}
@@ -1996,10 +2303,26 @@ export function ShortsStudio({
             aria-label="Étapes du Studio Shorts"
           >
             <div className={styles.sourceVisual} aria-hidden="true">
-              <div className={styles.sourceVisualInner}>
-                <Video size={24} strokeWidth={1.5} />
-                <span>{studio.mediaWaiting}</span>
-              </div>
+              {referenceMedia ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={referenceMedia.sourcePoster} alt="" />
+              ) : localMediaUrl ? (
+                <video
+                  src={localMediaUrl}
+                  muted
+                  playsInline
+                  preload="metadata"
+                />
+              ) : (
+                <div className={styles.sourceVisualInner}>
+                  <Video size={24} strokeWidth={1.5} />
+                  <span>
+                    {locale.startsWith("fr")
+                      ? "Votre vidéo ou votre podcast"
+                      : "Your video or podcast"}
+                  </span>
+                </div>
+              )}
             </div>
             <p className={styles.sourceTitle}>{sourceTitle}</p>
             <div className={styles.sourceMeta}>
@@ -2008,10 +2331,15 @@ export function ShortsStudio({
                 {sourceDuration}
               </span>
               <span className={styles.sourceMetaItem}>
-                <FileAudio size={14} aria-hidden="true" />
-                {analysisMode === "audio_video"
-                  ? copy.audioVideoTitle
-                  : copy.audioTitle}
+                {sourceDate ? (
+                  <CalendarDays size={15} aria-hidden="true" />
+                ) : (
+                  <FileAudio size={14} aria-hidden="true" />
+                )}
+                {sourceDate ||
+                  (analysisMode === "audio_video"
+                    ? copy.audioVideoTitle
+                    : copy.audioTitle)}
               </span>
               <span className={styles.sourceMetaItem}>
                 <Video size={14} aria-hidden="true" />
@@ -2028,7 +2356,11 @@ export function ShortsStudio({
                 )}
               >
                 <span className={styles.stepMarker} aria-hidden="true">
-                  {selectedEpisodeId ? <Check size={14} /> : "01"}
+                  {selectedEpisodeId ? (
+                    <Check size={14} />
+                  ) : (
+                    <UploadCloud size={13} />
+                  )}
                 </span>
                 <span className={styles.stepContent}>
                   <span className={styles.stepIndex}>01</span>
@@ -2043,7 +2375,7 @@ export function ShortsStudio({
                 )}
               >
                 <span className={styles.stepMarker} aria-hidden="true">
-                  {projectIsReady ? <Check size={14} /> : "02"}
+                  {projectIsReady ? <Check size={14} /> : null}
                 </span>
                 <span className={styles.stepContent}>
                   <span className={styles.stepIndex}>02</span>
@@ -2054,7 +2386,7 @@ export function ShortsStudio({
                 className={cn(styles.step, projectIsReady && styles.stepActive)}
               >
                 <span className={styles.stepMarker} aria-hidden="true">
-                  03
+                  {projectIsReady ? <CircleCheck size={15} /> : null}
                 </span>
                 <span className={styles.stepContent}>
                   <span className={styles.stepIndex}>03</span>
@@ -2070,18 +2402,14 @@ export function ShortsStudio({
                 </span>
               </li>
               <li className={styles.step}>
-                <span className={styles.stepMarker} aria-hidden="true">
-                  04
-                </span>
+                <span className={styles.stepMarker} aria-hidden="true"></span>
                 <span className={styles.stepContent}>
                   <span className={styles.stepIndex}>04</span>
                   <span className={styles.stepTitle}>{studio.production}</span>
                 </span>
               </li>
               <li className={styles.step}>
-                <span className={styles.stepMarker} aria-hidden="true">
-                  05
-                </span>
+                <span className={styles.stepMarker} aria-hidden="true"></span>
                 <span className={styles.stepContent}>
                   <span className={styles.stepIndex}>05</span>
                   <span className={styles.stepTitle}>{studio.publication}</span>
@@ -2119,24 +2447,45 @@ export function ShortsStudio({
 
           <main className={styles.main}>
             <div className={styles.content}>
-              <section className={styles.studioHeader}>
+              <section
+                className={cn(
+                  styles.studioHeader,
+                  !projectIsReady && styles.studioHeaderSource,
+                )}
+              >
                 <div>
-                  <p className={styles.eyebrow}>{copy.eyebrow}</p>
+                  <p className={styles.eyebrow}>
+                    {isDesignPreview
+                      ? locale.startsWith("fr")
+                        ? "STUDIO SHORTS · DÉMO EN LECTURE SEULE"
+                        : "SHORTS STUDIO · READ-ONLY DEMO"
+                      : locale.startsWith("fr")
+                        ? "STUDIO SHORTS"
+                        : "SHORTS STUDIO"}
+                  </p>
                   <h1 className={styles.headline}>
-                    {candidateCount || "—"}{" "}
+                    {projectIsReady ? candidateCount : studio.importTitle}{" "}
                     <span className={styles.headlineAccent}>
-                      {locale.startsWith("fr")
-                        ? "moments trouvés"
-                        : "moments found"}
+                      {!projectIsReady
+                        ? studio.importAccent
+                        : locale.startsWith("fr")
+                          ? "moments trouvés"
+                          : "moments found"}
                     </span>
                   </h1>
                   <p className={styles.headlineDescription}>
                     {projectIsReady
-                      ? copy.candidatesDescription
-                      : copy.description}
+                      ? locale.startsWith("fr")
+                        ? "Des extraits à fort potentiel pour des Shorts captivants."
+                        : "High-potential excerpts for captivating Shorts."
+                      : studio.importCopy}
                   </p>
                 </div>
-                <div className={styles.analysisComplete} aria-live="polite">
+                <div
+                  className={styles.analysisComplete}
+                  data-phase={studioPhase}
+                  aria-live="polite"
+                >
                   <span
                     className={styles.analysisCompleteIcon}
                     aria-hidden="true"
@@ -2151,7 +2500,11 @@ export function ShortsStudio({
                     <span className={styles.analysisCompleteTitle}>
                       {projectIsReady
                         ? studio.reviewAnalysis
-                        : studio.reviewAnalysisPending}
+                        : studioPhase === "processing"
+                          ? studio.reviewAnalysisPending
+                          : studioPhase === "failed"
+                            ? studio.reviewAnalysisFailed
+                            : studio.reviewAnalysisIdle}
                     </span>
                     <p className={styles.analysisCompleteCopy}>
                       {projectIsReady
@@ -2179,32 +2532,70 @@ export function ShortsStudio({
                     className={styles.filterRow}
                     aria-label="Repères des extraits"
                   >
-                    <span
-                      className={cn(styles.filterPill, styles.filterPillActive)}
+                    {(
+                      [
+                        ["all", studio.all],
+                        ["selected", studio.selectedFilter],
+                        ["high_score", studio.highScoreFilter],
+                        ["questions", studio.questions],
+                        ["playful", studio.reels],
+                      ] as const
+                    ).map(([filter, label]) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        className={cn(
+                          styles.filterPill,
+                          candidateFilter === filter && styles.filterPillActive,
+                        )}
+                        aria-pressed={candidateFilter === filter}
+                        onClick={() => {
+                          setCandidateFilter(filter);
+                          setActiveCandidateId(null);
+                          resetReviewPlayback();
+                        }}
+                      >
+                        <span className={styles.filterDot} aria-hidden="true" />
+                        {label} (
+                        {
+                          filterShortsCandidates(
+                            project.candidates,
+                            selectedCandidateIds,
+                            filter,
+                          ).length
+                        }
+                        )
+                      </button>
+                    ))}
+                    <select
+                      className={styles.sortControl}
+                      value={candidateSort}
+                      onChange={(event) => {
+                        setCandidateSort(event.target.value as CandidateSort);
+                        setActiveCandidateId(null);
+                        resetReviewPlayback();
+                      }}
+                      aria-label={
+                        locale.startsWith("fr")
+                          ? "Trier les extraits"
+                          : "Sort excerpts"
+                      }
                     >
-                      <span className={styles.filterDot} aria-hidden="true" />
-                      {studio.all} ({candidateCount})
-                    </span>
-                    <span className={styles.filterPill}>
-                      <span className={styles.filterDot} aria-hidden="true" />
-                      {studio.keyIdeas}
-                    </span>
-                    <span className={styles.filterPill}>
-                      <span className={styles.filterDot} aria-hidden="true" />
-                      {studio.strongMoments}
-                    </span>
-                    <span className={styles.filterPill}>
-                      <span className={styles.filterDot} aria-hidden="true" />
-                      {studio.questions}
-                    </span>
-                    <span className={styles.filterPill}>
-                      <span className={styles.filterDot} aria-hidden="true" />
-                      {studio.reels}
-                    </span>
-                    <span className={styles.sortControl}>
-                      {studio.sort}
-                      <ChevronDown size={13} aria-hidden="true" />
-                    </span>
+                      <option value="rank">
+                        {locale.startsWith("fr")
+                          ? "Trier par : IA"
+                          : "Sort by: AI"}
+                      </option>
+                      <option value="score">{studio.sort}</option>
+                      <option value="chronological">
+                        {locale.startsWith("fr")
+                          ? "Chronologie"
+                          : "Chronological"}
+                      </option>
+                      <option value="duration">
+                        {locale.startsWith("fr") ? "Durée" : "Duration"}
+                      </option>
+                    </select>
                     {candidatePage.pageCount > 1 ? (
                       <nav
                         className={styles.candidatePager}
@@ -2224,8 +2615,8 @@ export function ShortsStudio({
                               : "Previous excerpts"
                           }
                           onClick={() =>
-                            setActiveCandidateId(
-                              project.candidates[candidatePage.start - 3].id,
+                            reviewCandidate(
+                              filteredCandidates[candidatePage.start - 3],
                             )
                           }
                         >
@@ -2248,8 +2639,8 @@ export function ShortsStudio({
                               : "Next excerpts"
                           }
                           onClick={() =>
-                            setActiveCandidateId(
-                              project.candidates[candidatePage.end].id,
+                            reviewCandidate(
+                              filteredCandidates[candidatePage.end],
                             )
                           }
                         >
@@ -2261,16 +2652,48 @@ export function ShortsStudio({
                       type="button"
                       className={styles.iconButton}
                       aria-label="Rechercher dans les extraits"
+                      aria-expanded={candidateSearchOpen}
+                      onClick={() => setCandidateSearchOpen((open) => !open)}
                     >
                       <Search size={15} />
                     </button>
                   </div>
 
+                  {candidateSearchOpen ? (
+                    <label className={styles.reviewSearch}>
+                      <Search size={16} aria-hidden="true" />
+                      <input
+                        value={candidateQuery}
+                        onChange={(event) => {
+                          setCandidateQuery(event.target.value);
+                          setActiveCandidateId(null);
+                          resetReviewPlayback();
+                        }}
+                        placeholder={studio.searchCandidates}
+                        aria-label={studio.searchCandidates}
+                      />
+                    </label>
+                  ) : null}
+                  {filteredCandidates.length === 0 ? (
+                    <p className={styles.noResults} role="status">
+                      {studio.noSearchResults}{" "}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCandidateFilter("all");
+                          setCandidateQuery("");
+                        }}
+                      >
+                        {studio.reset}
+                      </button>
+                    </p>
+                  ) : null}
+
                   <section
                     className={styles.candidates}
                     aria-label={copy.candidatesTitle}
                   >
-                    {project.candidates
+                    {filteredCandidates
                       .slice(candidatePage.start, candidatePage.end)
                       .map((candidate) => {
                         const checked = selectedCandidateIds.has(candidate.id);
@@ -2288,30 +2711,70 @@ export function ShortsStudio({
                               styles.candidate,
                               isActive && styles.candidateActive,
                             )}
-                            tabIndex={0}
-                            role="button"
-                            aria-pressed={isActive}
-                            onClick={() => setActiveCandidateId(candidate.id)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                setActiveCandidateId(candidate.id);
-                              }
-                            }}
                           >
+                            <button
+                              type="button"
+                              className={styles.candidateOpen}
+                              aria-pressed={isActive}
+                              aria-label={candidate.title}
+                              onClick={() => reviewCandidate(candidate)}
+                            />
                             <div className={styles.candidateVisual}>
-                              <span className={styles.mediaSignal}>
-                                <Video
-                                  size={20}
-                                  strokeWidth={1.65}
-                                  aria-hidden="true"
+                              {referenceMedia?.candidatePosters[
+                                candidate.rank - 1
+                              ] ? (
+                                /* eslint-disable-next-line @next/next/no-img-element */
+                                <img
+                                  className={styles.referenceCandidateImage}
+                                  src={
+                                    referenceMedia.candidatePosters[
+                                      candidate.rank - 1
+                                    ]
+                                  }
+                                  alt=""
                                 />
-                                {candidate.visualSummary || studio.mediaWaiting}
-                              </span>
-                              <span className={styles.candidateScore}>
+                              ) : localMediaUrl ? (
+                                <video
+                                  src={`${localMediaUrl}#t=${candidate.startSeconds}`}
+                                  playsInline
+                                  muted
+                                  preload="metadata"
+                                  onLoadedMetadata={(event) => {
+                                    event.currentTarget.currentTime =
+                                      candidate.startSeconds;
+                                  }}
+                                />
+                              ) : (
+                                <span className={styles.mediaSignal}>
+                                  <Video
+                                    size={20}
+                                    strokeWidth={1.65}
+                                    aria-hidden="true"
+                                  />
+                                  {candidate.visualSummary ||
+                                    studio.mediaWaiting}
+                                </span>
+                              )}
+                              <span
+                                className={
+                                  referenceMedia?.candidatePosters[
+                                    candidate.rank - 1
+                                  ]
+                                    ? styles.srOnly
+                                    : styles.candidateScore
+                                }
+                              >
                                 {candidate.score}
                               </span>
-                              <span className={styles.candidateDuration}>
+                              <span
+                                className={
+                                  referenceMedia?.candidatePosters[
+                                    candidate.rank - 1
+                                  ]
+                                    ? styles.srOnly
+                                    : styles.candidateDuration
+                                }
+                              >
                                 {candidateDuration}
                               </span>
                             </div>
@@ -2320,9 +2783,8 @@ export function ShortsStudio({
                                 type="button"
                                 className={styles.candidateSelect}
                                 data-selected={checked}
-                                aria-label={
-                                  checked ? copy.selected : copy.selectCandidate
-                                }
+                                aria-label={`${checked ? copy.selected : copy.selectCandidate} · ${candidate.title}`}
+                                aria-pressed={checked}
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   toggleCandidate(candidate.id);
@@ -2339,7 +2801,7 @@ export function ShortsStudio({
                                   {candidate.title}
                                 </div>
                                 <p className={styles.candidateHook}>
-                                  {candidate.hook}
+                                  {candidate.rationale || candidate.hook}
                                 </p>
                               </div>
                             </div>
@@ -2362,17 +2824,33 @@ export function ShortsStudio({
                             {activeCandidate.title}
                           </div>
                           <p className={styles.selectedMeta}>
-                            {studio.currentExcerpt}{" "}
+                            {locale.startsWith("fr")
+                              ? "Extrait de"
+                              : "Excerpt from"}{" "}
                             {formatShortsTimestamp(
                               activeCandidate.startSeconds,
                             )}{" "}
+                            {locale.startsWith("fr") ? " à " : " to "}
+                            {formatShortsTimestamp(activeCandidate.endSeconds)}
                             {" · "}
-                            {activeCandidateDuration}
+                            {Math.round(
+                              activeCandidate.endSeconds -
+                                activeCandidate.startSeconds,
+                            )}{" "}
+                            {locale.startsWith("fr") ? "secondes" : "seconds"}
                           </p>
                         </div>
                       </div>
                       <div className={styles.selectionActions}>
-                        <button type="button" className={styles.listenButton}>
+                        <button
+                          type="button"
+                          className={styles.listenButton}
+                          onClick={togglePlayback}
+                          disabled={!localMediaUrl}
+                          title={
+                            !localMediaUrl ? studio.mediaUnavailable : undefined
+                          }
+                        >
                           <Play
                             size={13}
                             fill="currentColor"
@@ -2380,13 +2858,50 @@ export function ShortsStudio({
                           />
                           {studio.listen}
                         </button>
-                        <button
-                          type="button"
-                          className={styles.overflowButton}
-                          aria-label="Plus d’options"
-                        >
-                          <MoreHorizontal size={17} />
-                        </button>
+                        <details className={styles.selectionMenu}>
+                          <summary
+                            className={styles.overflowButton}
+                            aria-label={
+                              locale.startsWith("fr")
+                                ? "Options de l’extrait"
+                                : "Excerpt options"
+                            }
+                          >
+                            <MoreHorizontal size={17} />
+                          </summary>
+                          <div className={styles.selectionMenuBody}>
+                            <p>{activeCandidate.rationale}</p>
+                            <button
+                              type="button"
+                              className={styles.compactButton}
+                              onClick={() =>
+                                toggleCandidate(activeCandidate.id)
+                              }
+                            >
+                              {selectedCandidateIds.has(activeCandidate.id)
+                                ? locale.startsWith("fr")
+                                  ? "Retirer de ma sélection"
+                                  : "Remove from selection"
+                                : copy.selectCandidate}
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.compactButton}
+                              onClick={() => void onSaveSelection()}
+                              disabled={isShortsSelectionSaveDisabled({
+                                candidatesReady: showCandidateControls,
+                                selectedCandidateCount:
+                                  selectedCandidateIdsForCurrentProject.length,
+                                savingSelection,
+                                renderingSelected,
+                              })}
+                            >
+                              {savingSelection
+                                ? copy.savingSelection
+                                : copy.saveSelection}
+                            </button>
+                          </div>
+                        </details>
                       </div>
                     </div>
 
@@ -2395,106 +2910,231 @@ export function ShortsStudio({
                         type="button"
                         className={cn(
                           styles.transcriptTab,
-                          styles.transcriptTabActive,
+                          workspaceTab === "transcript" &&
+                            styles.transcriptTabActive,
                         )}
+                        aria-pressed={workspaceTab === "transcript"}
+                        onClick={() => setWorkspaceTab("transcript")}
                       >
                         {studio.transcriptTab}
                       </button>
-                      <button type="button" className={styles.transcriptTab}>
+                      <button
+                        type="button"
+                        className={cn(
+                          styles.transcriptTab,
+                          workspaceTab === "timeline" &&
+                            styles.transcriptTabActive,
+                        )}
+                        aria-pressed={workspaceTab === "timeline"}
+                        onClick={() => setWorkspaceTab("timeline")}
+                      >
                         {studio.timelineTab}
                       </button>
+                      <label className={styles.transcriptSearch}>
+                        <Search size={15} aria-hidden="true" />
+                        <input
+                          value={transcriptQuery}
+                          onChange={(event) =>
+                            setTranscriptQuery(event.target.value)
+                          }
+                          placeholder={studio.searchTranscript}
+                          aria-label={studio.searchTranscript}
+                        />
+                      </label>
                     </div>
 
-                    <div className={styles.transcriptBody}>
-                      <div className={styles.transcriptLines}>
-                        {transcriptLines.map((line, index) => {
-                          const timestamp = formatShortsTimestamp(
-                            activeCandidate.startSeconds + index * 3,
-                          );
-                          const highlighted =
-                            index === Math.min(2, transcriptLines.length - 1);
-                          return (
-                            <div
-                              key={`${timestamp}-${line}`}
-                              className={cn(
-                                styles.transcriptLine,
-                                highlighted && styles.transcriptHighlight,
-                              )}
-                            >
-                              <span className={styles.transcriptTimestamp}>
-                                {timestamp}
-                              </span>
-                              <span>{line}</span>
-                            </div>
-                          );
-                        })}
+                    {workspaceTab === "transcript" ? (
+                      <div className={styles.transcriptBody}>
+                        <div className={styles.transcriptLines}>
+                          {displayedTranscriptLines.length === 0 ? (
+                            <p className={styles.transcriptEmpty}>
+                              {locale.startsWith("fr")
+                                ? "Aucun passage ne correspond à votre recherche."
+                                : "No transcript passage matches your search."}
+                            </p>
+                          ) : null}
+                          {displayedTranscriptLines.map((line, index) => {
+                            // The API supplies an excerpt, not per-line timestamps.
+                            // Never invent 3-second cues; exact timing belongs to the renderer.
+                            const timestamp = referenceTranscript
+                              ? formatShortsTimestamp(
+                                  referenceTranscript.find(
+                                    (cue) => cue.text === line,
+                                  )?.time,
+                                )
+                              : index === 0
+                                ? formatShortsTimestamp(
+                                    activeCandidate.startSeconds,
+                                  )
+                                : "—";
+                            const highlighted =
+                              index === Math.min(2, transcriptLines.length - 1);
+                            return (
+                              <div
+                                key={`${timestamp}-${line}`}
+                                className={cn(
+                                  styles.transcriptLine,
+                                  highlighted && styles.transcriptHighlight,
+                                )}
+                              >
+                                <span className={styles.transcriptTimestamp}>
+                                  {timestamp}
+                                </span>
+                                <span>{line}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <span
+                          className={styles.scrollIndicator}
+                          aria-hidden="true"
+                        />
                       </div>
-                      <span
-                        className={styles.scrollIndicator}
-                        aria-hidden="true"
-                      />
-                    </div>
+                    ) : (
+                      <div className={styles.timelineList}>
+                        {filteredCandidates.map((candidate) => (
+                          <button
+                            key={candidate.id}
+                            type="button"
+                            className={cn(
+                              styles.timelineItem,
+                              candidate.id === activeCandidate.id &&
+                                styles.timelineItemActive,
+                            )}
+                            onClick={() => reviewCandidate(candidate)}
+                          >
+                            <span>
+                              {formatShortsTimestamp(candidate.startSeconds)} —{" "}
+                              {formatShortsTimestamp(candidate.endSeconds)}
+                            </span>
+                            <strong>{candidate.title}</strong>
+                            <span>{candidate.score}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
                     <div className={styles.waveformPanel}>
                       <div
                         className={styles.waveform}
-                        aria-label="Aperçu temporel décoratif de l’extrait"
+                        aria-label={
+                          locale.startsWith("fr")
+                            ? "Repères temporels de l’extrait"
+                            : "Excerpt timeline"
+                        }
                       >
-                        {WAVEFORM_BAR_HEIGHTS.map((height, index) => (
-                          <span
-                            key={`${height}-${index}`}
-                            className={styles.waveBar}
-                            style={{ height: `${height}%` }}
-                            aria-hidden="true"
+                        {referenceMedia && activeCandidate.rank === 1 ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={referenceMedia.waveform}
+                            alt="Forme d’onde de la maquette Canva, données de démonstration"
+                            className={styles.referenceWaveform}
                           />
-                        ))}
-                        <span
-                          className={styles.waveSelection}
-                          aria-hidden="true"
-                        >
-                          <span className={styles.waveHandle} />
-                          <span className={styles.waveHandle} />
-                        </span>
+                        ) : (
+                          <span className={styles.timelineNotice}>
+                            {locale.startsWith("fr")
+                              ? "Repères de l’extrait · la synchronisation exacte est calculée au rendu"
+                              : "Excerpt bounds · exact synchronization is computed at render time"}
+                          </span>
+                        )}
                       </div>
                       <div className={styles.waveTimes} aria-hidden="true">
-                        <span>
-                          {formatShortsTimestamp(activeCandidate.startSeconds)}
-                        </span>
-                        <span>
-                          {formatShortsTimestamp(
-                            activeCandidate.startSeconds + 15,
-                          )}
-                        </span>
-                        <span>
-                          {formatShortsTimestamp(activeCandidate.endSeconds)}
-                        </span>
+                        {referenceMedia && activeCandidate.rank === 1 ? (
+                          [
+                            "12:00",
+                            "12:15",
+                            "12:30",
+                            "12:45",
+                            "13:00",
+                            "13:15",
+                            "13:30",
+                            "13:45",
+                            "14:00",
+                          ].map((time) => <span key={time}>{time}</span>)
+                        ) : (
+                          <>
+                            <span>
+                              {formatShortsTimestamp(
+                                activeCandidate.startSeconds,
+                              )}
+                            </span>
+                            <span>
+                              {formatShortsTimestamp(
+                                (activeCandidate.startSeconds +
+                                  activeCandidate.endSeconds) /
+                                  2,
+                              )}
+                            </span>
+                            <span>
+                              {formatShortsTimestamp(
+                                activeCandidate.endSeconds,
+                              )}
+                            </span>
+                          </>
+                        )}
                       </div>
                       <div className={styles.playback}>
                         <button
                           type="button"
                           className={styles.playCircle}
                           aria-label={studio.listen}
+                          onClick={togglePlayback}
+                          disabled={!localMediaUrl}
+                          title={
+                            !localMediaUrl ? studio.mediaUnavailable : undefined
+                          }
                         >
-                          <Play size={17} fill="currentColor" />
+                          {isPlaying ? (
+                            <Pause size={17} fill="currentColor" />
+                          ) : (
+                            <Play size={17} fill="currentColor" />
+                          )}
                         </button>
                         <span className={styles.playTime}>
-                          {formatShortsTimestamp(activeCandidate.startSeconds)}{" "}
+                          {formatShortsTimestamp(
+                            localMediaUrl
+                              ? Math.max(
+                                  activeCandidate.startSeconds,
+                                  Math.min(
+                                    playbackSeconds,
+                                    activeCandidate.endSeconds,
+                                  ),
+                                )
+                              : activeCandidate.startSeconds,
+                          )}{" "}
                           <span>
                             /{" "}
                             {formatShortsTimestamp(activeCandidate.endSeconds)}
                           </span>
                         </span>
-                        <span className={styles.scrubber} aria-hidden="true" />
-                        <span
-                          className={styles.zoomControls}
-                          aria-hidden="true"
-                        >
-                          <button type="button" className={styles.zoomButton}>
-                            −
-                          </button>
-                          <button type="button" className={styles.zoomButton}>
-                            +
-                          </button>
+                        <input
+                          type="range"
+                          className={styles.seekBar}
+                          min={activeCandidate.startSeconds}
+                          max={activeCandidate.endSeconds}
+                          step={0.1}
+                          value={Math.max(
+                            activeCandidate.startSeconds,
+                            Math.min(
+                              playbackSeconds,
+                              activeCandidate.endSeconds,
+                            ),
+                          )}
+                          aria-label={
+                            locale.startsWith("fr")
+                              ? "Position de lecture"
+                              : "Playback position"
+                          }
+                          disabled={!localMediaUrl}
+                          onChange={(event) => {
+                            const time = Number(event.target.value);
+                            if (sourcePlayerRef.current)
+                              sourcePlayerRef.current.currentTime = time;
+                            setPlaybackSeconds(time);
+                          }}
+                        />
+                        <span className={styles.playbackFormat}>
+                          {aspectRatio}
                         </span>
                       </div>
                     </div>
@@ -2540,6 +3180,7 @@ export function ShortsStudio({
                 </section>
               ) : (
                 <form
+                  ref={sourceSectionRef}
                   className={styles.intake}
                   onSubmit={onCreateProject}
                   noValidate
@@ -2746,21 +3387,30 @@ export function ShortsStudio({
                       </span>
                     </label>
 
-                    <label className={cn(styles.wideField, styles.checkboxRow)}>
-                      <input
-                        type="checkbox"
-                        checked={jevShadowConsent}
-                        onChange={(event) =>
-                          setJevShadowConsent(event.target.checked)
-                        }
-                        disabled={creatingProject}
-                      />
-                      <span>
-                        <strong>{copy.jevConsentLabel}</strong>
-                        <br />
-                        {copy.jevConsentDescription}
-                      </span>
-                    </label>
+                    <details
+                      className={cn(styles.wideField, styles.advancedAnalysis)}
+                    >
+                      <summary>
+                        {locale.startsWith("fr")
+                          ? "Options avancées · évaluation Jev facultative"
+                          : "Advanced options · optional Jev evaluation"}
+                      </summary>
+                      <label className={styles.checkboxRow}>
+                        <input
+                          type="checkbox"
+                          checked={jevShadowConsent}
+                          onChange={(event) =>
+                            setJevShadowConsent(event.target.checked)
+                          }
+                          disabled={creatingProject}
+                        />
+                        <span>
+                          <strong>{copy.jevConsentLabel}</strong>
+                          <br />
+                          {copy.jevConsentDescription}
+                        </span>
+                      </label>
+                    </details>
                   </div>
 
                   <div className={styles.intakeActions}>
@@ -2781,6 +3431,12 @@ export function ShortsStudio({
                           ? copy.retryAnalysis
                           : copy.startAnalysis}
                     </button>
+                    <span className={styles.intakeReassurance}>
+                      <LockKeyhole size={13} aria-hidden="true" />
+                      {locale.startsWith("fr")
+                        ? "Votre source reste privée. Aucune publication automatique."
+                        : "Your source stays private. No automatic publishing."}
+                    </span>
                     {createError ? (
                       <p className={styles.alertError} role="alert">
                         {createError}
@@ -2801,322 +3457,601 @@ export function ShortsStudio({
             className={styles.inspector}
             aria-label={studio.productionOptions}
           >
-            {projectIsReady && activeCandidate ? (
-              <>
-                <div className={styles.inspectorTitleRow}>
-                  <span>{studio.previewTitle}</span>
-                  <button
-                    type="button"
-                    className={styles.overflowButton}
-                    aria-label="Plus d’options d’aperçu"
-                  >
-                    <MoreHorizontal size={16} />
-                  </button>
-                </div>
-                <div className={styles.previewCard}>
-                  <div className={styles.previewPlaceholder}>
-                    <CirclePlay
-                      size={36}
-                      strokeWidth={1.4}
-                      aria-hidden="true"
-                    />
-                    <p>
-                      {activeCandidate.visualSummary || studio.previewWaiting}
-                    </p>
-                  </div>
-                  <div className={styles.previewCaptions} aria-hidden="true">
-                    <span>{activeCandidate.hook.slice(0, 42)}</span>
-                  </div>
-                  <span className={styles.previewProgress} aria-hidden="true" />
-                  <div className={styles.previewControls} aria-hidden="true">
-                    <Play size={14} fill="currentColor" />
+            <div className={styles.inspectorPanel}>
+              {projectIsReady && activeCandidate ? (
+                <>
+                  <div className={styles.inspectorTitleRow}>
                     <span>
-                      {formatShortsTimestamp(activeCandidate.startSeconds)} /{" "}
-                      {activeCandidateDuration}
+                      {studio.previewTitle}{" "}
+                      <span className={styles.previewRatio}>
+                        ({aspectRatio})
+                      </span>
                     </span>
-                    <span className={styles.previewControlGrow} />
-                    <Volume2 size={14} />
+                    {referenceMedia ? (
+                      <span
+                        className={styles.demoBadge}
+                        title={studio.demoLabel}
+                      >
+                        Maquette
+                      </span>
+                    ) : null}
                   </div>
-                </div>
-
-                <div className={styles.productionHeading}>
-                  <h2>{studio.productionOptions}</h2>
-                  <button
-                    type="button"
-                    className={styles.resetButton}
-                    onClick={() => {
-                      setAspectRatio("9:16");
-                      setSubtitleStyle("viral");
-                      setMotionTemplate("editorial-focus");
-                      setReducedMotion(false);
-                    }}
-                  >
-                    {studio.reset}
-                  </button>
-                </div>
-
-                <div className={styles.optionStack}>
-                  <div className={styles.optionRow}>
-                    <span className={styles.optionIcon} aria-hidden="true">
-                      <Subtitles size={17} />
-                    </span>
-                    <span className={styles.optionCopy}>
-                      <strong>{studio.subtitleOption}</strong>
-                      <span>{studio.subtitleDetail}</span>
-                    </span>
-                    <label className={styles.toggle}>
-                      <input
-                        type="checkbox"
-                        checked
-                        readOnly
-                        disabled
-                        aria-label={studio.subtitleOption}
+                  <div className={styles.previewCard}>
+                    {referencePreview ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={referencePreview}
+                        className={styles.previewMedia}
+                        alt="Visuel original de la maquette Canva, pas un rendu généré"
                       />
-                      <span className={styles.toggleTrack} />
-                    </label>
-                  </div>
-                  <div className={styles.optionRow}>
-                    <span className={styles.optionIcon} aria-hidden="true">
-                      <Sparkles size={17} />
-                    </span>
-                    <span className={styles.optionCopy}>
-                      <strong>{studio.motionOption}</strong>
-                      <span>{studio.motionDetail}</span>
-                    </span>
-                    <ChevronRight
-                      size={17}
-                      color="#a8badb"
-                      aria-hidden="true"
-                    />
-                  </div>
-                  <div className={styles.optionRow}>
-                    <span className={styles.optionIcon} aria-hidden="true">
-                      <Music2 size={17} />
-                    </span>
-                    <span className={styles.optionCopy}>
-                      <strong>{studio.musicOption}</strong>
-                      <span>{studio.musicDetail}</span>
-                    </span>
-                    <label className={styles.toggle}>
-                      <input
-                        type="checkbox"
-                        checked={elevenLabsEnabled}
-                        onChange={(event) => {
-                          const enabled = event.target.checked;
-                          setElevenLabsEnabled(enabled);
-                          if (!enabled) {
-                            setElevenLabsConsent(false);
-                            setCommercialLicenseConfirmed(false);
+                    ) : localMediaUrl ? (
+                      <video
+                        ref={sourcePlayerRef}
+                        src={localMediaUrl}
+                        className={styles.previewMedia}
+                        playsInline
+                        preload="metadata"
+                        muted={mediaMuted}
+                        onLoadedMetadata={(event) => {
+                          event.currentTarget.currentTime =
+                            activeCandidate.startSeconds;
+                          setPlaybackSeconds(activeCandidate.startSeconds);
+                        }}
+                        onPlay={() => setIsPlaying(true)}
+                        onPause={() => setIsPlaying(false)}
+                        onTimeUpdate={(event) => {
+                          const player = event.currentTarget;
+                          setPlaybackSeconds(player.currentTime);
+                          if (
+                            player.currentTime >= activeCandidate.endSeconds
+                          ) {
+                            player.pause();
+                            player.currentTime = activeCandidate.startSeconds;
                           }
                         }}
-                        disabled={
-                          !providerCapabilities.elevenLabs || savingSelection
+                      />
+                    ) : (
+                      <div className={styles.previewPlaceholder}>
+                        <CirclePlay
+                          size={36}
+                          strokeWidth={1.4}
+                          aria-hidden="true"
+                        />
+                        <p>
+                          {activeCandidate.visualSummary ||
+                            studio.previewWaiting}
+                        </p>
+                      </div>
+                    )}
+                    {activeCandidate.rank !== 1 || !referenceMedia ? (
+                      <div
+                        className={styles.previewCaptions}
+                        aria-hidden="true"
+                      >
+                        <span>{activeCandidate.hook}</span>
+                      </div>
+                    ) : null}
+                    <input
+                      type="range"
+                      className={styles.previewSeek}
+                      min={activeCandidate.startSeconds}
+                      max={activeCandidate.endSeconds}
+                      step={0.1}
+                      value={Math.max(
+                        activeCandidate.startSeconds,
+                        Math.min(playbackSeconds, activeCandidate.endSeconds),
+                      )}
+                      aria-label={
+                        locale.startsWith("fr")
+                          ? "Position dans l’aperçu"
+                          : "Preview position"
+                      }
+                      disabled={!localMediaUrl}
+                      onChange={(event) => {
+                        const time = Number(event.target.value);
+                        if (sourcePlayerRef.current)
+                          sourcePlayerRef.current.currentTime = time;
+                        setPlaybackSeconds(time);
+                      }}
+                    />
+                    <div className={styles.previewControls}>
+                      <button
+                        type="button"
+                        onClick={togglePlayback}
+                        disabled={!localMediaUrl}
+                        aria-label={studio.listen}
+                        title={
+                          !localMediaUrl ? studio.mediaUnavailable : undefined
                         }
-                        aria-label={copy.elevenLabsEnableLabel}
+                      >
+                        {isPlaying ? (
+                          <Pause size={18} fill="currentColor" />
+                        ) : (
+                          <Play size={18} fill="currentColor" />
+                        )}
+                      </button>
+                      <span>
+                        {formatShortsTimestamp(
+                          localMediaUrl
+                            ? Math.max(
+                                0,
+                                playbackSeconds - activeCandidate.startSeconds,
+                              )
+                            : 0,
+                        )}{" "}
+                        / {activeCandidateDuration}
+                      </span>
+                      <span className={styles.previewControlGrow} />
+                      <button
+                        type="button"
+                        disabled={!localMediaUrl}
+                        onClick={() => setMediaMuted((muted) => !muted)}
+                        aria-pressed={mediaMuted}
+                        aria-label={
+                          locale.startsWith("fr")
+                            ? "Couper le son"
+                            : "Mute audio"
+                        }
+                      >
+                        <Volume2 size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!localMediaUrl}
+                        aria-label={
+                          locale.startsWith("fr")
+                            ? "Vidéo source en plein écran"
+                            : "Fullscreen source video"
+                        }
+                        onClick={() => {
+                          void sourcePlayerRef.current
+                            ?.requestFullscreen()
+                            .catch(() => {
+                              setSaveError(
+                                locale.startsWith("fr")
+                                  ? "Le plein écran n’est pas disponible dans ce navigateur."
+                                  : "Fullscreen is unavailable in this browser.",
+                              );
+                            });
+                        }}
+                      >
+                        <Maximize size={18} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className={styles.productionHeading}>
+                    <h2>{studio.productionOptions}</h2>
+                    <button
+                      type="button"
+                      className={styles.resetButton}
+                      onClick={() => {
+                        setAspectRatio("9:16");
+                        setSubtitleStyle("viral");
+                        setMotionTemplate("editorial-focus");
+                        setReducedMotion(false);
+                        setElevenLabsConsent(false);
+                        setCommercialLicenseConfirmed(false);
+                        setCreativeDirectionEnabled(false);
+                      }}
+                    >
+                      {studio.reset}
+                    </button>
+                  </div>
+
+                  <div className={styles.optionStack}>
+                    <div className={styles.optionRow}>
+                      <span className={styles.optionIcon} aria-hidden="true">
+                        <span className={styles.captionIcon}>CC</span>
+                      </span>
+                      <span className={styles.optionCopy}>
+                        <strong>{studio.subtitleOption}</strong>
+                        <span>{studio.subtitleDetail}</span>
+                      </span>
+                      <label
+                        className={cn(styles.toggle, styles.requiredToggle)}
+                      >
+                        <input
+                          type="checkbox"
+                          checked
+                          readOnly
+                          disabled
+                          aria-label={studio.subtitleOption}
+                        />
+                        <span className={styles.toggleTrack} />
+                      </label>
+                    </div>
+                    <div
+                      className={cn(styles.optionRow, styles.motionOptionRow)}
+                    >
+                      <span className={styles.optionIcon} aria-hidden="true">
+                        <Sparkles size={24} />
+                      </span>
+                      <button
+                        type="button"
+                        className={cn(
+                          styles.optionCopy,
+                          styles.optionSettingsButton,
+                        )}
+                        onClick={toggleProductionSettings}
+                        aria-label={
+                          locale.startsWith("fr")
+                            ? "Réglages motion et sous-titres"
+                            : "Motion and subtitle settings"
+                        }
+                      >
+                        <strong>{studio.motionOption}</strong>
+                        <span>{studio.motionDetail}</span>
+                      </button>
+                      <label className={styles.toggle}>
+                        <input
+                          type="checkbox"
+                          checked={
+                            !reducedMotion &&
+                            motionTemplate !== "minimal-static"
+                          }
+                          disabled={savingSelection || reducedMotion}
+                          aria-label={
+                            locale.startsWith("fr")
+                              ? "Activer le motion design"
+                              : "Enable motion design"
+                          }
+                          onChange={(event) =>
+                            setMotionTemplate(
+                              event.target.checked
+                                ? "editorial-focus"
+                                : "minimal-static",
+                            )
+                          }
+                        />
+                        <span className={styles.toggleTrack} />
+                      </label>
+                      <button
+                        type="button"
+                        className={styles.optionChevron}
+                        onClick={toggleProductionSettings}
+                        aria-label={
+                          locale.startsWith("fr")
+                            ? "Ouvrir les réglages motion"
+                            : "Open motion settings"
+                        }
+                      >
+                        <ChevronRight size={17} aria-hidden="true" />
+                      </button>
+                    </div>
+                    <div className={styles.optionRow}>
+                      <span className={styles.optionIcon} aria-hidden="true">
+                        <Music2 size={24} />
+                      </span>
+                      <span className={styles.optionCopy}>
+                        <strong>{studio.musicOption}</strong>
+                        <span>{studio.musicDetail}</span>
+                      </span>
+                      <label className={styles.toggle}>
+                        <input
+                          type="checkbox"
+                          checked={elevenLabsEnabled}
+                          onChange={(event) => {
+                            const enabled = event.target.checked;
+                            setElevenLabsEnabled(enabled);
+                            if (!enabled) {
+                              setElevenLabsConsent(false);
+                              setCommercialLicenseConfirmed(false);
+                            }
+                          }}
+                          disabled={
+                            !providerCapabilities.elevenLabs || savingSelection
+                          }
+                          aria-label={copy.elevenLabsEnableLabel}
+                        />
+                        <span className={styles.toggleTrack} />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className={styles.reducedMotion}>
+                    <span className={styles.reducedMotionCopy}>
+                      <Settings2 size={15} aria-hidden="true" />
+                      {studio.reducedMotion}
+                    </span>
+                    <label className={styles.toggle}>
+                      <input
+                        type="checkbox"
+                        checked={reducedMotion}
+                        onChange={(event) =>
+                          setReducedMotion(event.target.checked)
+                        }
+                        disabled={savingSelection}
+                        aria-label={copy.reducedMotionLabel}
                       />
                       <span className={styles.toggleTrack} />
                     </label>
                   </div>
-                </div>
 
-                <details className={styles.productionDisclosure}>
-                  <summary>
-                    {copy.subtitleLabel} · {copy.motionLabel}
-                  </summary>
-                  <div className={styles.productionDisclosureBody}>
-                    <select
-                      value={aspectRatio}
-                      onChange={(event) =>
-                        setAspectRatio(event.target.value as AspectRatio)
-                      }
-                      className={styles.productionSelect}
-                      disabled={savingSelection}
-                      aria-label={copy.aspectLabel}
+                  <button
+                    type="button"
+                    className={styles.renderButton}
+                    onClick={() => void onGenerateSelected()}
+                    disabled={isShortsRenderDisabled({
+                      candidatesReady: showCandidateControls,
+                      selectedCandidateCount:
+                        selectedCandidateIdsForCurrentProject.length,
+                      adaptedMusicAuthorized,
+                      savingSelection,
+                      renderingSelected,
+                    })}
+                  >
+                    <Sparkles size={16} aria-hidden="true" />
+                    {renderingSelected
+                      ? copy.renderingSelected
+                      : locale.startsWith("fr")
+                        ? "Générer le rendu"
+                        : "Generate render"}
+                    <ArrowRight size={20} aria-hidden="true" />
+                  </button>
+                  {elevenLabsEnabled && !adaptedMusicAuthorized ? (
+                    <button
+                      type="button"
+                      className={styles.rightsReminder}
+                      onClick={() => {
+                        if (productionRightsRef.current) {
+                          productionRightsRef.current.open = true;
+                          productionRightsRef.current.scrollIntoView({
+                            block: "nearest",
+                            behavior: "smooth",
+                          });
+                        }
+                      }}
                     >
-                      {ASPECT_RATIOS.map((ratio) => (
-                        <option key={ratio} value={ratio}>
-                          {ratio}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={subtitleStyle}
-                      onChange={(event) =>
-                        setSubtitleStyle(event.target.value as SubtitleStyle)
-                      }
-                      className={styles.productionSelect}
-                      disabled={savingSelection}
-                      aria-label={copy.subtitleLabel}
-                    >
-                      {SUBTITLE_STYLES.map((style) => (
-                        <option key={style} value={style}>
-                          {style}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={motionTemplate}
-                      onChange={(event) =>
-                        setMotionTemplate(event.target.value as MotionTemplate)
-                      }
-                      className={styles.productionSelect}
-                      disabled={savingSelection || reducedMotion}
-                      aria-label={copy.motionLabel}
-                    >
-                      {MOTION_TEMPLATES.map((template) => (
-                        <option key={template} value={template}>
-                          {template}
-                        </option>
-                      ))}
-                    </select>
+                      {locale.startsWith("fr")
+                        ? "Confirmer les droits musicaux pour continuer"
+                        : "Confirm music rights to continue"}
+                    </button>
+                  ) : null}
+                  {saveError ? (
+                    <p className={styles.alertError} role="alert">
+                      {saveError}
+                    </p>
+                  ) : null}
+                  {saveSuccess ? (
+                    <p className={styles.alertSuccess} role="status">
+                      {saveSuccess}
+                    </p>
+                  ) : null}
+                  {renderStatus ? (
+                    <p className={styles.statusNote} role="status">
+                      {renderStatus}{" "}
+                      <a
+                        className={styles.galleryLink}
+                        href={`/${encodeURIComponent(locale)}/clips`}
+                      >
+                        {studio.renderGallery}
+                      </a>
+                    </p>
+                  ) : null}
+
+                  <div className={styles.youtubeRow}>
+                    <span className={styles.youtubeIcon} aria-hidden="true">
+                      <Play size={12} fill="currentColor" />
+                    </span>
+                    <span className={styles.youtubeCopy}>
+                      <strong>YouTube · {studio.privateLabel}</strong>
+                      <span>{studio.youtubeDetail}</span>
+                    </span>
+                    <LockKeyhole size={15} color="#90a5c8" aria-hidden="true" />
                   </div>
-                </details>
-
-                <div className={styles.reducedMotion}>
-                  <span className={styles.reducedMotionCopy}>
-                    <Settings2 size={15} aria-hidden="true" />
-                    {studio.reducedMotion}
-                  </span>
-                  <label className={styles.toggle}>
-                    <input
-                      type="checkbox"
-                      checked={reducedMotion}
-                      onChange={(event) =>
-                        setReducedMotion(event.target.checked)
-                      }
-                      disabled={savingSelection}
-                      aria-label={copy.reducedMotionLabel}
-                    />
-                    <span className={styles.toggleTrack} />
-                  </label>
-                </div>
-
-                <details className={styles.productionDisclosure}>
-                  <summary>{studio.directionOptions}</summary>
-                  <div className={styles.productionDisclosureBody}>
-                    <p>{copy.elevenLabsSafety}</p>
-                    {elevenLabsEnabled ? (
-                      <>
-                        <label className={styles.consentCheck}>
-                          <input
-                            type="checkbox"
-                            checked={elevenLabsConsent}
-                            onChange={(event) =>
-                              setElevenLabsConsent(event.target.checked)
-                            }
-                            disabled={savingSelection}
-                          />
-                          {copy.elevenLabsConsentLabel}
-                        </label>
-                        <label className={styles.consentCheck}>
-                          <input
-                            type="checkbox"
-                            checked={commercialLicenseConfirmed}
-                            onChange={(event) =>
-                              setCommercialLicenseConfirmed(
-                                event.target.checked,
-                              )
-                            }
-                            disabled={savingSelection}
-                          />
-                          {copy.elevenLabsLicenseLabel}
-                        </label>
-                      </>
-                    ) : null}
-                    {!providerCapabilities.elevenLabs ? (
-                      <p>{copy.elevenLabsUnavailable}</p>
-                    ) : null}
-                    <label className={styles.consentCheck}>
-                      <input
-                        type="checkbox"
-                        checked={creativeDirectionEnabled}
+                  <details
+                    className={styles.productionDisclosure}
+                    ref={productionSettingsRef}
+                  >
+                    <summary>
+                      {copy.subtitleLabel} · {copy.motionLabel}
+                    </summary>
+                    <div className={styles.productionDisclosureBody}>
+                      <select
+                        value={aspectRatio}
                         onChange={(event) =>
-                          setCreativeDirectionEnabled(event.target.checked)
+                          setAspectRatio(event.target.value as AspectRatio)
                         }
-                        disabled={
-                          !providerCapabilities.creativeDirection ||
-                          savingSelection
+                        className={styles.productionSelect}
+                        disabled={savingSelection}
+                        aria-label={copy.aspectLabel}
+                      >
+                        {ASPECT_RATIOS.map((ratio) => (
+                          <option key={ratio} value={ratio}>
+                            {ratio}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={subtitleStyle}
+                        onChange={(event) =>
+                          setSubtitleStyle(event.target.value as SubtitleStyle)
                         }
-                      />
-                      {copy.opusEnableLabel}
-                    </label>
-                    {!providerCapabilities.creativeDirection ? (
-                      <p>{copy.opusUnavailable}</p>
-                    ) : null}
+                        className={styles.productionSelect}
+                        disabled={savingSelection}
+                        aria-label={copy.subtitleLabel}
+                      >
+                        {SUBTITLE_STYLES.map((style) => (
+                          <option key={style} value={style}>
+                            {style}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={motionTemplate}
+                        onChange={(event) =>
+                          setMotionTemplate(
+                            event.target.value as MotionTemplate,
+                          )
+                        }
+                        className={styles.productionSelect}
+                        disabled={savingSelection || reducedMotion}
+                        aria-label={copy.motionLabel}
+                      >
+                        {MOTION_TEMPLATES.map((template) => (
+                          <option key={template} value={template}>
+                            {template}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </details>
+                  <details
+                    className={styles.productionDisclosure}
+                    ref={productionRightsRef}
+                  >
+                    <summary>{studio.directionOptions}</summary>
+                    <div className={styles.productionDisclosureBody}>
+                      <p>{copy.elevenLabsSafety}</p>
+                      {elevenLabsEnabled ? (
+                        <>
+                          <label className={styles.consentCheck}>
+                            <input
+                              type="checkbox"
+                              checked={elevenLabsConsent}
+                              onChange={(event) =>
+                                setElevenLabsConsent(event.target.checked)
+                              }
+                              disabled={savingSelection}
+                            />
+                            {copy.elevenLabsConsentLabel}
+                          </label>
+                          <label className={styles.consentCheck}>
+                            <input
+                              type="checkbox"
+                              checked={commercialLicenseConfirmed}
+                              onChange={(event) =>
+                                setCommercialLicenseConfirmed(
+                                  event.target.checked,
+                                )
+                              }
+                              disabled={savingSelection}
+                            />
+                            {copy.elevenLabsLicenseLabel}
+                          </label>
+                        </>
+                      ) : null}
+                      {!providerCapabilities.elevenLabs ? (
+                        <p>{copy.elevenLabsUnavailable}</p>
+                      ) : null}
+                      <label className={styles.consentCheck}>
+                        <input
+                          type="checkbox"
+                          checked={creativeDirectionEnabled}
+                          onChange={(event) =>
+                            setCreativeDirectionEnabled(event.target.checked)
+                          }
+                          disabled={
+                            !providerCapabilities.creativeDirection ||
+                            savingSelection
+                          }
+                        />
+                        {copy.opusEnableLabel}
+                      </label>
+                      {!providerCapabilities.creativeDirection ? (
+                        <p>{copy.opusUnavailable}</p>
+                      ) : null}
+                    </div>
+                  </details>
+                </>
+              ) : (
+                <>
+                  <div className={styles.inspectorTitleRow}>
+                    <span>
+                      {studio.previewTitle}{" "}
+                      <span className={styles.previewRatio}>(9:16)</span>
+                    </span>
+                    <Video size={17} aria-hidden="true" />
                   </div>
-                </details>
-
-                <button
-                  type="button"
-                  className={styles.renderButton}
-                  onClick={() => void onGenerateSelected()}
-                  disabled={isShortsRenderDisabled({
-                    candidatesReady: showCandidateControls,
-                    selectedCandidateCount:
-                      selectedCandidateIdsForCurrentProject.length,
-                    adaptedMusicAuthorized,
-                    savingSelection,
-                    renderingSelected,
-                  })}
-                >
-                  <Sparkles size={16} aria-hidden="true" />
-                  {renderingSelected
-                    ? copy.renderingSelected
-                    : copy.renderSelected}
-                  <ChevronRight size={17} aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className={cn(styles.compactButton, styles.saveButton)}
-                  onClick={() => void onSaveSelection()}
-                  disabled={isShortsSelectionSaveDisabled({
-                    candidatesReady: showCandidateControls,
-                    selectedCandidateCount:
-                      selectedCandidateIdsForCurrentProject.length,
-                    savingSelection,
-                    renderingSelected,
-                  })}
-                >
-                  {savingSelection ? copy.savingSelection : copy.saveSelection}
-                </button>
-                {saveError ? (
-                  <p className={styles.alertError} role="alert">
-                    {saveError}
+                  <div className={cn(styles.previewCard, styles.previewEmpty)}>
+                    <div className={styles.previewPlaceholder}>
+                      <CirclePlay
+                        size={42}
+                        strokeWidth={1.3}
+                        aria-hidden="true"
+                      />
+                      <h2>{studio.previewEmpty}</h2>
+                      <p>
+                        {project
+                          ? copy.awaitingCandidates
+                          : studio.previewEmptyCopy}
+                      </p>
+                    </div>
+                    <span className={styles.previewEmptyFormat}>
+                      1080 × 1920 · 9:16
+                    </span>
+                  </div>
+                  <div className={styles.productionHeading}>
+                    <h2>{studio.productionOptions}</h2>
+                    <LockKeyhole size={14} aria-hidden="true" />
+                  </div>
+                  <div
+                    className={styles.optionStack}
+                    aria-label={
+                      locale.startsWith("fr")
+                        ? "Disponible après la sélection"
+                        : "Available after selection"
+                    }
+                  >
+                    {[
+                      [Subtitles, studio.subtitleOption, studio.subtitleDetail],
+                      [Sparkles, studio.motionOption, studio.motionDetail],
+                      [Music2, studio.musicOption, studio.musicDetail],
+                    ].map(([Icon, title, detail]) => {
+                      const OptionIcon = Icon as typeof Subtitles;
+                      return (
+                        <div
+                          className={cn(
+                            styles.optionRow,
+                            styles.optionRowWaiting,
+                          )}
+                          key={title as string}
+                        >
+                          <span
+                            className={styles.optionIcon}
+                            aria-hidden="true"
+                          >
+                            <OptionIcon size={20} />
+                          </span>
+                          <span className={styles.optionCopy}>
+                            <strong>{title as string}</strong>
+                            <span>{detail as string}</span>
+                          </span>
+                          <LockKeyhole size={14} aria-hidden="true" />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.renderButton}
+                    disabled
+                  >
+                    <Sparkles size={18} aria-hidden="true" />
+                    {locale.startsWith("fr")
+                      ? "Générer le rendu"
+                      : "Generate render"}
+                    <ArrowRight size={20} aria-hidden="true" />
+                  </button>
+                  <p className={styles.previewPrerequisite}>
+                    {locale.startsWith("fr")
+                      ? "Sélectionnez un extrait après l’analyse pour continuer."
+                      : "Select an excerpt after analysis to continue."}
                   </p>
-                ) : null}
-                {saveSuccess ? (
-                  <p className={styles.alertSuccess} role="status">
-                    {saveSuccess}
-                  </p>
-                ) : null}
-                {renderStatus ? (
-                  <p className={styles.statusNote} role="status">
-                    {renderStatus}{" "}
-                    <a
-                      className={styles.galleryLink}
-                      href={`/${encodeURIComponent(locale)}/clips`}
-                    >
-                      {studio.renderGallery}
-                    </a>
-                  </p>
-                ) : null}
-
-                <div className={styles.youtubeRow}>
-                  <span className={styles.youtubeIcon} aria-hidden="true">
-                    <Play size={12} fill="currentColor" />
-                  </span>
-                  <span className={styles.youtubeCopy}>
-                    <strong>YouTube · {studio.privateLabel}</strong>
-                    <span>{studio.youtubeDetail}</span>
-                  </span>
-                  <LockKeyhole size={15} color="#90a5c8" aria-hidden="true" />
-                </div>
-              </>
-            ) : (
-              <div className={styles.emptyInspector}>
-                {project ? copy.awaitingCandidates : studio.startAProjectCopy}
-              </div>
-            )}
+                  <div className={styles.youtubeRow}>
+                    <span className={styles.youtubeIcon} aria-hidden="true">
+                      <Play size={12} fill="currentColor" />
+                    </span>
+                    <span className={styles.youtubeCopy}>
+                      <strong>YouTube · {studio.privateLabel}</strong>
+                      <span>{studio.youtubeDetail}</span>
+                    </span>
+                    <LockKeyhole size={15} aria-hidden="true" />
+                  </div>
+                </>
+              )}
+            </div>
           </aside>
         </div>
       </div>
