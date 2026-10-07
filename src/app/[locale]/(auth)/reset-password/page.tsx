@@ -4,13 +4,9 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PageHeading } from "@/components/ui/PageHeading";
 import { ClipsFlowBrand } from "@/components/ClipsFlowBrand";
 import { useRouter } from "@/i18n/navigation";
 import { validateRecoveryPassword } from "@/lib/auth/password-recovery";
@@ -86,8 +82,13 @@ export default function ResetPasswordPage() {
         <ClipsFlowBrand />
         <Card className="border-border/80 w-full p-6 shadow-[0_24px_80px_rgba(0,0,0,0.32)]">
           <CardHeader className="px-0 pt-0">
-            <CardTitle>{t("recovery_title")}</CardTitle>
-            <CardDescription>{t("reset_password_description")}</CardDescription>
+            <PageHeading
+              alignment="start"
+              title={t("recovery_title")}
+              description={t("reset_password_description")}
+              titleSize="compact"
+              className="gap-1"
+            />
           </CardHeader>
 
           {hasRecoverySession === null ? (

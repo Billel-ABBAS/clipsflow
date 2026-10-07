@@ -8,13 +8,9 @@ import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PageHeading } from "@/components/ui/PageHeading";
 import { ClipsFlowBrand } from "@/components/ClipsFlowBrand";
 import { useRouter } from "@/i18n/navigation";
 import { getPasswordRecoveryRedirectUrl } from "@/lib/auth/password-recovery";
@@ -113,12 +109,15 @@ export default function LoginPage() {
         <ClipsFlowBrand />
         <Card className="border-border/80 w-full p-6 shadow-[0_24px_80px_rgba(0,0,0,0.32)]">
           <CardHeader className="px-0 pt-0">
-            <CardTitle>
-              {mode === "recovery" ? t("recovery_title") : t("title")}
-            </CardTitle>
-            <CardDescription>
-              {mode === "recovery" ? t("recovery_description") : t("subtitle")}
-            </CardDescription>
+            <PageHeading
+              alignment="start"
+              title={mode === "recovery" ? t("recovery_title") : t("title")}
+              description={
+                mode === "recovery" ? t("recovery_description") : t("subtitle")
+              }
+              titleSize="compact"
+              className="gap-1"
+            />
           </CardHeader>
 
           {/* Google OAuth */}

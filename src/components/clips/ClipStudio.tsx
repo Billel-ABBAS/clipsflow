@@ -36,6 +36,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PageHeading } from "@/components/ui/PageHeading";
 import {
   useClipJobStatus,
   type ClipJobStatusState,
@@ -721,9 +722,12 @@ export function ClipStudio({
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 py-6">
-      <h1 className="text-foreground text-2xl font-bold">
-        {t("studio_title")}
-      </h1>
+      <PageHeading
+        eyebrow={t("studio_eyebrow")}
+        title={t("studio_title")}
+        description={t("page_subtitle")}
+        titleSize="compact"
+      />
 
       {/* ─── Step 1 : Source ─────────────────────────────────────────── */}
       <StepSection number={1} title={t("step_source")}>

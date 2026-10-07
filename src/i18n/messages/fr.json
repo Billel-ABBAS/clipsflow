@@ -159,6 +159,7 @@
     "page_title": "Clips sous-titrés",
     "page_subtitle": "Crée un clip prêt à poster avec sous-titres incrustés, sans app à installer. Le traitement démarre par lots, environ toutes les 5 minutes.",
     "new_clip_cta": "Nouveau clip",
+    "studio_eyebrow": "STUDIO DE CRÉATION",
     "studio_title": "Nouveau clip sous-titré",
     "step_source": "Média source",
     "step_segment": "Segment",
@@ -369,6 +370,7 @@
     "untitled_clip": "Clip sans titre",
     "source_label": "Source",
     "history": {
+      "eyebrow": "BIBLIOTHÈQUE · HISTORIQUE",
       "title": "Historique des sources et traitements",
       "search": "Rechercher une source",
       "search_placeholder": "Titre de la vidéo ou de l’épisode…",
@@ -520,6 +522,7 @@
     }
   },
   "pricing": {
+    "eyebrow": "DES OFFRES POUR CRÉER PLUS",
     "title": "Tarifs ClipsFlow",
     "subtitle": "Choisis le plan adapté à ton volume de clips. Tous les plans incluent des sous-titres IA, des formats verticaux et le téléchargement direct.",
     "note": "Paiement sécurisé via Stripe. Résilie à tout moment.",

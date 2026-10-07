@@ -12,6 +12,7 @@ import {
 import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { PageHeading } from "@/components/ui/PageHeading";
 import { Link, redirect } from "@/i18n/navigation";
 import { ACTIVE_JOB_STATUSES } from "@/lib/clips/history-query";
 import { isClipsEnabled } from "@/lib/clips/feature-flag";
@@ -115,7 +116,7 @@ export default async function DashboardPage({
       .in("status", [...ACTIVE_JOB_STATUSES]),
     supabase
       .from("clips")
-      .select("id, title, status, created_at, aspect_ratio")
+      .select("id, title:title_override, status, created_at, aspect_ratio")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(5),
@@ -141,20 +142,13 @@ export default async function DashboardPage({
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 sm:space-y-8">
-      <header className="border-border/80 from-card via-card to-primary/10 relative overflow-hidden rounded-2xl border bg-gradient-to-br p-5 sm:p-7 lg:p-8">
-        <div className="relative flex flex-wrap items-end justify-between gap-6">
-          <div className="max-w-2xl space-y-3">
-            <p className="text-primary text-[10px] font-semibold tracking-[0.2em] uppercase">
-              CLIPSFLOW · {t("eyebrow")}
-            </p>
-            <h1 className="font-heading text-3xl leading-tight font-semibold tracking-tight sm:text-4xl">
-              {t("title")}
-            </h1>
-            <p className="text-muted-foreground max-w-xl text-sm leading-relaxed sm:text-base">
-              {t("description")}
-            </p>
-          </div>
-          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+      <PageHeading
+        variant="panel"
+        eyebrow={`CLIPSFLOW · ${t("eyebrow")}`}
+        title={t("title")}
+        description={t("description")}
+        actions={
+          <>
             <Link
               href={newProjectHref}
               className={cn(buttonVariants(), "min-h-10 gap-2")}
@@ -173,9 +167,9 @@ export default async function DashboardPage({
               <FolderOpen aria-hidden="true" className="size-4" />
               {t("library_link")}
             </Link>
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <section
         aria-label={t("quick_title")}

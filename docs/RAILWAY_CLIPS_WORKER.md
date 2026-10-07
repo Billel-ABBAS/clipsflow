@@ -98,12 +98,15 @@ YOUTUBE_TOKEN_ENCRYPTION_KEY=<base64 canonique de 32 octets aléatoires>
 
 Le consentement OAuth demande `youtube.upload` et `youtube.readonly`; la
 deuxième portée sert uniquement à afficher le canal lié. Google Cloud doit
-autoriser exactement l’URI de callback configurée. Le worker n’est pas
-provisionné, les clés ne sont pas présentes et la migration de file doit être
-appliquée dans un environnement Supabase explicitement autorisé avant activation.
+autoriser exactement l’URI de callback configurée. Le worker YouTube n’est pas
+provisionné en Production. Les identifiants OAuth YouTube ne sont présents ni
+dans les variables Production vérifiées ni dans `.env.local`. La migration de
+file `20261004150000_youtube_publication_queue.sql` est déjà appliquée sur
+Supabase Production; ne pas la rejouer. Aucun envoi YouTube n’a été exécuté
+pendant la validation locale.
 Laisser `YOUTUBE_PUBLIC_UPLOADS_ENABLED=false` tant que le projet YouTube API
 n’a pas passé l’audit de Google : les projets non vérifiés sont limités aux
-vidéos privées. Aucun envoi YouTube n’a été exécuté pendant la validation locale.
+vidéos privées.
 
 ## Vérifier le parcours Shorts local dans Docker
 
@@ -222,9 +225,10 @@ sa confirmation par l’utilisateur.
    est exprimé en USD car `clips.cost_usd` est dans cette unité ; ne pas le
    présenter comme une facture Railway ni utiliser un coupe-circuit global du
    workspace.
-5. Pour la production seulement après ces preuves : appliquer les migrations
-   contrôlées, activer `CLIPS_WORKER_ENABLED=true` côté worker Railway, déployer
-   le garde de coupure et définir `CLIPS_WORKER_BACKEND=railway` côté Vercel.
+5. Pour la production seulement après ces preuves : vérifier l'historique des
+   migrations plutôt que les rejouer (les 12 migrations Shorts autorisées sont
+   déjà appliquées), activer `CLIPS_WORKER_ENABLED=true` côté worker Railway,
+   déployer le garde de coupure et définir `CLIPS_WORKER_BACKEND=railway` côté Vercel.
    Le fichier `vercel.json` ne déclare plus de cron de traitement : Railway est
    l'unique dispatcher. Ne livrer cette suppression qu'après avoir vérifié que
    le worker Railway de production est prêt, afin d'éviter une interruption.

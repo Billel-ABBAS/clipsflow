@@ -2,6 +2,7 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { PricingCards } from "@/components/pricing/PricingCards";
 import { MarketingHeader } from "@/components/MarketingHeader";
+import { PageHeading } from "@/components/ui/PageHeading";
 import { createClient } from "@/lib/supabase/server";
 
 export async function generateMetadata({
@@ -36,13 +37,14 @@ export default async function PricingPage({
   return (
     <>
       <MarketingHeader locale={locale} primaryLabel={nav("create_shorts")} />
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col items-center gap-12 px-4 py-16 sm:px-6 sm:py-20">
-        <div className="text-center">
-          <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-            {t("title")}
-          </h1>
-          <p className="text-muted-foreground mt-4 text-lg">{t("subtitle")}</p>
-        </div>
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-12 px-4 py-16 sm:px-6 sm:py-20">
+        <PageHeading
+          eyebrow={t("eyebrow")}
+          title={t("title")}
+          description={t("subtitle")}
+          alignment="center"
+          titleSize="default"
+        />
 
         <PricingCards locale={locale} isLoggedIn={!!user} />
 

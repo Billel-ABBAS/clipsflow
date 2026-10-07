@@ -30,25 +30,25 @@ export default async function HomePage({
       icon: Film,
       title: t("feature_shorts_title"),
       description: t("feature_shorts_desc"),
-      color: "text-[#a995ff]",
+      color: "text-brand-lavender",
     },
     {
       icon: Scissors,
       title: t("feature_clips_title"),
       description: t("feature_clips_desc"),
-      color: "text-[#22d3ee]",
+      color: "text-brand-cyan",
     },
     {
       icon: Subtitles,
       title: t("feature_dub_title"),
       description: t("feature_dub_desc"),
-      color: "text-[#36f0cf]",
+      color: "text-brand-mint",
     },
     {
       icon: Zap,
       title: t("feature_consent_title"),
       description: t("feature_consent_desc"),
-      color: "text-[#fb604b]",
+      color: "text-brand-coral",
     },
   ];
 
@@ -59,26 +59,26 @@ export default async function HomePage({
   ];
 
   return (
-    <main className="bg-background text-foreground min-h-screen">
+    <main className="text-foreground min-h-screen">
       <MarketingHeader locale={locale} primaryLabel={t("cta_primary")} />
 
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
       <section className="relative isolate overflow-hidden px-4 py-12 sm:px-6 sm:py-14 lg:py-16">
         <div className="pointer-events-none absolute inset-0 -z-10">
-          <div className="absolute top-0 left-[12%] size-[28rem] rounded-full bg-[#6844ff]/15 blur-3xl" />
-          <div className="absolute top-1/4 right-[8%] size-[24rem] rounded-full bg-[#22d3ee]/10 blur-3xl" />
+          <div className="bg-brand-violet/15 absolute top-0 left-[12%] size-[28rem] rounded-full blur-3xl" />
+          <div className="bg-brand-cyan/10 absolute top-1/4 right-[8%] size-[24rem] rounded-full blur-3xl" />
         </div>
 
         <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] xl:gap-14">
           <div className="mx-auto w-full max-w-xl text-center lg:mx-0 lg:text-left">
             <Badge variant="secondary" className="mb-5 gap-1.5">
-              <span className="size-1.5 rounded-full bg-[#36f0cf]" />
+              <span className="bg-brand-mint size-1.5 rounded-full" />
               {t("badge")}
             </Badge>
 
             <h1 className="text-foreground text-4xl leading-[1.08] font-bold tracking-tight sm:text-5xl lg:text-4xl xl:text-5xl">
               {t("hero_part1")}{" "}
-              <span className="bg-gradient-to-r from-[#a995ff] to-[#36f0cf] bg-clip-text text-transparent">
+              <span className="from-brand-lavender to-brand-mint bg-gradient-to-r bg-clip-text text-transparent">
                 {t("hero_highlight")}
               </span>{" "}
               {t("hero_part2")}
@@ -112,12 +112,12 @@ export default async function HomePage({
           <div className="relative mx-auto w-full max-w-[760px] lg:justify-self-end">
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute -inset-5 rounded-[2rem] bg-gradient-to-br from-[#6844ff]/20 via-transparent to-[#22d3ee]/10 blur-2xl"
+              className="from-brand-violet/20 to-brand-cyan/10 pointer-events-none absolute -inset-5 rounded-[2rem] bg-gradient-to-br via-transparent blur-2xl"
             />
             <figure className="border-border/80 bg-card/85 relative overflow-hidden rounded-xl border p-2.5 shadow-[0_24px_80px_rgba(0,0,0,0.44)] backdrop-blur-xl sm:rounded-2xl sm:p-3">
               <figcaption className="mb-2.5 flex items-center justify-between gap-3 px-1.5">
                 <div className="flex min-w-0 items-center gap-2.5">
-                  <span className="size-2 shrink-0 rounded-full bg-[#36f0cf] shadow-[0_0_12px_rgba(54,240,207,0.55)]" />
+                  <span className="bg-brand-mint size-2 shrink-0 rounded-full shadow-[0_0_12px_var(--brand-mint-glow)]" />
                   <span className="text-foreground truncate text-sm font-semibold">
                     {t("preview_label")}
                   </span>

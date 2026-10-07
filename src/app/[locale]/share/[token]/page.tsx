@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ClipsFlowBrand } from "@/components/ClipsFlowBrand";
+import { PageHeading } from "@/components/ui/PageHeading";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -67,10 +68,13 @@ export default async function SharedClipPage({
       <article className="border-border bg-card w-full space-y-5 rounded-xl border p-5 shadow-sm sm:p-8">
         <div className="space-y-4">
           <ClipsFlowBrand />
-          <div className="space-y-1">
-            <h1 className="font-heading text-2xl font-semibold">{title}</h1>
-            <p className="text-muted-foreground text-sm">{t("shared_video")}</p>
-          </div>
+          <PageHeading
+            alignment="start"
+            title={title}
+            description={t("shared_video")}
+            titleSize="compact"
+            className="gap-1"
+          />
         </div>
         <video
           src={video.signedUrl}

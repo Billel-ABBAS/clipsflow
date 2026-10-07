@@ -159,6 +159,7 @@
     "page_title": "Subtitled clips",
     "page_subtitle": "Create a ready-to-post clip with burned-in captions and no app to install. Processing starts in batches, roughly every 5 minutes.",
     "new_clip_cta": "New clip",
+    "studio_eyebrow": "CREATION STUDIO",
     "studio_title": "New subtitled clip",
     "step_source": "Source media",
     "step_segment": "Segment",
@@ -369,6 +370,7 @@
     "untitled_clip": "Untitled clip",
     "source_label": "Source",
     "history": {
+      "eyebrow": "LIBRARY · HISTORY",
       "title": "Source and processing history",
       "search": "Search sources",
       "search_placeholder": "Video or episode title…",
@@ -520,6 +522,7 @@
     }
   },
   "pricing": {
+    "eyebrow": "PLANS FOR THE NEXT GREAT CUT",
     "title": "ClipsFlow Pricing",
     "subtitle": "Choose the plan that fits your clip volume. All plans include AI-powered subtitles, vertical formats, and direct downloads.",
     "note": "Secure payment via Stripe. Cancel anytime.",
