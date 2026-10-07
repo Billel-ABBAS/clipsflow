@@ -7,8 +7,14 @@
 
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { headers } from "next/headers";
+import { Plus } from "lucide-react";
 
 import { SignOutButton } from "@/components/auth/SignOutButton";
+import { ClipsFlowBrand } from "@/components/ClipsFlowBrand";
+import {
+  DashboardSidebar,
+  DashboardTopNavigation,
+} from "@/components/DashboardNavigation";
 import { Toaster } from "@/components/ui/sonner";
 import { Link, redirect } from "@/i18n/navigation";
 import {
@@ -33,8 +39,8 @@ export default async function DashboardLayout({
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const requestHeaders = await headers();
   if (!user) {
-    const requestHeaders = await headers();
     const next = getAuthReturnPathFromPathname(
       requestHeaders.get(AUTH_REQUEST_PATH_HEADER),
       locale,
@@ -49,55 +55,53 @@ export default async function DashboardLayout({
   const isShortsEnabled = isClipsEnabled({ locale, userId: user.id });
 
   const t = await getTranslations("clips.shell");
+  const newProjectHref = isShortsEnabled ? "/shorts" : "/clips/new";
+  const navigationLabels = {
+    mainNavigation: t("main_navigation"),
+    workspaceSection: t("nav_workspace_section"),
+    creationSection: t("nav_creation_section"),
+    accountSection: t("nav_account_section"),
+    dashboard: t("nav_dashboard"),
+    library: t("nav_library"),
+    createClip: t("nav_create_clip"),
+    shorts: t("nav_shorts"),
+    pricing: t("nav_pricing"),
+    admin: t("nav_admin"),
+  };
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <header className="border-border border-b">
-        <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-3 sm:gap-6">
+      <header className="border-border bg-background/95 sticky top-0 z-40 border-b backdrop-blur-xl">
+        <div className="mx-auto flex h-16 w-full max-w-screen-2xl items-center gap-3 px-4 sm:gap-6 sm:px-6">
+          <ClipsFlowBrand href="/dashboard" />
+          <DashboardTopNavigation
+            labels={navigationLabels}
+            isShortsEnabled={isShortsEnabled}
+            isAdmin={isAdmin}
+          />
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <Link
-              href="/"
-              className="text-foreground text-sm font-semibold whitespace-nowrap"
+              href={newProjectHref}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition-colors sm:px-3 sm:text-sm"
             >
-              ClipsFlow
+              <Plus aria-hidden="true" className="size-4" />
+              <span className="hidden sm:inline">{t("nav_new_project")}</span>
+              <span className="sr-only sm:hidden">{t("nav_new_project")}</span>
             </Link>
-            <nav className="flex min-w-0 items-center gap-2 sm:gap-4">
-              <Link
-                href="/clips"
-                className="text-muted-foreground hover:text-foreground text-xs whitespace-nowrap transition-colors sm:text-sm"
-              >
-                {t("nav_clips")}
-              </Link>
-              {isShortsEnabled ? (
-                <Link
-                  href="/shorts"
-                  className="text-muted-foreground hover:text-foreground text-xs whitespace-nowrap transition-colors sm:text-sm"
-                >
-                  {t("nav_shorts")}
-                </Link>
-              ) : null}
-              <Link
-                href="/pricing"
-                className="text-muted-foreground hover:text-foreground hidden text-sm whitespace-nowrap transition-colors sm:inline-flex"
-              >
-                {t("nav_pricing")}
-              </Link>
-              {isAdmin ? (
-                <Link
-                  href="/admin"
-                  className="text-muted-foreground hover:text-foreground hidden text-sm whitespace-nowrap transition-colors sm:inline-flex"
-                >
-                  Admin
-                </Link>
-              ) : null}
-            </nav>
+            <SignOutButton label={t("sign_out")} />
           </div>
-          <SignOutButton label={t("sign_out")} />
         </div>
       </header>
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6">
-        {children}
-      </main>
+      <div className="mx-auto flex w-full max-w-screen-2xl flex-1">
+        <DashboardSidebar
+          labels={navigationLabels}
+          isShortsEnabled={isShortsEnabled}
+          isAdmin={isAdmin}
+        />
+        <main className="mx-auto w-full max-w-7xl min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8">
+          {children}
+        </main>
+      </div>
       <Toaster />
     </div>
   );

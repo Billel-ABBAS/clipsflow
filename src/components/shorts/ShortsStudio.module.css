@@ -2313,7 +2313,7 @@
   }
 }
 
-@media (max-width: 1230px) {
+@media (max-width: 1360px) {
   .workbench {
     grid-template-columns: 210px minmax(0, 1fr) 315px;
   }

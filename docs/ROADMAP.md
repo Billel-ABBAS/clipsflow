@@ -1,6 +1,6 @@
 # Roadmap — ClipsFlow Shorts
 
-> Objectif produit : importer une vidéo ou un podcast de 20 minutes à 2 heures, analyser sa transcription en mode audio ou audio + vidéo, proposer les meilleurs extraits avec ou sans consignes, puis générer, télécharger et publier les Shorts après validation du créateur.
+> Objectif produit : importer une vidéo ou un podcast de 1 minute à 4 heures, analyser sa transcription en mode audio ou audio + vidéo, proposer les meilleurs extraits avec ou sans consignes, puis générer, télécharger et publier les Shorts après validation du créateur.
 
 ## État actuel vérifié dans le dépôt
 

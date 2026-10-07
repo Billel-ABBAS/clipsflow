@@ -8,7 +8,7 @@ le suivant si le précédent est encore actif.
 
 ## Worker Shorts long format (code local, service non provisionné)
 
-Le traitement des épisodes de 20 minutes à 2 heures utilise une file distincte
+Le traitement des épisodes de 1 minute à 4 heures utilise une file distincte
 et un processus one-shot distinct. En local, `pnpm worker:shorts-analysis`
 charge `.env.local` s'il existe; le fichier n'est pas requis en staging ou en
 production. Sur Railway, lancer directement

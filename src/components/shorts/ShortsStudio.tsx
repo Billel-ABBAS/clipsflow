@@ -18,8 +18,9 @@ import {
   CircleCheck,
   CirclePlay,
   Clock3,
+  CreditCard,
   FileAudio,
-  FolderOpen,
+  Film,
   Library,
   LockKeyhole,
   Maximize,
@@ -65,6 +66,10 @@ import {
   resolveShortsProjectIdempotencyIntent,
 } from "@/lib/shorts/project-idempotency";
 import { readShortsSourceDuration } from "@/lib/shorts/source-media-duration";
+import {
+  SHORTS_MAX_SOURCE_DURATION_SECONDS,
+  SHORTS_MIN_SOURCE_DURATION_SECONDS,
+} from "@/lib/shorts/source-duration";
 import { CLAUDE_OPUS_5_5_MODEL_API_ID_CONFIRMED } from "@/lib/clips/creative-director-model";
 import type { ShortsProviderCapabilities } from "@/lib/shorts/provider-capabilities";
 
@@ -78,8 +83,10 @@ import {
   type CandidateSort,
 } from "./studio-presentation";
 
-export const SHORTS_MIN_SOURCE_DURATION_SECONDS = 20 * 60;
-export const SHORTS_MAX_SOURCE_DURATION_SECONDS = 2 * 60 * 60;
+export {
+  SHORTS_MAX_SOURCE_DURATION_SECONDS,
+  SHORTS_MIN_SOURCE_DURATION_SECONDS,
+} from "@/lib/shorts/source-duration";
 
 const POLLING_INTERVAL_MS = 4_000;
 
@@ -363,7 +370,7 @@ const COPY: Record<"fr" | "en", Copy> = {
       "Importez une vidéo ou un podcast, ou choisissez une source de votre bibliothèque. L’analyse vous propose les moments qui correspondent à vos consignes.",
     sourceTitle: "1. Source et analyse",
     sourceDescription:
-      "Le traitement n’accepte que les sources de 20 minutes à 2 heures.",
+      "Importez des sources de 1 minute à 4 heures pour créer une série de Shorts.",
     sourceLabel: "Épisode de votre bibliothèque",
     sourcePlaceholder: "Choisir un épisode",
     sourceLoadError:
@@ -384,9 +391,8 @@ const COPY: Record<"fr" | "en", Copy> = {
     retryUpload: "Reprendre l’import",
     durationLabel: "Durée de la source (en secondes)",
     durationHint:
-      "Détectée automatiquement à l’import si le navigateur peut lire le fichier ; ajustez si besoin. Entre 1 200 s (20 min) et 7 200 s (2 h).",
-    durationInvalid:
-      "Indiquez une durée comprise entre 20 minutes et 2 heures.",
+      "Détectée automatiquement à l’import si le navigateur peut lire le fichier ; ajustez si besoin. Entre 60 s (1 min) et 14 400 s (4 h).",
+    durationInvalid: "Indiquez une durée comprise entre 1 minute et 4 heures.",
     analysisLabel: "Mode d’analyse",
     audioTitle: "Audio",
     audioDescription: "Transcription, rythme, idées fortes et qualité du hook.",
@@ -499,7 +505,7 @@ const COPY: Record<"fr" | "en", Copy> = {
       "Upload a video or podcast, or choose a source from your library. Analysis finds moments that match your guidance.",
     sourceTitle: "1. Source and analysis",
     sourceDescription:
-      "Only sources between 20 minutes and two hours can be processed.",
+      "Import sources from 1 minute to 4 hours to create a batch of Shorts.",
     sourceLabel: "Episode from your library",
     sourcePlaceholder: "Choose an episode",
     sourceLoadError:
@@ -520,8 +526,8 @@ const COPY: Record<"fr" | "en", Copy> = {
     retryUpload: "Resume upload",
     durationLabel: "Source duration (seconds)",
     durationHint:
-      "Detected automatically on upload when your browser can read the file; adjust if needed. Between 1,200 s (20 min) and 7,200 s (2 h).",
-    durationInvalid: "Enter a duration between 20 minutes and two hours.",
+      "Detected automatically on upload when your browser can read the file; adjust if needed. Between 60 s (1 min) and 14,400 s (4 h).",
+    durationInvalid: "Enter a duration between 1 minute and 4 hours.",
     analysisLabel: "Analysis mode",
     audioTitle: "Audio",
     audioDescription: "Transcript, pacing, key ideas, and hook quality.",
@@ -1901,8 +1907,8 @@ export function ShortsStudio({
         production: "Production",
         publication: "Publication",
         library: "Bibliothèque",
-        templates: "Modèles",
-        settings: "Paramètres",
+        createClip: "Créer un clip",
+        pricing: "Tarifs",
         all: "Tous",
         keyIdeas: "Idées clés",
         strongMoments: "Moments forts",
@@ -1921,7 +1927,7 @@ export function ShortsStudio({
           "Votre transcription, les propositions d’extraits et l’aperçu de production apparaîtront ici.",
         sourcePanel: "Préparer une nouvelle analyse",
         sourcePanelCopy:
-          "Choisissez un épisode ou importez une vidéo ou un podcast de 20 minutes à 2 heures.",
+          "Choisissez un épisode ou importez une vidéo ou un podcast de 1 minute à 4 heures.",
         mediaWaiting:
           "Les aperçus vidéo utilisent votre média après l’analyse.",
         currentExcerpt: "Extrait à",
@@ -1972,8 +1978,8 @@ export function ShortsStudio({
         production: "Production",
         publication: "Publishing",
         library: "Library",
-        templates: "Templates",
-        settings: "Settings",
+        createClip: "Create a clip",
+        pricing: "Pricing",
         all: "All",
         keyIdeas: "Key ideas",
         strongMoments: "Strong moments",
@@ -2432,15 +2438,15 @@ export function ShortsStudio({
                 className={styles.footerLink}
                 href={`/${encodeURIComponent(locale)}/clips/new`}
               >
-                <FolderOpen size={17} aria-hidden="true" />
-                {studio.templates}
+                <Film size={17} aria-hidden="true" />
+                {studio.createClip}
               </a>
               <a
                 className={styles.footerLink}
                 href={`/${encodeURIComponent(locale)}/pricing`}
               >
-                <Settings2 size={17} aria-hidden="true" />
-                {studio.settings}
+                <CreditCard size={17} aria-hidden="true" />
+                {studio.pricing}
               </a>
             </nav>
           </aside>

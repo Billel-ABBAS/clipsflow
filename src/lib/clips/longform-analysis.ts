@@ -9,11 +9,15 @@
 import { z } from "zod";
 
 import { shortsMusicMoodSchema } from "@/lib/shorts/project-contract";
+import {
+  SHORTS_MAX_SOURCE_DURATION_SECONDS,
+  SHORTS_MIN_SOURCE_DURATION_SECONDS,
+} from "@/lib/shorts/source-duration";
 import type { WordTimestamp } from "./whisper";
 
-/** A supported long-form source is between 20 minutes and two hours. */
-export const LONGFORM_MIN_DURATION_SECONDS = 20 * 60;
-export const LONGFORM_MAX_DURATION_SECONDS = 2 * 60 * 60;
+/** Long-form analysis accepts sources from one minute through four hours. */
+export const LONGFORM_MIN_DURATION_SECONDS = SHORTS_MIN_SOURCE_DURATION_SECONDS;
+export const LONGFORM_MAX_DURATION_SECONDS = SHORTS_MAX_SOURCE_DURATION_SECONDS;
 
 /** Provider-friendly transcript windows: 10 minutes with 30 seconds overlap. */
 export const DEFAULT_LONGFORM_CHUNK_DURATION_SECONDS = 10 * 60;
@@ -215,8 +219,8 @@ export function isLongformEpisodeDuration(value: unknown): value is number {
 }
 
 /**
- * Enforce the 20 minute–two hour product contract before spending AI budget.
- * Bounds are inclusive so exactly 20 minutes and exactly two hours are valid.
+ * Enforce the one-minute–four-hour product contract before spending AI budget.
+ * Bounds are inclusive so both endpoints are accepted.
  */
 export function assertLongformEpisodeDuration(value: unknown): number {
   if (isLongformEpisodeDuration(value)) return value;

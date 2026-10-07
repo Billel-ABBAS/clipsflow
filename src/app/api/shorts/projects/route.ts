@@ -107,6 +107,26 @@ function unavailableResponse(): NextResponse {
   );
 }
 
+function logSubmissionFailure(stage: string, error?: unknown): void {
+  const details = asRecord(error);
+  const code = details?.code;
+  const status = details?.status;
+  console.error(
+    JSON.stringify({
+      level: "error",
+      source: "api-shorts-projects",
+      message: "analysis project submission failed",
+      failure_stage: stage,
+      ...(typeof code === "string" && /^[a-z0-9_.-]{1,40}$/iu.test(code)
+        ? { error_code: code }
+        : {}),
+      ...(typeof status === "number" && Number.isInteger(status)
+        ? { error_status: status }
+        : {}),
+    }),
+  );
+}
+
 function firstRpcRow(data: unknown): Record<string, unknown> | null {
   if (!Array.isArray(data) || data.length !== 1) return null;
   return asRecord(data[0]);
@@ -236,6 +256,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     admin = createAdminClient();
   } catch {
+    logSubmissionFailure("admin_client");
     return unavailableResponse();
   }
 
@@ -249,7 +270,8 @@ export async function POST(request: Request): Promise<Response> {
       4,
       600,
     );
-  } catch {
+  } catch (error) {
+    logSubmissionFailure("rate_limit", error);
     return NextResponse.json(
       { error: "rate_limit_unavailable" },
       { status: 503 },
@@ -278,7 +300,8 @@ export async function POST(request: Request): Promise<Response> {
   if (parsed.data.analysis_mode === "audio_video") {
     try {
       resolveShortsVisualConfig();
-    } catch {
+    } catch (error) {
+      logSubmissionFailure("visual_config", error);
       return unavailableResponse();
     }
     const { data: episode, error: episodeError } = await admin
@@ -287,7 +310,10 @@ export async function POST(request: Request): Promise<Response> {
       .eq("id", parsed.data.episode_id)
       .eq("user_id", user.id)
       .maybeSingle();
-    if (episodeError) return unavailableResponse();
+    if (episodeError) {
+      logSubmissionFailure("audio_video_episode_read", episodeError);
+      return unavailableResponse();
+    }
     if (!episode || episode.status !== "ready") {
       return NextResponse.json({ error: "episode_not_found" }, { status: 404 });
     }
@@ -318,11 +344,17 @@ export async function POST(request: Request): Promise<Response> {
     .select("plan")
     .eq("id", user.id)
     .maybeSingle();
-  if (profileError || !profile) return unavailableResponse();
+  if (profileError || !profile) {
+    logSubmissionFailure("profile_read", profileError);
+    return unavailableResponse();
+  }
   const monthlyQuotaSeconds = resolveShortsAnalysisQuotaSeconds(
     resolvePlan(profile),
   );
-  if (monthlyQuotaSeconds === null) return unavailableResponse();
+  if (monthlyQuotaSeconds === null) {
+    logSubmissionFailure("monthly_quota_configuration");
+    return unavailableResponse();
+  }
 
   const { data, error } = await admin.rpc(
     "shorts_submit_analysis_job_with_quota",
@@ -338,24 +370,28 @@ export async function POST(request: Request): Promise<Response> {
     },
   );
   if (error) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        source: "api-shorts-projects",
-        message: "analysis project submission failed",
-      }),
-    );
+    logSubmissionFailure("analysis_rpc", error);
     return unavailableResponse();
   }
 
   const result = firstRpcRow(data);
-  if (!result) return unavailableResponse();
+  if (!result) {
+    logSubmissionFailure("invalid_analysis_rpc_result");
+    return unavailableResponse();
+  }
 
   const knownError = submissionError(result.error_code);
   if (knownError) return knownError;
+  if (result.error_code !== null && result.error_code !== undefined) {
+    logSubmissionFailure("unknown_analysis_rpc_result", {
+      code: result.error_code,
+    });
+    return unavailableResponse();
+  }
 
   const status = projectStatusSchema.safeParse(result.status);
   if (!isUuid(result.project_id) || !status.success) {
+    logSubmissionFailure("invalid_project_summary");
     return unavailableResponse();
   }
 
@@ -368,6 +404,7 @@ export async function POST(request: Request): Promise<Response> {
       status.data === "analyzing") &&
     !jobId
   ) {
+    logSubmissionFailure("missing_analysis_job_id");
     return unavailableResponse();
   }
 

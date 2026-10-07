@@ -18,6 +18,11 @@ const candidateIds = Array.from(
 );
 
 describe("long-form Shorts project contract", () => {
+  it("uses the inclusive one-minute to four-hour source limits", () => {
+    expect(SHORTS_MIN_SOURCE_DURATION_SECONDS).toBe(60);
+    expect(SHORTS_MAX_SOURCE_DURATION_SECONDS).toBe(14_400);
+  });
+
   it("normalizes bounded creator instructions and accepts the duration endpoints", () => {
     const parsed = createShortsProjectSchema.parse({
       episode_id: episodeId,

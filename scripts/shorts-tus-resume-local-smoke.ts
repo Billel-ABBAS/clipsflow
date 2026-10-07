@@ -53,7 +53,13 @@ function requireLocalConfiguration(): {
   const url = new URL(supabaseUrl);
   if (
     !["localhost", "127.0.0.1", "::1"].includes(url.hostname) ||
-    url.port !== "54321"
+    url.protocol !== "http:" ||
+    url.username ||
+    url.password ||
+    !["54321", "55321"].includes(url.port) ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
   ) {
     throw new Error("This smoke test refuses to write outside local Supabase");
   }

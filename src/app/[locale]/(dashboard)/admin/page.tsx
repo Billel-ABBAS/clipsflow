@@ -1,7 +1,20 @@
 import { setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
+import {
+  AlertTriangle,
+  BadgeCheck,
+  BadgeDollarSign,
+  Clapperboard,
+  Clock3,
+  Film,
+  Layers3,
+  LoaderCircle,
+  ShieldCheck,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { isCurrentRenderFinalizing } from "@/lib/clips/history-query";
 import { resolvePlan } from "@/lib/clips/quota";
 import { hasAdminAccess } from "@/lib/security/admin-access";
@@ -17,16 +30,46 @@ const PLAN_LABELS: Record<string, { fr: string; en: string }> = {
   studio: { fr: "Studio · forfait maximum", en: "Studio · top plan" },
 };
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+type MetricTone = "primary" | "cyan" | "mint" | "coral";
+
+const METRIC_TONES: Record<MetricTone, string> = {
+  primary: "bg-primary/10 text-primary",
+  cyan: "bg-chart-3/10 text-chart-3",
+  mint: "bg-chart-2/10 text-chart-2",
+  coral: "bg-chart-4/10 text-chart-4",
+};
+
+function MetricCard({
+  label,
+  value,
+  icon: Icon,
+  tone,
+}: {
+  label: string;
+  value: string;
+  icon: LucideIcon;
+  tone: MetricTone;
+}) {
   return (
-    <Card size="sm">
-      <CardHeader>
-        <CardTitle className="text-muted-foreground">{label}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="font-heading text-3xl font-semibold tabular-nums">
-          {value}
-        </p>
+    <Card
+      className="border-border/80 bg-card/80 hover:border-primary/30 transition-colors"
+      size="sm"
+    >
+      <CardContent className="flex items-start justify-between gap-3 pt-3">
+        <div className="min-w-0">
+          <CardTitle className="text-muted-foreground truncate">
+            {label}
+          </CardTitle>
+          <p className="font-heading mt-2 text-3xl font-semibold tabular-nums">
+            {value}
+          </p>
+        </div>
+        <span
+          aria-hidden="true"
+          className={`inline-flex size-10 shrink-0 items-center justify-center rounded-lg ${METRIC_TONES[tone]}`}
+        >
+          <Icon className="size-[18px]" />
+        </span>
       </CardContent>
     </Card>
   );
@@ -158,48 +201,66 @@ export default async function AdminPage({
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
-      <header className="space-y-2">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-heading text-3xl font-semibold tracking-tight">
-            {isFrench ? "Administration" : "Admin console"}
-          </h1>
-          <span className="rounded-full border px-2.5 py-1 text-xs font-medium">
-            ADMIN
+      <header className="border-border/80 from-card via-card to-primary/10 relative overflow-hidden rounded-xl border bg-gradient-to-br p-5 sm:p-7">
+        <div
+          aria-hidden="true"
+          className="bg-primary/10 absolute -top-20 -right-16 size-56 rounded-full blur-3xl"
+        />
+        <div className="relative flex flex-wrap items-start justify-between gap-5">
+          <div className="max-w-2xl space-y-2.5">
+            <p className="text-primary text-[10px] font-semibold tracking-[0.2em] uppercase">
+              CLIPSFLOW · {isFrench ? "OPÉRATIONS" : "OPERATIONS"}
+            </p>
+            <h1 className="font-heading text-3xl font-semibold tracking-tight sm:text-4xl">
+              {isFrench ? "Administration" : "Admin console"}
+            </h1>
+            <p className="text-muted-foreground text-sm leading-relaxed sm:text-base">
+              {isFrench
+                ? "Vue opérationnelle privée de ClipsFlow. Les données détaillées des utilisateurs ne sont pas exposées ici."
+                : "Private ClipsFlow operations overview. Detailed user records are not exposed here."}
+            </p>
+          </div>
+          <span className="border-chart-2/30 bg-chart-2/10 text-chart-2 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium">
+            <ShieldCheck aria-hidden="true" className="size-4" />
+            {isFrench ? "Accès administrateur" : "Admin access"}
           </span>
         </div>
-        <p className="text-muted-foreground">
-          {isFrench
-            ? "Vue opérationnelle privée de ClipsFlow. Les données détaillées des utilisateurs ne sont pas exposées ici."
-            : "Private ClipsFlow operations overview. Detailed user records are not exposed here."}
-        </p>
       </header>
 
       <section aria-labelledby="admin-account-heading" className="space-y-3">
-        <h2
-          id="admin-account-heading"
-          className="font-heading text-xl font-medium"
-        >
-          {isFrench ? "Ton accès" : "Your access"}
-        </h2>
-        <Card>
-          <CardContent className="grid gap-4 pt-4 sm:grid-cols-3">
-            <div>
+        <div className="flex items-center gap-2.5">
+          <ShieldCheck aria-hidden="true" className="text-primary size-4" />
+          <h2
+            id="admin-account-heading"
+            className="font-heading text-lg font-semibold"
+          >
+            {isFrench ? "Ton accès" : "Your access"}
+          </h2>
+        </div>
+        <Card className="border-border/80 bg-card/70">
+          <CardContent className="grid gap-5 pt-4 sm:grid-cols-3">
+            <div className="min-w-0">
               <p className="text-muted-foreground text-sm">
                 {isFrench ? "Compte" : "Account"}
               </p>
-              <p className="mt-1 font-medium">{user.email}</p>
+              <p className="mt-1 truncate font-medium">{user.email}</p>
             </div>
             <div>
               <p className="text-muted-foreground text-sm">
                 {isFrench ? "Forfait effectif" : "Effective plan"}
               </p>
-              <p className="mt-1 font-medium">{planLabel}</p>
+              <p className="mt-1 inline-flex items-center gap-2 font-medium">
+                <span className="bg-primary/15 text-primary inline-flex size-6 items-center justify-center rounded-md">
+                  <BadgeCheck aria-hidden="true" className="size-4" />
+                </span>
+                {planLabel}
+              </p>
             </div>
             <div>
               <p className="text-muted-foreground text-sm">
                 {isFrench ? "Facturation" : "Billing"}
               </p>
-              <p className="mt-1 font-medium">
+              <p className="text-foreground/90 mt-1 leading-relaxed font-medium">
                 {!profile.stripe_subscription_id
                   ? isFrench
                     ? "Accès attribué manuellement · sans abonnement Stripe"
@@ -214,78 +275,111 @@ export default async function AdminPage({
       </section>
 
       <section aria-labelledby="admin-overview-heading" className="space-y-3">
-        <h2
-          id="admin-overview-heading"
-          className="font-heading text-xl font-medium"
-        >
-          {isFrench ? "Vue d’ensemble" : "Overview"}
-        </h2>
+        <div className="flex items-center gap-2.5">
+          <Layers3 aria-hidden="true" className="text-primary size-4" />
+          <h2
+            id="admin-overview-heading"
+            className="font-heading text-lg font-semibold"
+          >
+            {isFrench ? "Vue d’ensemble" : "Overview"}
+          </h2>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
             label={isFrench ? "Comptes" : "Accounts"}
             value={formatCount(users.count)}
+            icon={Users}
+            tone="primary"
           />
           <MetricCard
             label={isFrench ? "Clips" : "Clips"}
             value={formatCount(clips.count)}
+            icon={Film}
+            tone="cyan"
           />
           <MetricCard
             label={isFrench ? "Tâches" : "Jobs"}
             value={formatCount(jobs.count)}
+            icon={Clapperboard}
+            tone="mint"
           />
           <MetricCard
             label={isFrench ? "Tâches en échec" : "Failed jobs"}
             value={formatCount(failedJobs.count)}
+            icon={AlertTriangle}
+            tone="coral"
           />
           <MetricCard
             label={isFrench ? "Rendus en attente" : "Queued renders"}
             value={formatCount(queuedRenders.count)}
+            icon={Clock3}
+            tone="cyan"
           />
           <MetricCard
             label={isFrench ? "Rendus en cours" : "Renders processing"}
             value={formatCount(processingRenders.count)}
+            icon={LoaderCircle}
+            tone="primary"
           />
           <MetricCard
             label={isFrench ? "Clips en finalisation" : "Clips finalizing"}
             value={formatCount(
               finalizingRenders.error ? null : finalizingRenderCount,
             )}
+            icon={BadgeCheck}
+            tone="mint"
           />
         </div>
       </section>
 
       <section aria-labelledby="admin-render-heading" className="space-y-3">
-        <h2
-          id="admin-render-heading"
-          className="font-heading text-xl font-medium"
-        >
-          {isFrench ? "Traitement des clips" : "Clip processing"}
-        </h2>
-        <Card size="sm">
-          <CardContent className="grid gap-4 pt-3 sm:grid-cols-2">
+        <div className="flex items-center gap-2.5">
+          <BadgeDollarSign aria-hidden="true" className="text-primary size-4" />
+          <h2
+            id="admin-render-heading"
+            className="font-heading text-lg font-semibold"
+          >
+            {isFrench ? "Traitement des clips" : "Clip processing"}
+          </h2>
+        </div>
+        <Card className="border-border/80 bg-card/70" size="sm">
+          <CardContent className="grid gap-5 pt-3 sm:grid-cols-2">
             <div>
-              <p className="text-muted-foreground text-sm">
+              <p className="text-muted-foreground flex items-center gap-2 text-sm">
+                <ShieldCheck aria-hidden="true" className="size-4" />
                 {isFrench ? "Garde budgétaire" : "Budget guard"}
               </p>
-              <p className="mt-1 font-medium">
-                {budget.error || !budget.data
-                  ? isFrench
-                    ? "État indisponible"
-                    : "Status unavailable"
-                  : budget.data.enabled
-                    ? isFrench
-                      ? "Activée"
-                      : "Enabled"
-                    : isFrench
-                      ? "Désactivée"
-                      : "Disabled"}
+              <p className="mt-2">
+                {budget.error || !budget.data ? (
+                  <span className="text-muted-foreground border-border inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium">
+                    {isFrench ? "État indisponible" : "Status unavailable"}
+                  </span>
+                ) : (
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${budget.data.enabled ? "border-chart-2/30 bg-chart-2/10 text-chart-2" : "border-chart-4/30 bg-chart-4/10 text-chart-4"}`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="size-1.5 rounded-full bg-current"
+                    />
+                    {budget.data.enabled
+                      ? isFrench
+                        ? "Activée"
+                        : "Enabled"
+                      : isFrench
+                        ? "Désactivée"
+                        : "Disabled"}
+                  </span>
+                )}
               </p>
             </div>
             <div>
               <p className="text-muted-foreground text-sm">
                 {isFrench ? "Plafond mensuel" : "Monthly cap"}
               </p>
-              <p className="mt-1 font-medium">{budgetLabel}</p>
+              <p className="font-heading mt-1 text-lg font-semibold tabular-nums">
+                {budgetLabel}
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -298,7 +392,7 @@ export default async function AdminPage({
         >
           {isFrench ? "Échecs récents" : "Recent failures"}
         </h2>
-        <Card size="sm">
+        <Card className="border-border/80 bg-card/70" size="sm">
           <CardContent className="pt-3">
             {failedJobs.error ? (
               <p className="text-muted-foreground text-sm">
@@ -309,24 +403,29 @@ export default async function AdminPage({
                 {isFrench ? "Aucun échec récent." : "No recent failures."}
               </p>
             ) : (
-              <ul className="divide-border divide-y">
+              <ul className="space-y-2">
                 {recentFailures.map((failure) => (
                   <li
                     key={failure.id}
-                    className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+                    className="border-border/70 bg-background/45 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-3"
                   >
-                    <div>
-                      <p className="text-sm font-medium">
-                        {failureLabel(failure.error_message)}
-                      </p>
-                      <p className="text-muted-foreground text-xs">
-                        {failure.type} · {isFrench ? "tentative" : "attempt"}{" "}
-                        {failure.attempt_count}
-                      </p>
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="bg-chart-4/10 text-chart-4 mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-md">
+                        <AlertTriangle aria-hidden="true" className="size-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">
+                          {failureLabel(failure.error_message)}
+                        </p>
+                        <p className="text-muted-foreground mt-1 text-xs">
+                          {failure.type} · {isFrench ? "tentative" : "attempt"}{" "}
+                          {failure.attempt_count}
+                        </p>
+                      </div>
                     </div>
                     <time
                       dateTime={failure.created_at}
-                      className="text-muted-foreground text-xs"
+                      className="text-muted-foreground pl-11 text-xs sm:pl-0"
                     >
                       {new Intl.DateTimeFormat(isFrench ? "fr-FR" : "en-US", {
                         dateStyle: "medium",

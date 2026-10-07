@@ -91,13 +91,17 @@ function parseLocalSupabaseStatus(statusOutput) {
   if (
     parsedUrl.protocol !== "http:" ||
     !loopbackHosts.has(parsedUrl.hostname) ||
-    parsedUrl.port !== "54321"
+    parsedUrl.username ||
+    parsedUrl.password ||
+    parsedUrl.pathname !== "/" ||
+    parsedUrl.search ||
+    parsedUrl.hash
   ) {
     throw new Error(
       "Refusing to run the Docker E2E against a non-local Supabase project",
     );
   }
-  return { anonKey, serviceRoleKey };
+  return { apiOrigin: parsedUrl.origin, anonKey, serviceRoleKey };
 }
 
 async function discoverSupabaseContainers() {
@@ -136,12 +140,14 @@ function shellQuote(value) {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-function createLoopbackRelay(kongName) {
+function createLoopbackRelay(kongName, publicApiOrigin) {
   return [
     "const http=require('http');",
     `const target={hostname:${JSON.stringify(kongName)},port:8000};`,
+    `const publicApiOrigin=${JSON.stringify(publicApiOrigin)};`,
+    "const relayOrigin='http://127.0.0.1:54321';",
     "http.createServer((req,res)=>{",
-    "const upstream=http.request({...target,path:req.url,method:req.method,headers:req.headers},reply=>{res.writeHead(reply.statusCode||502,reply.headers);reply.pipe(res)});",
+    "const upstream=http.request({...target,path:req.url,method:req.method,headers:req.headers},reply=>{const headers={...reply.headers};if(typeof headers.location==='string'){try{const location=new URL(headers.location,publicApiOrigin);if(location.origin===publicApiOrigin){headers.location=relayOrigin+location.pathname+location.search+location.hash}}catch{}}res.writeHead(reply.statusCode||502,headers);reply.pipe(res)});",
     "upstream.on('error',error=>{res.statusCode=502;res.end(error.message)});",
     "req.pipe(upstream)",
     "}).listen(54321,'127.0.0.1');",
@@ -178,6 +184,9 @@ async function startRunner(local, containers, budgetAuthorized) {
   if (budgetAuthorized) {
     environment.push(
       "SHORTS_ANALYSIS_MONTHLY_SOURCE_SECONDS_FREE=7200",
+      // Two successful 4-hour modality runs fit; a leaked failed reservation
+      // would make the second one exceed this exact local test allowance.
+      "SHORTS_ANALYSIS_MONTHLY_SOURCE_SECONDS_STUDIO=28800",
       "OPENAI_API_KEY=local-mock-no-network",
       "GROQ_API_KEY=local-mock-no-network",
       "CLIPS_VISUAL_ANALYSIS_ENABLED=true",
@@ -186,7 +195,7 @@ async function startRunner(local, containers, budgetAuthorized) {
     );
   }
 
-  const command = `node -e ${shellQuote(createLoopbackRelay(containers.kongName))} & exec ./node_modules/.bin/next dev --hostname 127.0.0.1 --port 3104`;
+  const command = `node -e ${shellQuote(createLoopbackRelay(containers.kongName, local.apiOrigin))} & exec ./node_modules/.bin/next dev --hostname 127.0.0.1 --port 3104`;
   const args = [
     "run",
     "-d",
@@ -223,13 +232,27 @@ async function runSmoke(local, script, needsApp = true) {
     args.push("--env", value);
   }
   args.push(runnerName, "./node_modules/.bin/tsx", script);
-  await run("docker", args);
+  try {
+    await run("docker", args);
+  } catch (error) {
+    const { output: logs } = await run(
+      "docker",
+      ["logs", runnerName, "--tail", "250"],
+      { allowFailure: true },
+    );
+    const diagnostics = logs
+      .split(/\r?\n/u)
+      .filter((line) => line.includes('"source":"api-shorts-projects"'))
+      .slice(-8);
+    if (diagnostics.length > 0) {
+      console.error(`Local Shorts API diagnostics:\n${diagnostics.join("\n")}`);
+    }
+    throw error;
+  }
 }
 
-async function runDatabaseAssertions(databaseName) {
-  const sql = await readFile(
-    resolve(workspace, "supabase/tests/shorts_studio.sql"),
-  );
+async function runDatabaseAssertions(databaseName, testFile) {
+  const sql = await readFile(resolve(workspace, testFile));
   await run(
     "docker",
     [
@@ -277,10 +300,17 @@ async function main() {
     await runSmoke(local, "scripts/shorts-tus-resume-local-smoke.ts", false);
     await runSmoke(local, "scripts/shorts-local-media-smoke.ts", false);
     await runSmoke(local, "scripts/shorts-local-motion-smoke.ts", false);
-    await runDatabaseAssertions(containers.databaseName);
+    await runDatabaseAssertions(
+      containers.databaseName,
+      "supabase/tests/shorts_studio.sql",
+    );
+    await runDatabaseAssertions(
+      containers.databaseName,
+      "supabase/tests/shorts_source_duration.sql",
+    );
 
     console.log(
-      "Local Docker Shorts E2E passed: authenticated Studio, fail-closed AI budget, TUS upload/resume, audio and audio-video analysis, creator selection, renders/downloads, motion, YouTube mock, and 18 SQL assertions.",
+      "Local Docker Shorts E2E passed: authenticated Studio, fail-closed AI budget, TUS upload/resume, audio and audio-video analysis, creator selection, renders/downloads, motion, YouTube mock, and 27 SQL assertions.",
     );
   } finally {
     await stopRunner();

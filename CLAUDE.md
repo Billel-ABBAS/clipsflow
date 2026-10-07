@@ -1,6 +1,6 @@
 # ClipsFlow
 
-> SaaS B2C de création de Shorts à partir de vidéos et podcasts de 20 minutes à 2 heures : analyse audio ou audio + vidéo, propositions des meilleurs extraits, puis génération avec sous-titres synchronisés, musique et motion design.
+> SaaS B2C de création de Shorts à partir de vidéos et podcasts de 1 minute à 4 heures : analyse audio ou audio + vidéo, propositions des meilleurs extraits, puis génération avec sous-titres synchronisés, musique et motion design.
 
 ## Stack
 
@@ -24,7 +24,7 @@ Next.js 16 App Router · TS strict · Tailwind v4 · shadcn/base-ui · Supabase 
 
 ## Périmètre
 
-**Parcours Shorts long format** : import vidéo/podcast de 20 min à 2 h → transcription complète et analyse audio ou audio + vidéo, guidées par les consignes utilisateur → sélection manuelle ou automatique des extraits → génération FFmpeg avec sous-titres synchronisés, musique/SFX autorisés et motion design → téléchargement MP4/VTT individuel ou ZIP → connexion YouTube et publication après confirmation.
+**Parcours Shorts long format** : import vidéo/podcast de 1 min à 4 h → transcription complète et analyse audio ou audio + vidéo, guidées par les consignes utilisateur → sélection manuelle ou automatique des extraits → génération FFmpeg avec sous-titres synchronisés, musique/SFX autorisés et motion design → téléchargement MP4/VTT individuel ou ZIP → connexion YouTube et publication après confirmation.
 
 Le flux Clips existant reste disponible séparément : épisode → segment court → style et personnalisation → rendu FFmpeg → galerie privée. Les workers d'analyse Shorts, de rendu et de publication sont des services asynchrones distincts ; leur présence dans le code ne prouve pas leur provisionnement en staging ou production.
 

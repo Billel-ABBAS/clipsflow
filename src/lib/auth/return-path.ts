@@ -11,7 +11,12 @@ function resolveAuthLocale(rawLocale: string): Locale {
 }
 
 /** Destinations that can be resumed safely after authentication. */
-export const AUTH_RETURN_PATHS = ["/clips", "/shorts"] as const;
+export const AUTH_RETURN_PATHS = [
+  "/dashboard",
+  "/clips",
+  "/clips/new",
+  "/shorts",
+] as const;
 
 export type AuthReturnPath = (typeof AUTH_RETURN_PATHS)[number];
 
@@ -22,7 +27,15 @@ export type AuthReturnPath = (typeof AUTH_RETURN_PATHS)[number];
 export function getSafeAuthReturnPath(
   raw: string | null | undefined,
 ): AuthReturnPath {
-  return raw === "/shorts" ? "/shorts" : "/clips";
+  if (
+    raw === "/shorts" ||
+    raw === "/clips/new" ||
+    raw === "/clips" ||
+    raw === "/dashboard"
+  ) {
+    return raw;
+  }
+  return "/dashboard";
 }
 
 /** Resolve the dashboard path saved by proxy.ts without trusting client input. */

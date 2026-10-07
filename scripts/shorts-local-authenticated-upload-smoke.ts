@@ -26,7 +26,13 @@ function requireLocalConfiguration() {
   if (
     !["localhost", "127.0.0.1", "::1"].includes(app.hostname) ||
     !["localhost", "127.0.0.1", "::1"].includes(supabase.hostname) ||
-    supabase.port !== "54321" ||
+    supabase.protocol !== "http:" ||
+    supabase.username ||
+    supabase.password ||
+    !["54321", "55321"].includes(supabase.port) ||
+    supabase.pathname !== "/" ||
+    supabase.search ||
+    supabase.hash ||
     !getShortsTusEndpoint(supabaseUrl)
   ) {
     throw new Error("This smoke test refuses to write outside local services");
@@ -108,13 +114,14 @@ async function main(): Promise<void> {
       redirect: "manual",
     });
     const studioMarkup = await studioPage.text();
-    if (
-      studioPage.status !== 200 ||
-      !studioMarkup.includes("Studio Shorts IA") ||
-      !studioMarkup.includes("Importer une vidéo ou un podcast")
-    ) {
+    const missingStudioMarkers = [
+      "STUDIO SHORTS",
+      "Importer une vidéo ou un podcast",
+    ].filter((marker) => !studioMarkup.includes(marker));
+    if (studioPage.status !== 200 || missingStudioMarkers.length > 0) {
+      const location = studioPage.headers.get("location");
       throw new Error(
-        "The authenticated French Shorts Studio did not render its import controls",
+        `The authenticated French Shorts Studio did not render its selection header and import controls (status ${studioPage.status}; missing markers: ${missingStudioMarkers.join(", ") || "none"}; redirect: ${location ?? "none"})`,
       );
     }
 

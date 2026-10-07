@@ -22,6 +22,14 @@ describe("Public read-only Canva studio demonstration", () => {
     expect(html).toContain("/images/shorts-reference/portrait.webp");
     expect(html).toContain("Forme d’onde de la maquette Canva");
     expect(html).toContain("Maquette");
+    expect(html).toContain('href="/fr/clips"');
+    expect(html).toContain("Bibliothèque");
+    expect(html).toContain('href="/fr/clips/new"');
+    expect(html).toContain("Créer un clip");
+    expect(html).toContain('href="/fr/pricing"');
+    expect(html).toContain("Tarifs");
+    expect(html).not.toContain("Modèles");
+    expect(html).not.toContain("Paramètres");
     expect(html).not.toContain("/api/auth/youtube");
     expect(metadata.robots).toEqual({ index: false, follow: false });
   });
@@ -47,6 +55,8 @@ describe("Public read-only Canva studio demonstration", () => {
     const html = renderToStaticMarkup(page);
     expect(html).toContain("Demo · read only");
     expect(html).toContain("no upload, AI call or render is started");
+    expect(html).toContain("Create a clip");
+    expect(html).toContain("Pricing");
     expect(html).toContain('href="/en/shorts"');
   });
 });

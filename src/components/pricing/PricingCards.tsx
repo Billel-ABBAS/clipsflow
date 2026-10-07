@@ -64,7 +64,14 @@ export function PricingCards({ locale, isLoggedIn }: PricingCardsProps) {
   return (
     <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
       {plans.map((plan) => (
-        <Card key={plan} className="flex flex-col">
+        <Card
+          key={plan}
+          className={`flex flex-col ${
+            plan === "pro"
+              ? "border-primary/70 bg-primary/5 shadow-[0_18px_56px_rgba(104,68,255,0.14)]"
+              : ""
+          }`}
+        >
           <CardHeader>
             <CardTitle>{t(`${plan}.name`)}</CardTitle>
             <CardDescription>{t(`${plan}.tagline`)}</CardDescription>

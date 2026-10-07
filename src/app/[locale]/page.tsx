@@ -1,18 +1,14 @@
-import {
-  ArrowRight,
-  Check,
-  Film,
-  Scissors,
-  Subtitles,
-  Zap,
-} from "lucide-react";
+import Image from "next/image";
+import { ArrowRight, Film, Scissors, Subtitles, Zap } from "lucide-react";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
+import { ClipsFlowBrand } from "@/components/ClipsFlowBrand";
+import { MarketingHeader } from "@/components/MarketingHeader";
+import { PricingCards } from "@/components/pricing/PricingCards";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -34,25 +30,25 @@ export default async function HomePage({
       icon: Film,
       title: t("feature_shorts_title"),
       description: t("feature_shorts_desc"),
-      color: "text-violet-600",
+      color: "text-[#a995ff]",
     },
     {
       icon: Scissors,
       title: t("feature_clips_title"),
       description: t("feature_clips_desc"),
-      color: "text-cyan-600",
+      color: "text-[#22d3ee]",
     },
     {
       icon: Subtitles,
       title: t("feature_dub_title"),
       description: t("feature_dub_desc"),
-      color: "text-violet-600",
+      color: "text-[#36f0cf]",
     },
     {
       icon: Zap,
       title: t("feature_consent_title"),
       description: t("feature_consent_desc"),
-      color: "text-amber-600",
+      color: "text-[#fb604b]",
     },
   ];
 
@@ -64,85 +60,90 @@ export default async function HomePage({
 
   return (
     <main className="bg-background text-foreground min-h-screen">
-      {/* ── NAVIGATION ───────────────────────────────────────────────────── */}
-      <header className="border-border/40 bg-background/80 sticky top-0 z-50 border-b backdrop-blur">
-        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
-          <Link href={`/${locale}`} className="text-lg font-bold">
-            ClipsFlow
-          </Link>
-          <nav className="flex items-center gap-6">
-            <Link
-              href={`/${locale}/pricing`}
-              className="text-muted-foreground hover:text-foreground text-sm font-medium transition-colors"
-            >
-              Pricing
-            </Link>
-            <Link
-              href={shortsLoginHref}
-              className="text-muted-foreground hover:text-foreground text-sm font-medium transition-colors"
-            >
-              Sign in
-            </Link>
-            <Link
-              href={shortsLoginHref}
-              className="bg-primary text-primary-foreground hover:bg-primary/80 inline-flex h-8 items-center rounded-md px-3 text-sm font-medium transition-colors"
-            >
-              {t("cta_primary")}
-              <ArrowRight className="ml-1 h-4 w-4" />
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <MarketingHeader locale={locale} primaryLabel={t("cta_primary")} />
 
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden px-4 py-24 sm:px-6 sm:py-32">
+      <section className="relative isolate overflow-hidden px-4 py-12 sm:px-6 sm:py-14 lg:py-16">
         <div className="pointer-events-none absolute inset-0 -z-10">
-          <div className="absolute top-0 left-1/4 h-96 w-96 rounded-full bg-violet-500/15 blur-3xl" />
-          <div className="absolute top-1/4 right-1/4 h-96 w-96 rounded-full bg-cyan-500/15 blur-3xl" />
+          <div className="absolute top-0 left-[12%] size-[28rem] rounded-full bg-[#6844ff]/15 blur-3xl" />
+          <div className="absolute top-1/4 right-[8%] size-[24rem] rounded-full bg-[#22d3ee]/10 blur-3xl" />
         </div>
 
-        <div className="mx-auto max-w-4xl text-center">
-          <Badge variant="secondary" className="mb-6 gap-1.5">
-            <span className="size-1.5 rounded-full bg-green-500" />
-            {t("badge")}
-          </Badge>
+        <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] xl:gap-14">
+          <div className="mx-auto w-full max-w-xl text-center lg:mx-0 lg:text-left">
+            <Badge variant="secondary" className="mb-5 gap-1.5">
+              <span className="size-1.5 rounded-full bg-[#36f0cf]" />
+              {t("badge")}
+            </Badge>
 
-          <h1 className="text-foreground text-5xl font-bold tracking-tight sm:text-7xl">
-            {t("hero_part1")}{" "}
-            <span className="bg-gradient-to-r from-violet-600 to-cyan-600 bg-clip-text text-transparent">
-              {t("hero_highlight")}
-            </span>{" "}
-            {t("hero_part2")}
-          </h1>
+            <h1 className="text-foreground text-4xl leading-[1.08] font-bold tracking-tight sm:text-5xl lg:text-4xl xl:text-5xl">
+              {t("hero_part1")}{" "}
+              <span className="bg-gradient-to-r from-[#a995ff] to-[#36f0cf] bg-clip-text text-transparent">
+                {t("hero_highlight")}
+              </span>{" "}
+              {t("hero_part2")}
+            </h1>
 
-          <p className="text-muted-foreground mx-auto mt-6 max-w-2xl text-lg leading-8">
-            {t("subtitle")}
-          </p>
+            <p className="text-muted-foreground mx-auto mt-5 max-w-xl text-base leading-7 sm:text-lg sm:leading-8 lg:mx-0">
+              {t("subtitle")}
+            </p>
 
-          <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-            <Link
-              href={`/${locale}/login`}
-              className="group bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-10 items-center justify-center rounded-md px-8 text-sm font-medium shadow transition-colors focus-visible:outline-none"
-            >
-              {t("cta_primary")}
-              <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-            </Link>
-            <a
-              href="#how-it-works"
-              className="border-input bg-background hover:bg-accent hover:text-accent-foreground inline-flex h-10 items-center justify-center rounded-md border px-8 text-sm font-medium shadow-sm transition-colors focus-visible:outline-none"
-            >
-              {t("cta_secondary")}
-            </a>
+            <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
+              <Link
+                href={shortsLoginHref}
+                className="group bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-ring focus-visible:ring-offset-background inline-flex h-11 items-center justify-center rounded-md px-7 text-sm font-semibold shadow-sm transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+              >
+                {t("cta_primary")}
+                <ArrowRight className="ml-2 size-4 transition-transform group-hover:translate-x-1" />
+              </Link>
+              <a
+                href="#how-it-works"
+                className="border-input bg-background hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring focus-visible:ring-offset-background inline-flex h-11 items-center justify-center rounded-md border px-6 text-sm font-medium shadow-sm transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+              >
+                {t("cta_secondary")}
+              </a>
+            </div>
+
+            <p className="text-muted-foreground mx-auto mt-6 max-w-xl text-xs leading-5 sm:text-sm lg:mx-0">
+              {t("social_proof")}
+            </p>
           </div>
 
-          <p className="text-muted-foreground mt-8 text-sm">
-            {t("social_proof")}
-          </p>
+          <div className="relative mx-auto w-full max-w-[760px] lg:justify-self-end">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -inset-5 rounded-[2rem] bg-gradient-to-br from-[#6844ff]/20 via-transparent to-[#22d3ee]/10 blur-2xl"
+            />
+            <figure className="border-border/80 bg-card/85 relative overflow-hidden rounded-xl border p-2.5 shadow-[0_24px_80px_rgba(0,0,0,0.44)] backdrop-blur-xl sm:rounded-2xl sm:p-3">
+              <figcaption className="mb-2.5 flex items-center justify-between gap-3 px-1.5">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="size-2 shrink-0 rounded-full bg-[#36f0cf] shadow-[0_0_12px_rgba(54,240,207,0.55)]" />
+                  <span className="text-foreground truncate text-sm font-semibold">
+                    {t("preview_label")}
+                  </span>
+                </div>
+                <Badge variant="secondary" className="shrink-0 text-xs">
+                  {t("preview_status")}
+                </Badge>
+              </figcaption>
+              <div className="border-border/70 bg-background overflow-hidden rounded-lg border">
+                <Image
+                  src="/images/shorts-reference/canva-studio-selection.png"
+                  alt={t("preview_alt")}
+                  width={1487}
+                  height={1058}
+                  sizes="(min-width: 1280px) 720px, (min-width: 1024px) 58vw, 100vw"
+                  priority
+                  className="block h-auto w-full"
+                />
+              </div>
+            </figure>
+          </div>
         </div>
       </section>
 
       {/* ── FEATURES ──────────────────────────────────────────────────────── */}
-      <section className="px-4 py-24 sm:px-6">
+      <section id="features" className="px-4 py-24 sm:px-6">
         <div className="mx-auto max-w-7xl">
           <div className="text-center">
             <h2 className="text-foreground text-3xl font-bold tracking-tight sm:text-4xl">
@@ -229,147 +230,8 @@ export default async function HomePage({
             </p>
           </div>
 
-          <div className="mt-16 grid gap-8 lg:grid-cols-4">
-            {/* Free */}
-            <Card className="border-border/50">
-              <CardHeader>
-                <CardTitle>Free</CardTitle>
-                <CardDescription>{t("pricing_free_tagline")}</CardDescription>
-                <div className="mt-4 text-4xl font-bold">$0</div>
-                <p className="text-muted-foreground text-sm">
-                  {t("pricing_free_price")}
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                  <Check className="size-4 text-green-500" />
-                  60s of clips/month
-                </div>
-                <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                  <Check className="size-4 text-green-500" />
-                  15 subtitle styles
-                </div>
-                <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                  <Check className="size-4 text-green-500" />
-                  ClipsFlow watermark
-                </div>
-              </CardContent>
-              <div className="p-6 pt-0">
-                <Link
-                  href={shortsLoginHref}
-                  className="border-input bg-background hover:bg-accent hover:text-accent-foreground inline-flex h-8 w-full items-center justify-center rounded-md border text-sm font-medium transition-colors"
-                >
-                  {t("pricing_free_cta")}
-                </Link>
-              </div>
-            </Card>
-
-            {/* Solo */}
-            <Card className="border-border/50">
-              <CardHeader>
-                <CardTitle>Solo</CardTitle>
-                <CardDescription>{t("pricing_solo_tagline")}</CardDescription>
-                <div className="mt-4 text-4xl font-bold">$29</div>
-                <p className="text-muted-foreground text-sm">
-                  {t("pricing_solo_price")}
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                  <Check className="size-4 text-green-500" />
-                  480s of clips/month
-                </div>
-                <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                  <Check className="size-4 text-green-500" />
-                  15 subtitle styles
-                </div>
-                <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                  <Check className="size-4 text-green-500" />
-                  No watermark
-                </div>
-              </CardContent>
-              <div className="p-6 pt-0">
-                <Link
-                  href={shortsLoginHref}
-                  className="bg-primary text-primary-foreground hover:bg-primary/80 inline-flex h-8 w-full items-center justify-center rounded-md text-sm font-medium transition-colors"
-                >
-                  {t("pricing_solo_cta")}
-                </Link>
-              </div>
-            </Card>
-
-            {/* Pro */}
-            <Card className="border-primary relative">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <Badge className="bg-primary text-primary-foreground">
-                  {t("pricing_popular")}
-                </Badge>
-              </div>
-              <CardHeader>
-                <CardTitle>Pro</CardTitle>
-                <CardDescription>{t("pricing_pro_tagline")}</CardDescription>
-                <div className="mt-4 text-4xl font-bold">$79</div>
-                <p className="text-muted-foreground text-sm">
-                  {t("pricing_pro_price")}
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                  <Check className="size-4 text-green-500" />
-                  1800s of clips/month
-                </div>
-                <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                  <Check className="size-4 text-green-500" />
-                  All styles + custom colors
-                </div>
-                <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                  <Check className="size-4 text-green-500" />
-                  No watermark
-                </div>
-              </CardContent>
-              <div className="p-6 pt-0">
-                <Link
-                  href={shortsLoginHref}
-                  className="bg-primary text-primary-foreground hover:bg-primary/80 inline-flex h-8 w-full items-center justify-center rounded-md text-sm font-medium transition-colors"
-                >
-                  {t("pricing_pro_cta")}
-                </Link>
-              </div>
-            </Card>
-
-            {/* Studio */}
-            <Card className="border-border/50">
-              <CardHeader>
-                <CardTitle>Studio</CardTitle>
-                <CardDescription>{t("pricing_studio_tagline")}</CardDescription>
-                <div className="mt-4 text-4xl font-bold">$199</div>
-                <p className="text-muted-foreground text-sm">
-                  {t("pricing_studio_price")}
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                  <Check className="size-4 text-green-500" />
-                  3600s of clips/month
-                </div>
-                <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                  <Check className="size-4 text-green-500" />
-                  Everything unlocked
-                </div>
-                <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                  <Check className="size-4 text-green-500" />
-                  All positions + animations
-                </div>
-              </CardContent>
-              <div className="p-6 pt-0">
-                <Link
-                  href={shortsLoginHref}
-                  className="bg-primary text-primary-foreground hover:bg-primary/80 inline-flex h-8 w-full items-center justify-center rounded-md text-sm font-medium transition-colors"
-                >
-                  {t("pricing_studio_cta")}
-                </Link>
-              </div>
-            </Card>
+          <div className="mt-16">
+            <PricingCards locale={locale} isLoggedIn={false} />
           </div>
 
           <div className="mt-10 text-center">
@@ -438,9 +300,7 @@ export default async function HomePage({
       {/* ── FOOTER ────────────────────────────────────────────────────────── */}
       <footer className="border-border/40 border-t px-4 py-12 sm:px-6">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 sm:flex-row">
-          <Link href={`/${locale}`} className="text-lg font-bold">
-            ClipsFlow
-          </Link>
+          <ClipsFlowBrand />
           <p className="text-muted-foreground text-sm">{t("footer_text")}</p>
         </div>
       </footer>

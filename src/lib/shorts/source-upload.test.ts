@@ -80,6 +80,9 @@ describe("Shorts source upload contract", () => {
     expect(getShortsTusEndpoint("http://127.0.0.1:54321")).toBe(
       "http://127.0.0.1:54321/storage/v1/upload/resumable",
     );
+    expect(getShortsTusEndpoint("http://127.0.0.1:55321")).toBe(
+      "http://127.0.0.1:55321/storage/v1/upload/resumable",
+    );
     expect(getShortsTusEndpoint("https://storage.example.com")).toBe(
       "https://storage.example.com/storage/v1/upload/resumable",
     );

@@ -64,7 +64,9 @@ export function formatSourceDuration(seconds: number, french: boolean): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "—";
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
-  return hours > 0
-    ? `${hours} h ${minutes % 60} min`
-    : `${minutes} ${french ? "min" : "min"}`;
+  if (hours === 0) return `${minutes} ${french ? "min" : "min"}`;
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes === 0
+    ? `${hours} h`
+    : `${hours} h ${remainingMinutes} min`;
 }
