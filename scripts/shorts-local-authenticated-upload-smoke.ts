@@ -41,6 +41,12 @@ function requireLocalConfiguration() {
   return { appUrl: app.origin, supabaseUrl, anonKey, serviceRoleKey };
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
 async function uploadFile(
   options: ConstructorParameters<typeof Upload>[1],
 ): Promise<void> {
@@ -222,6 +228,57 @@ async function main(): Promise<void> {
       throw new Error("The authenticated Shorts upload did not finalize");
     }
 
+    const anonymousPreview = await fetch(
+      new URL(
+        `/api/shorts/sources/${encodeURIComponent(episodeId)}/preview`,
+        local.appUrl,
+      ),
+      { cache: "no-store" },
+    );
+    if (anonymousPreview.status !== 401) {
+      throw new Error(
+        "The source preview endpoint did not reject anonymous access",
+      );
+    }
+
+    const preview = await fetch(
+      new URL(
+        `/api/shorts/sources/${encodeURIComponent(episodeId)}/preview`,
+        local.appUrl,
+      ),
+      {
+        headers: { cookie: cookieHeader },
+        cache: "no-store",
+      },
+    );
+    const previewBody: unknown = await preview.json();
+    const previewData = record(previewBody)?.data;
+    const previewUrl =
+      previewData && typeof previewData === "object"
+        ? (previewData as Record<string, unknown>).url
+        : null;
+    if (
+      preview.status !== 200 ||
+      preview.headers.get("cache-control") !== "private, no-store" ||
+      typeof previewUrl !== "string"
+    ) {
+      throw new Error(
+        "The authenticated private source preview was not issued",
+      );
+    }
+
+    const signedUrl = new URL(previewUrl);
+    if (signedUrl.origin !== new URL(local.supabaseUrl).origin) {
+      throw new Error("The source preview URL points outside local Supabase");
+    }
+    const previewMedia = await fetch(signedUrl, { cache: "no-store" });
+    const previewBytes = Buffer.from(await previewMedia.arrayBuffer());
+    if (!previewMedia.ok || !previewBytes.equals(testFile)) {
+      throw new Error(
+        "The signed source preview did not return the uploaded media",
+      );
+    }
+
     const paidAnalysisGate = await postJson("/api/shorts/projects", {});
     if (
       paidAnalysisGate.status !== 503 ||
@@ -231,7 +288,7 @@ async function main(): Promise<void> {
     }
 
     console.log(
-      "Local authenticated Shorts Studio smoke test passed: authenticated French Studio rendered its import controls, anonymous request rejected, authenticated TUS upload finalized, paid-AI analysis remained blocked without budget authorization.",
+      "Local authenticated Shorts Studio smoke test passed: authenticated French Studio rendered its import controls, anonymous upload and source-preview requests rejected, authenticated TUS upload finalized and replayed through a private signed URL, and paid-AI analysis remained blocked without budget authorization.",
     );
   } finally {
     if (storagePath) {

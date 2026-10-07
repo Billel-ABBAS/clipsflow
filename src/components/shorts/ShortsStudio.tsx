@@ -273,6 +273,8 @@ type Copy = {
   sourceLabel: string;
   sourcePlaceholder: string;
   sourceLoadError: string;
+  sourcePreviewLoading: string;
+  sourcePreviewUnavailable: string;
   uploadLabel: string;
   uploadHelp: string;
   uploadButton: string;
@@ -375,6 +377,9 @@ const COPY: Record<"fr" | "en", Copy> = {
     sourcePlaceholder: "Choisir un épisode",
     sourceLoadError:
       "La bibliothèque n’est pas disponible pour le moment. Réessayez après avoir rechargé la page.",
+    sourcePreviewLoading: "Préparation de l’aperçu de la source…",
+    sourcePreviewUnavailable:
+      "L’aperçu vidéo n’est pas disponible ; l’analyse reste possible.",
     uploadLabel: "Importer une vidéo ou un podcast",
     uploadHelp:
       "MP4, MOV, WebM, MP3, M4A ou WAV · jusqu’à 8 Gio. En cas de coupure, vous pouvez reprendre l’envoi depuis cette page.",
@@ -510,6 +515,9 @@ const COPY: Record<"fr" | "en", Copy> = {
     sourcePlaceholder: "Choose an episode",
     sourceLoadError:
       "Your library is unavailable right now. Reload the page and try again.",
+    sourcePreviewLoading: "Preparing the source preview…",
+    sourcePreviewUnavailable:
+      "The video preview is unavailable; analysis is still available.",
     uploadLabel: "Upload a video or podcast",
     uploadHelp:
       "MP4, MOV, WebM, MP3, M4A, or WAV · up to 8 GiB. After an interruption, you can resume the upload from this page.",
@@ -1078,6 +1086,11 @@ export function ShortsStudio({
   );
   const [localMediaUrl, setLocalMediaUrl] = useState<string | null>(null);
   const localMediaUrlRef = useRef<string | null>(null);
+  const [sourcePreview, setSourcePreview] = useState<{
+    episodeId: string;
+    url: string | null;
+    status: "ready" | "unavailable";
+  } | null>(null);
   const sourcePlayerRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSeconds, setPlaybackSeconds] = useState(0);
@@ -1139,6 +1152,75 @@ export function ShortsStudio({
       null,
     [availableEpisodes, selectedEpisodeId],
   );
+  const storedSourceMediaUrl =
+    !isDesignPreview && sourcePreview?.episodeId === selectedEpisodeId
+      ? sourcePreview.url
+      : null;
+  const sourcePreviewLoading =
+    !isDesignPreview &&
+    Boolean(selectedEpisodeId) &&
+    !localMediaUrl &&
+    sourcePreview?.episodeId !== selectedEpisodeId;
+  const sourcePreviewUnavailable =
+    !isDesignPreview &&
+    !localMediaUrl &&
+    sourcePreview?.episodeId === selectedEpisodeId &&
+    sourcePreview.status === "unavailable";
+  const mediaUrl = localMediaUrl ?? storedSourceMediaUrl;
+
+  useEffect(() => {
+    if (isDesignPreview || !selectedEpisodeId || localMediaUrl) {
+      return;
+    }
+    if (sourcePreview?.episodeId === selectedEpisodeId) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadSourcePreview = async () => {
+      try {
+        const response = await fetch(
+          `/api/shorts/sources/${encodeURIComponent(selectedEpisodeId)}/preview`,
+          { signal: controller.signal, cache: "no-store" },
+        );
+        const payload = await readJsonSafely(response);
+        const data =
+          isRecord(payload) && isRecord(payload.data) ? payload.data : null;
+        if (!response.ok || typeof data?.url !== "string") {
+          if (!cancelled) {
+            setSourcePreview({
+              episodeId: selectedEpisodeId,
+              url: null,
+              status: "unavailable",
+            });
+          }
+          return;
+        }
+        if (!cancelled) {
+          setSourcePreview({
+            episodeId: selectedEpisodeId,
+            url: data.url,
+            status: "ready",
+          });
+        }
+      } catch {
+        if (!cancelled && !controller.signal.aborted) {
+          setSourcePreview({
+            episodeId: selectedEpisodeId,
+            url: null,
+            status: "unavailable",
+          });
+        }
+      }
+    };
+
+    void loadSourcePreview();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [isDesignPreview, localMediaUrl, selectedEpisodeId, sourcePreview]);
+
   const durationSeconds = Number(durationInput);
   const validDuration = isValidShortsSourceDuration(durationSeconds);
   const selectedCandidateIdsForCurrentProject = useMemo(
@@ -2128,7 +2210,7 @@ export function ShortsStudio({
       : null;
   const togglePlayback = () => {
     const player = sourcePlayerRef.current;
-    if (!player || !localMediaUrl || !activeCandidate) return;
+    if (!player || !mediaUrl || !activeCandidate) return;
     if (player.paused) {
       if (
         player.currentTime < activeCandidate.startSeconds ||
@@ -2154,7 +2236,7 @@ export function ShortsStudio({
   };
   const reviewCandidate = (candidate: ShortsCandidate) => {
     sourcePlayerRef.current?.pause();
-    if (sourcePlayerRef.current && localMediaUrl)
+    if (sourcePlayerRef.current && mediaUrl)
       sourcePlayerRef.current.currentTime = candidate.startSeconds;
     setPlaybackSeconds(candidate.startSeconds);
     setIsPlaying(false);
@@ -2312,13 +2394,8 @@ export function ShortsStudio({
               {referenceMedia ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img src={referenceMedia.sourcePoster} alt="" />
-              ) : localMediaUrl ? (
-                <video
-                  src={localMediaUrl}
-                  muted
-                  playsInline
-                  preload="metadata"
-                />
+              ) : mediaUrl ? (
+                <video src={mediaUrl} muted playsInline preload="metadata" />
               ) : (
                 <div className={styles.sourceVisualInner}>
                   <Video size={24} strokeWidth={1.5} />
@@ -2739,9 +2816,9 @@ export function ShortsStudio({
                                   }
                                   alt=""
                                 />
-                              ) : localMediaUrl ? (
+                              ) : mediaUrl ? (
                                 <video
-                                  src={`${localMediaUrl}#t=${candidate.startSeconds}`}
+                                  src={`${mediaUrl}#t=${candidate.startSeconds}`}
                                   playsInline
                                   muted
                                   preload="metadata"
@@ -2852,9 +2929,9 @@ export function ShortsStudio({
                           type="button"
                           className={styles.listenButton}
                           onClick={togglePlayback}
-                          disabled={!localMediaUrl}
+                          disabled={!mediaUrl}
                           title={
-                            !localMediaUrl ? studio.mediaUnavailable : undefined
+                            !mediaUrl ? studio.mediaUnavailable : undefined
                           }
                         >
                           <Play
@@ -3085,9 +3162,9 @@ export function ShortsStudio({
                           className={styles.playCircle}
                           aria-label={studio.listen}
                           onClick={togglePlayback}
-                          disabled={!localMediaUrl}
+                          disabled={!mediaUrl}
                           title={
-                            !localMediaUrl ? studio.mediaUnavailable : undefined
+                            !mediaUrl ? studio.mediaUnavailable : undefined
                           }
                         >
                           {isPlaying ? (
@@ -3098,7 +3175,7 @@ export function ShortsStudio({
                         </button>
                         <span className={styles.playTime}>
                           {formatShortsTimestamp(
-                            localMediaUrl
+                            mediaUrl
                               ? Math.max(
                                   activeCandidate.startSeconds,
                                   Math.min(
@@ -3131,7 +3208,7 @@ export function ShortsStudio({
                               ? "Position de lecture"
                               : "Playback position"
                           }
-                          disabled={!localMediaUrl}
+                          disabled={!mediaUrl}
                           onChange={(event) => {
                             const time = Number(event.target.value);
                             if (sourcePlayerRef.current)
@@ -3314,6 +3391,16 @@ export function ShortsStudio({
                                 ? copy.uploadResumeHint
                                 : copy.sourceDescription}
                       </span>
+                      {sourcePreviewLoading ? (
+                        <span className={styles.fieldHelp} role="status">
+                          {copy.sourcePreviewLoading}
+                        </span>
+                      ) : null}
+                      {sourcePreviewUnavailable ? (
+                        <span className={styles.fieldHelp} role="status">
+                          {copy.sourcePreviewUnavailable}
+                        </span>
+                      ) : null}
                     </label>
 
                     <label className={styles.field}>
@@ -3490,10 +3577,10 @@ export function ShortsStudio({
                         className={styles.previewMedia}
                         alt="Visuel original de la maquette Canva, pas un rendu généré"
                       />
-                    ) : localMediaUrl ? (
+                    ) : mediaUrl ? (
                       <video
                         ref={sourcePlayerRef}
-                        src={localMediaUrl}
+                        src={mediaUrl}
                         className={styles.previewMedia}
                         playsInline
                         preload="metadata"
@@ -3552,7 +3639,7 @@ export function ShortsStudio({
                           ? "Position dans l’aperçu"
                           : "Preview position"
                       }
-                      disabled={!localMediaUrl}
+                      disabled={!mediaUrl}
                       onChange={(event) => {
                         const time = Number(event.target.value);
                         if (sourcePlayerRef.current)
@@ -3564,11 +3651,9 @@ export function ShortsStudio({
                       <button
                         type="button"
                         onClick={togglePlayback}
-                        disabled={!localMediaUrl}
+                        disabled={!mediaUrl}
                         aria-label={studio.listen}
-                        title={
-                          !localMediaUrl ? studio.mediaUnavailable : undefined
-                        }
+                        title={!mediaUrl ? studio.mediaUnavailable : undefined}
                       >
                         {isPlaying ? (
                           <Pause size={18} fill="currentColor" />
@@ -3578,7 +3663,7 @@ export function ShortsStudio({
                       </button>
                       <span>
                         {formatShortsTimestamp(
-                          localMediaUrl
+                          mediaUrl
                             ? Math.max(
                                 0,
                                 playbackSeconds - activeCandidate.startSeconds,
@@ -3590,7 +3675,7 @@ export function ShortsStudio({
                       <span className={styles.previewControlGrow} />
                       <button
                         type="button"
-                        disabled={!localMediaUrl}
+                        disabled={!mediaUrl}
                         onClick={() => setMediaMuted((muted) => !muted)}
                         aria-pressed={mediaMuted}
                         aria-label={
@@ -3603,7 +3688,7 @@ export function ShortsStudio({
                       </button>
                       <button
                         type="button"
-                        disabled={!localMediaUrl}
+                        disabled={!mediaUrl}
                         aria-label={
                           locale.startsWith("fr")
                             ? "Vidéo source en plein écran"
