@@ -7,6 +7,11 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-brand-violet: var(--brand-violet);
+  --color-brand-lavender: var(--brand-lavender);
+  --color-brand-coral: var(--brand-coral);
+  --color-brand-cyan: var(--brand-cyan);
+  --color-brand-mint: var(--brand-mint);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-geist-sans);
@@ -49,6 +54,13 @@
 }
 
 :root {
+  --brand-violet: #6844ff;
+  --brand-lavender: #a995ff;
+  --brand-coral: #fb604b;
+  --brand-cyan: #22d3ee;
+  --brand-mint: #36f0cf;
+  --brand-violet-glow: rgb(104 68 255 / 14%);
+  --brand-mint-glow: rgb(54 240 207 / 55%);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -91,7 +103,7 @@
   --card-foreground: #f5f7ff;
   --popover: #0d1a2d;
   --popover-foreground: #f5f7ff;
-  --primary: #6844ff;
+  --primary: var(--brand-violet);
   --primary-foreground: #ffffff;
   --secondary: #101c31;
   --secondary-foreground: #abbde9;
@@ -99,23 +111,23 @@
   --muted-foreground: #abbde9;
   --accent: #18283f;
   --accent-foreground: #f5f7ff;
-  --destructive: #fb604b;
+  --destructive: var(--brand-coral);
   --border: #18283f;
   --input: #0d1a2d;
-  --ring: #a995ff;
-  --chart-1: #6844ff;
-  --chart-2: #36f0cf;
-  --chart-3: #22d3ee;
-  --chart-4: #fb604b;
-  --chart-5: #a995ff;
+  --ring: var(--brand-lavender);
+  --chart-1: var(--brand-violet);
+  --chart-2: var(--brand-mint);
+  --chart-3: var(--brand-cyan);
+  --chart-4: var(--brand-coral);
+  --chart-5: var(--brand-lavender);
   --sidebar: #0b1623;
   --sidebar-foreground: #abbde9;
-  --sidebar-primary: #6844ff;
+  --sidebar-primary: var(--brand-violet);
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #101c31;
   --sidebar-accent-foreground: #f5f7ff;
   --sidebar-border: #18283f;
-  --sidebar-ring: #a995ff;
+  --sidebar-ring: var(--brand-lavender);
 }
 
 @layer base {
@@ -124,6 +136,18 @@
   }
   body {
     @apply bg-background text-foreground;
+    background-image:
+      radial-gradient(
+        64rem 32rem at 0% 0%,
+        color-mix(in srgb, var(--brand-violet) 6%, transparent),
+        transparent 66%
+      ),
+      radial-gradient(
+        52rem 28rem at 100% 6%,
+        color-mix(in srgb, var(--brand-cyan) 4%, transparent),
+        transparent 62%
+      );
+    background-attachment: fixed;
   }
   html {
     @apply font-sans;

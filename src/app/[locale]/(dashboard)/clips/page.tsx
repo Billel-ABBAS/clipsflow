@@ -16,6 +16,7 @@ import { OnboardingHero } from "@/components/clips/OnboardingHero";
 import { QuotaIndicator } from "@/components/clips/QuotaIndicator";
 import { WatermarkNotice } from "@/components/clips/WatermarkNotice";
 import { buttonVariants } from "@/components/ui/button";
+import { PageHeading } from "@/components/ui/PageHeading";
 import { Link, redirect } from "@/i18n/navigation";
 import {
   ACTIVE_JOB_STATUSES,
@@ -744,34 +745,31 @@ export default async function ClipsPage({
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <HistoryAutoRefresh userId={user.id} active={activeWork} />
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          <h1 className="text-foreground text-2xl font-semibold tracking-tight">
-            {historyT("title")}
-          </h1>
-          <p className="text-muted-foreground max-w-2xl text-sm">
-            {t("page_subtitle")}
-          </p>
-        </div>
-        <div className="flex min-w-[220px] flex-col items-end gap-3">
-          <Link
-            href="/clips/new"
-            className={cn(buttonVariants())}
-            data-testid="clips-new-cta"
-          >
-            <Plus className="mr-1.5 h-4 w-4" />
-            {t("new_clip_cta")}
-          </Link>
-          <div className="w-[220px]">
-            <QuotaIndicator
-              plan={plan}
-              secondsUsed={secondsUsed}
-              secondsLimit={secondsLimit}
-              resetAt={resetAt}
-            />
+      <PageHeading
+        eyebrow={historyT("eyebrow")}
+        title={historyT("title")}
+        description={t("page_subtitle")}
+        actions={
+          <div className="flex min-w-[220px] flex-col items-end gap-3">
+            <Link
+              href="/clips/new"
+              className={cn(buttonVariants())}
+              data-testid="clips-new-cta"
+            >
+              <Plus className="mr-1.5 h-4 w-4" />
+              {t("new_clip_cta")}
+            </Link>
+            <div className="w-[220px]">
+              <QuotaIndicator
+                plan={plan}
+                secondsUsed={secondsUsed}
+                secondsLimit={secondsLimit}
+                resetAt={resetAt}
+              />
+            </div>
           </div>
-        </div>
-      </div>
+        }
+      />
 
       {youtubeOAuthFeedback ? (
         <p

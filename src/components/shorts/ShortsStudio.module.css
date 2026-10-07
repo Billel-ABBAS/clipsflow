@@ -1,24 +1,24 @@
 .studio {
   /* Canva foundations, mapped to stable semantic roles. */
-  --night-950: #061120;
-  --night-900: #0b1623;
-  --night-800: #18283f;
-  --violet-500: #6844ff;
-  --coral-500: #fb604b;
-  --mint-400: #36f0cf;
+  --night-950: var(--background);
+  --night-900: var(--card);
+  --night-800: var(--border);
+  --violet-500: var(--brand-violet);
+  --coral-500: var(--brand-coral);
+  --mint-400: var(--brand-mint);
   --studio-canvas: var(--night-950);
   --studio-panel: var(--night-900);
-  --studio-panel-raised: #0d1a2d;
-  --studio-panel-soft: #101c31;
-  --studio-line: #18283f;
+  --studio-panel-raised: var(--popover);
+  --studio-panel-soft: var(--secondary);
+  --studio-line: var(--border);
   --studio-line-strong: #2d4163;
-  --studio-text: #f5f7ff;
-  --studio-muted: #abbde9;
+  --studio-text: var(--foreground);
+  --studio-muted: var(--muted-foreground);
   --studio-subtle: #6f83a8;
   --studio-violet: var(--violet-500);
-  --studio-violet-soft: #a995ff;
+  --studio-violet-soft: var(--brand-lavender);
   --studio-coral: var(--coral-500);
-  --studio-cyan: #22d3ee;
+  --studio-cyan: var(--brand-cyan);
   --studio-green: var(--mint-400);
   position: fixed;
   inset: 0;

@@ -68,7 +68,7 @@ export function PricingCards({ locale, isLoggedIn }: PricingCardsProps) {
           key={plan}
           className={`flex flex-col ${
             plan === "pro"
-              ? "border-primary/70 bg-primary/5 shadow-[0_18px_56px_rgba(104,68,255,0.14)]"
+              ? "border-primary/70 from-primary/10 via-card to-card bg-gradient-to-b shadow-[0_18px_56px_var(--brand-violet-glow)]"
               : ""
           }`}
         >
