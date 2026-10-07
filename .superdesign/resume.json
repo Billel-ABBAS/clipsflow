@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "/[locale]/shorts-preview": {
+      "targetKind": "existing-ui",
+      "projectId": "0cc8f7ae-f416-42fe-853a-2ae4ba3e9aca",
+      "baselineDraftId": "6911fd73-9766-4fc5-ae13-cec741a12523",
+      "activeDraftId": "6911fd73-9766-4fc5-ae13-cec741a12523",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "c27e4706-26bc-44f6-b56d-394f19a439fa",
+        "public-images-brand-clipsflow-canva-mark.png"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "public-images-brand-clipsflow-canva-mark.png",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/0cc8f7ae-f416-42fe-853a-2ae4ba3e9aca/brand-assets/public-images-brand-clipsflow-canva-mark.png/clipsflow-canva-mark.png"
+        }
+      },
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        ".superdesign/init/theme.md",
+        "src/app/globals.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "CED2C75318BE02FC38C114BE4918AC02AC78FDB173A0AB9053B73418EC56CC95",
+        ".superdesign/init/theme.md": "8809B5215B136BFC345AE01051A4F34AE2A9C39A8FC40FFF9F43C30201E74A69",
+        "src/app/globals.css": "6E90A6D273094ABA8CE58C4A91AB8169B4B07FF8F5E546A5B7A294BD2586BE12"
+      },
+      "components": [],
+      "drafts": {
+        "6911fd73-9766-4fc5-ae13-cec741a12523": {
+          "title": "ClipsFlow Studio — Sélection (Finition v8)",
+          "visualDirection": "Canva-faithful dark ClipsFlow Studio; restrained finishing pass generated from approved version 8 with Claude Opus 4.8, preserving the composition, copy, original photo assets, palette, and official logo",
+          "currentVersion": 10
+        }
+      },
+      "updatedAt": "2026-10-07T08:22:37Z"
+    }
+  }
+}

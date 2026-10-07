@@ -6,7 +6,7 @@ ClipsFlow is a B2C SaaS for finding and producing short-form video from long rec
 
 ## What it does
 
-- **Long-form source**: resumable upload for video or podcast sources from 20 minutes to 2 hours (8 GiB application cap; production requires Supabase Pro or higher, a global Storage limit of at least 8 GiB, and matching worker disk capacity)
+- **Long-form source**: resumable upload for video or podcast sources from 1 minute to 4 hours (8 GiB application cap; production requires Supabase Pro or higher, a global Storage limit of at least 8 GiB, and matching worker disk capacity)
 - **AI analysis**: complete transcription, audio-only or audio + video analysis, plus creator instructions to guide candidate selection
 - **Shorts Studio**: review and select suggested moments, or let the system choose them, then submit selected moments for rendering
 - **12 presets** tuned per platform (Viral TikTok, Hormozi Style, LinkedIn Pro, MrBeast Energy, Karaoke Hit…)

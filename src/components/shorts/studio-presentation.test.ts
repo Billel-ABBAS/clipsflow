@@ -124,8 +124,10 @@ describe("Studio review presentation", () => {
     expect(resolveStudioPhase(null, true)).toBe("processing");
   });
   it("formats the source duration for a human rather than a player", () => {
+    expect(formatSourceDuration(60, true)).toBe("1 min");
     expect(formatSourceDuration(4680, true)).toBe("1 h 18 min");
     expect(formatSourceDuration(1200, false)).toBe("20 min");
+    expect(formatSourceDuration(14_400, true)).toBe("4 h");
     expect(formatSourceDuration(NaN, true)).toBe("—");
   });
 });

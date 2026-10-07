@@ -44,7 +44,13 @@ function requireLocalConfiguration(): LocalConfiguration {
   if (
     !["localhost", "127.0.0.1", "::1"].includes(app.hostname) ||
     !["localhost", "127.0.0.1", "::1"].includes(supabase.hostname) ||
-    supabase.port !== "54321"
+    supabase.protocol !== "http:" ||
+    supabase.username ||
+    supabase.password ||
+    !["54321", "55321"].includes(supabase.port) ||
+    supabase.pathname !== "/" ||
+    supabase.search ||
+    supabase.hash
   ) {
     throw new Error("This smoke test refuses to write outside local services");
   }

@@ -33,7 +33,7 @@ const supabaseUrl = process.env.CLIPSFLOW_LOCAL_SUPABASE_URL;
 const anonKey = process.env.CLIPSFLOW_LOCAL_SUPABASE_ANON_KEY;
 const serviceRoleKey = process.env.CLIPSFLOW_LOCAL_SUPABASE_SERVICE_ROLE_KEY;
 let sourceBytes = Buffer.alloc(64 * 1024 + 17, 0x43);
-const sourceDurationSeconds = 1_200;
+const sourceDurationSeconds = 14_400;
 const syntheticSourceMediaSeconds = 120;
 const creatorInstructions = "Prioriser les conseils pratiques et autonomes.";
 
@@ -134,7 +134,12 @@ function requireLocalConfiguration() {
     app.port !== "3104" ||
     supabase.protocol !== "http:" ||
     !["localhost", "127.0.0.1", "::1"].includes(supabase.hostname) ||
-    supabase.port !== "54321" ||
+    supabase.username ||
+    supabase.password ||
+    !["54321", "55321"].includes(supabase.port) ||
+    supabase.pathname !== "/" ||
+    supabase.search ||
+    supabase.hash ||
     !getShortsTusEndpoint(supabaseUrl)
   ) {
     throw new Error("This smoke test refuses to write outside local services");
@@ -195,12 +200,15 @@ function record(value: unknown): Record<string, unknown> | null {
 
 function requireApiData(
   body: Record<string, unknown>,
+  status: number,
 ): Record<string, unknown> {
   const data = record(body.data);
   if (!data) {
     const error =
       typeof body.error === "string" ? body.error : "response_data_missing";
-    throw new Error(`Local Shorts API response omitted its data (${error})`);
+    throw new Error(
+      `Local Shorts API response omitted its data (HTTP ${status}; ${error})`,
+    );
   }
   return data;
 }
@@ -397,6 +405,18 @@ async function main(): Promise<void> {
     }
     userId = created.user.id;
 
+    const { data: testProfile, error: testProfileError } = await admin
+      .from("profiles")
+      .update({ plan: "studio" })
+      .eq("id", userId)
+      .select("plan")
+      .maybeSingle();
+    if (testProfileError || testProfile?.plan !== "studio") {
+      throw new Error(
+        "Could not assign the synthetic local user the Studio test quota",
+      );
+    }
+
     const cookies = new Map<string, string>();
     const sessionClient = createServerClient(local.supabaseUrl, local.anonKey, {
       cookies: {
@@ -498,7 +518,10 @@ async function main(): Promise<void> {
       ...intent,
       idempotency_key: firstIdempotencyKey,
     });
-    const firstData = requireApiData(firstSubmission.body);
+    const firstData = requireApiData(
+      firstSubmission.body,
+      firstSubmission.status,
+    );
     const failedProjectId = firstData.project_id;
     if (
       firstSubmission.status !== 202 ||
@@ -519,7 +542,10 @@ async function main(): Promise<void> {
       ...intent,
       idempotency_key: firstIdempotencyKey,
     });
-    const sameRequestData = requireApiData(sameRequest.body);
+    const sameRequestData = requireApiData(
+      sameRequest.body,
+      sameRequest.status,
+    );
     if (
       sameRequest.status !== 200 ||
       sameRequestData.project_id !== failedProjectId ||
@@ -532,7 +558,10 @@ async function main(): Promise<void> {
       ...intent,
       idempotency_key: randomUUID(),
     });
-    const retryData = requireApiData(retrySubmission.body);
+    const retryData = requireApiData(
+      retrySubmission.body,
+      retrySubmission.status,
+    );
     const retryProjectId = retryData.project_id;
     if (
       retrySubmission.status !== 202 ||
@@ -555,7 +584,10 @@ async function main(): Promise<void> {
       `/api/shorts/projects/${encodeURIComponent(retryProjectId)}`,
       "GET",
     );
-    const projectData = requireApiData(projectResponse.body);
+    const projectData = requireApiData(
+      projectResponse.body,
+      projectResponse.status,
+    );
     const project = record(projectData.project);
     const candidates = Array.isArray(projectData.candidates)
       ? projectData.candidates.map(record).filter((value) => value !== null)
@@ -591,7 +623,10 @@ async function main(): Promise<void> {
         idempotency_key: randomUUID(),
       },
     );
-    const audioVideoSubmissionData = requireApiData(audioVideoSubmission.body);
+    const audioVideoSubmissionData = requireApiData(
+      audioVideoSubmission.body,
+      audioVideoSubmission.status,
+    );
     const audioVideoProjectId = audioVideoSubmissionData.project_id;
     if (
       audioVideoSubmission.status !== 202 ||
@@ -613,7 +648,10 @@ async function main(): Promise<void> {
       `/api/shorts/projects/${encodeURIComponent(audioVideoProjectId)}`,
       "GET",
     );
-    const audioVideoData = requireApiData(audioVideoResponse.body);
+    const audioVideoData = requireApiData(
+      audioVideoResponse.body,
+      audioVideoResponse.status,
+    );
     const audioVideoProject = record(audioVideoData.project);
     const audioVideoCandidates = Array.isArray(audioVideoData.candidates)
       ? audioVideoData.candidates.map(record).filter((value) => value !== null)
@@ -774,7 +812,7 @@ async function main(): Promise<void> {
         production_profile: productionProfile,
       },
     );
-    const selectionData = requireApiData(selection.body);
+    const selectionData = requireApiData(selection.body, selection.status);
     if (
       selection.status !== 200 ||
       selectionData.selected_count !== candidateIds.length ||
@@ -789,7 +827,10 @@ async function main(): Promise<void> {
       "POST",
       { candidate_ids: candidateIds },
     );
-    const renderData = requireApiData(renderSubmission.body);
+    const renderData = requireApiData(
+      renderSubmission.body,
+      renderSubmission.status,
+    );
     const renderResults = Array.isArray(renderData.results)
       ? renderData.results.map(record).filter((value) => value !== null)
       : [];

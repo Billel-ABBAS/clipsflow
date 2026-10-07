@@ -15,6 +15,7 @@ const BLOCKED_HOSTNAMES = new Set([
 ]);
 const BLOCKED_TLD_SUFFIXES = [".internal", ".local", ".localhost"];
 const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+const LOCAL_SUPABASE_HTTP_PORTS = new Set(["54321", "55321"]);
 
 function canonicalHostname(hostname: string): string {
   const unwrapped =
@@ -152,7 +153,7 @@ function matchesAllowedLocalHttpOrigin(
     return (
       origin.origin === allowHttpOrigin &&
       origin.protocol === "http:" &&
-      origin.port === "54321" &&
+      LOCAL_SUPABASE_HTTP_PORTS.has(origin.port) &&
       isLoopbackHostname(origin.hostname)
     );
   } catch {
@@ -171,7 +172,7 @@ export function localSupabaseHttpOrigin(): string | undefined {
       url.protocol !== "http:" ||
       url.username ||
       url.password ||
-      url.port !== "54321" ||
+      !LOCAL_SUPABASE_HTTP_PORTS.has(url.port) ||
       url.pathname !== "/" ||
       url.search ||
       url.hash ||

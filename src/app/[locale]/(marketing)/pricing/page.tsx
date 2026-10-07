@@ -1,6 +1,7 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { PricingCards } from "@/components/pricing/PricingCards";
+import { MarketingHeader } from "@/components/MarketingHeader";
 import { createClient } from "@/lib/supabase/server";
 
 export async function generateMetadata({
@@ -9,9 +10,10 @@ export async function generateMetadata({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  void locale;
+  const t = await getTranslations({ locale, namespace: "pricing" });
   return {
-    title: "ClipsFlow Pricing",
+    title: t("title"),
+    description: t("subtitle"),
   };
 }
 
@@ -29,23 +31,25 @@ export default async function PricingPage({
   } = await supabase.auth.getUser();
 
   const t = await getTranslations("pricing");
+  const nav = await getTranslations({ locale, namespace: "siteNav" });
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center gap-12 px-6 py-24">
-      <div className="text-center">
-        <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-          {t("title")}
-        </h1>
-        <p className="text-muted-foreground mt-4 text-lg">
-          {t("subtitle")}
-        </p>
-      </div>
+    <>
+      <MarketingHeader locale={locale} primaryLabel={nav("create_shorts")} />
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col items-center gap-12 px-4 py-16 sm:px-6 sm:py-20">
+        <div className="text-center">
+          <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
+            {t("title")}
+          </h1>
+          <p className="text-muted-foreground mt-4 text-lg">{t("subtitle")}</p>
+        </div>
 
-      <PricingCards locale={locale} isLoggedIn={!!user} />
+        <PricingCards locale={locale} isLoggedIn={!!user} />
 
-      <div className="mt-12 text-center text-sm text-muted-foreground">
-        <p>{t("note")}</p>
-      </div>
-    </main>
+        <div className="text-muted-foreground mt-12 text-center text-sm">
+          <p>{t("note")}</p>
+        </div>
+      </main>
+    </>
   );
 }

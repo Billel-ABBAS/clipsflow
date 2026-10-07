@@ -14,6 +14,8 @@ import {
   normalizeLongformTranscriptWords,
   parseLongformAnalysisResponse,
   rankShortsMomentsWithVisualScores,
+  LONGFORM_MAX_DURATION_SECONDS,
+  LONGFORM_MIN_DURATION_SECONDS,
   SHORTS_AUDIO_VISUAL_SCORE_WEIGHTS,
 } from "./longform-analysis";
 import type { WordTimestamp } from "./whisper";
@@ -23,13 +25,23 @@ function word(text: string, start: number, end: number): WordTimestamp {
 }
 
 describe("long-form episode duration", () => {
-  it("accepts the inclusive 20 minute and two hour bounds", () => {
-    expect(assertLongformEpisodeDuration(20 * 60)).toBe(20 * 60);
-    expect(assertLongformEpisodeDuration(2 * 60 * 60)).toBe(2 * 60 * 60);
+  it("accepts the inclusive one-minute and four-hour bounds", () => {
+    expect(LONGFORM_MIN_DURATION_SECONDS).toBe(60);
+    expect(LONGFORM_MAX_DURATION_SECONDS).toBe(14_400);
+    expect(assertLongformEpisodeDuration(LONGFORM_MIN_DURATION_SECONDS)).toBe(
+      LONGFORM_MIN_DURATION_SECONDS,
+    );
+    expect(assertLongformEpisodeDuration(LONGFORM_MAX_DURATION_SECONDS)).toBe(
+      LONGFORM_MAX_DURATION_SECONDS,
+    );
   });
 
   it("rejects short, overlong, and non-finite sources before analysis", () => {
-    for (const duration of [20 * 60 - 0.001, 2 * 60 * 60 + 0.001, NaN]) {
+    for (const duration of [
+      LONGFORM_MIN_DURATION_SECONDS - 0.001,
+      LONGFORM_MAX_DURATION_SECONDS + 0.001,
+      NaN,
+    ]) {
       expect(() => assertLongformEpisodeDuration(duration)).toThrow(
         LongformAnalysisValidationError,
       );

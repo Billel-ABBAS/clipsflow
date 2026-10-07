@@ -37,7 +37,7 @@ describe("validateOutboundUrl", () => {
   });
 
   it("n'autorise que l'origine HTTP exacte de Supabase Docker local", () => {
-    const allowHttpOrigin = "http://127.0.0.1:54321";
+    const allowHttpOrigin = "http://127.0.0.1:55321";
     expect(
       validateOutboundUrl(`${allowHttpOrigin}/storage/v1/object/sign/file`, {
         allowHttpOrigin,
@@ -51,6 +51,11 @@ describe("validateOutboundUrl", () => {
     expect(() =>
       validateOutboundUrl("http://169.254.169.254:54321/latest/meta-data", {
         allowHttpOrigin: "http://169.254.169.254:54321",
+      }),
+    ).toThrow(OutboundUrlError);
+    expect(() =>
+      validateOutboundUrl("http://127.0.0.1:54444/private", {
+        allowHttpOrigin: "http://127.0.0.1:54444",
       }),
     ).toThrow(OutboundUrlError);
   });
@@ -101,9 +106,9 @@ describe("defaultClipsAllowedHosts", () => {
 describe("localSupabaseHttpOrigin", () => {
   it("returns only the loopback Docker origin outside production", () => {
     vi.stubEnv("NODE_ENV", "development");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
-    expect(localSupabaseHttpOrigin()).toBe("http://127.0.0.1:54321");
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://example.com:54321");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:55321");
+    expect(localSupabaseHttpOrigin()).toBe("http://127.0.0.1:55321");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://example.com:55321");
     expect(localSupabaseHttpOrigin()).toBeUndefined();
   });
 

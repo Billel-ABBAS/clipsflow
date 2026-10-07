@@ -9,6 +9,8 @@ import {
   isValidShortsSourceDuration,
   normaliseShortsProject,
   resolveShortsCandidatePage,
+  SHORTS_MAX_SOURCE_DURATION_SECONDS,
+  SHORTS_MIN_SOURCE_DURATION_SECONDS,
 } from "./ShortsStudio";
 
 describe("ShortsStudio pure boundaries", () => {
@@ -35,12 +37,20 @@ describe("ShortsStudio pure boundaries", () => {
       pageCount: 0,
     });
   });
-  it("accepts the inclusive twenty-minute to two-hour source contract", () => {
-    expect(isValidShortsSourceDuration(1_200)).toBe(true);
-    expect(isValidShortsSourceDuration(7_200)).toBe(true);
-    expect(isValidShortsSourceDuration(1_199)).toBe(false);
-    expect(isValidShortsSourceDuration(7_201)).toBe(false);
-    expect(isValidShortsSourceDuration(1_200.5)).toBe(false);
+  it("accepts the inclusive one-minute to four-hour source contract", () => {
+    expect(
+      isValidShortsSourceDuration(SHORTS_MIN_SOURCE_DURATION_SECONDS),
+    ).toBe(true);
+    expect(
+      isValidShortsSourceDuration(SHORTS_MAX_SOURCE_DURATION_SECONDS),
+    ).toBe(true);
+    expect(
+      isValidShortsSourceDuration(SHORTS_MIN_SOURCE_DURATION_SECONDS - 1),
+    ).toBe(false);
+    expect(
+      isValidShortsSourceDuration(SHORTS_MAX_SOURCE_DURATION_SECONDS + 1),
+    ).toBe(false);
+    expect(isValidShortsSourceDuration(60.5)).toBe(false);
   });
 
   it("surfaces server availability failures separately from source errors", () => {

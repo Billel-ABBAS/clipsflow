@@ -1,0 +1,9 @@
+# Local-only files and test artifacts: do not ship credentials or generated media.
+.env*
+.worktrees/
+.next-clipsflow-local-smoke/
+.superdesign/
+.agents/
+.claude/skills/
+.tmp-staging-render-test-valid/
+*.tsbuildinfo

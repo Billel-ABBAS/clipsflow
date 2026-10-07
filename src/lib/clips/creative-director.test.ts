@@ -89,11 +89,14 @@ describe("Claude Opus 5.5 creative direction", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("calls Anthropic only with the documented Opus 5.5 ID after both gates pass", async () => {
+  it("calls only the documented Opus 5.5 ID and accepts a thinking block before JSON text", async () => {
     const fetch = vi.fn<CreativeDirectorFetch>().mockResolvedValue(
       new Response(
         JSON.stringify({
-          content: [{ type: "text", text: JSON.stringify(validDirection) }],
+          content: [
+            { type: "thinking", thinking: "omitted", signature: "signature" },
+            { type: "text", text: JSON.stringify(validDirection) },
+          ],
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
@@ -111,11 +114,14 @@ describe("Claude Opus 5.5 creative direction", () => {
     expect(fetch).toHaveBeenCalledOnce();
     const [url, request] = fetch.mock.calls[0] ?? [];
     expect(url).toBe("https://api.anthropic.com/v1/messages");
-    expect(JSON.parse(String(request?.body))).toMatchObject({
+    const body = JSON.parse(String(request?.body)) as Record<string, unknown>;
+    expect(body).toMatchObject({
       model: CLAUDE_OPUS_5_5_MODEL_API_ID,
       max_tokens: 1_200,
       output_config: { format: { type: "json_schema" } },
     });
+    expect(body).not.toHaveProperty("thinking");
+    expect(body).not.toHaveProperty("temperature");
   });
 
   it("sends a raw JSON schema without unsupported string, number, or array constraints", () => {
@@ -124,7 +130,7 @@ describe("Claude Opus 5.5 creative direction", () => {
     );
   });
 
-  it("does not substitute Opus 5 when a different model ID is configured", async () => {
+  it("rejects an accidental Opus 5 override instead of substituting it", async () => {
     const fetch = vi.fn();
     await expect(
       createCreativeDirection(selectedShort, {

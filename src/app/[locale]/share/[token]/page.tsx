@@ -3,6 +3,7 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ClipsFlowBrand } from "@/components/ClipsFlowBrand";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -64,12 +65,12 @@ export default async function SharedClipPage({
   return (
     <main className="mx-auto flex min-h-[70vh] w-full max-w-4xl items-center px-4 py-10">
       <article className="border-border bg-card w-full space-y-5 rounded-xl border p-5 shadow-sm sm:p-8">
-        <div className="space-y-1">
-          <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-            ClipsFlow
-          </p>
-          <h1 className="font-heading text-2xl font-semibold">{title}</h1>
-          <p className="text-muted-foreground text-sm">{t("shared_video")}</p>
+        <div className="space-y-4">
+          <ClipsFlowBrand />
+          <div className="space-y-1">
+            <h1 className="font-heading text-2xl font-semibold">{title}</h1>
+            <p className="text-muted-foreground text-sm">{t("shared_video")}</p>
+          </div>
         </div>
         <video
           src={video.signedUrl}

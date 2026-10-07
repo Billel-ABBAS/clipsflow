@@ -31,6 +31,11 @@ import { buttonVariants } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
 import type { OverlayElement } from "@/lib/clips/overlays";
 import type { ClipStatus, SubtitleCustomizations } from "@/lib/clips/types";
+import {
+  getGalleryCardSelectionClassName,
+  getGalleryScoreClassName,
+  getGalleryStatusClassName,
+} from "@/lib/clips/gallery-presentation";
 import { cn } from "@/lib/utils";
 
 import {
@@ -99,32 +104,37 @@ function StatusBadge({ status, t }: { status: ClipStatus; t: TFn }) {
     pending: {
       icon: <Clock className="h-3 w-3" />,
       labelKey: "gallery_status_pending",
-      cls: "text-muted-foreground",
+      cls: getGalleryStatusClassName("pending"),
     },
     processing: {
       icon: <Loader2 className="h-3 w-3 animate-spin" />,
       labelKey: "gallery_status_processing",
-      cls: "text-yellow-500",
+      cls: getGalleryStatusClassName("processing"),
     },
     completing: {
       icon: <Loader2 className="h-3 w-3 animate-spin" />,
       labelKey: "gallery_status_completing",
-      cls: "text-yellow-500",
+      cls: getGalleryStatusClassName("completing"),
     },
     completed: {
       icon: <CheckCircle className="h-3 w-3" />,
       labelKey: "gallery_status_completed",
-      cls: "text-emerald-500",
+      cls: getGalleryStatusClassName("completed"),
     },
     failed: {
       icon: <AlertCircle className="h-3 w-3" />,
       labelKey: "gallery_status_failed",
-      cls: "text-red-500",
+      cls: getGalleryStatusClassName("failed"),
     },
   };
   const { icon, labelKey, cls } = map[status] ?? map.pending;
   return (
-    <span className={cn("flex items-center gap-1 text-xs font-medium", cls)}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] leading-none font-medium",
+        cls,
+      )}
+    >
       {icon}
       {t(labelKey)}
     </span>
@@ -237,12 +247,20 @@ export function ClipsGallery({
         {clips.map((clip) => (
           <div
             key={clip.id}
-            className="border-border bg-card flex flex-col gap-3 overflow-hidden rounded-xl border p-4"
+            data-download-selected={
+              selectedForDownload.has(clip.id) || undefined
+            }
+            className={cn(
+              "border-border/90 bg-card hover:border-primary/35 focus-within:border-primary/50 focus-within:ring-primary/20 flex min-w-0 flex-col gap-3 overflow-hidden rounded-xl border p-4 transition-colors duration-150 focus-within:ring-1",
+              getGalleryCardSelectionClassName(
+                selectedForDownload.has(clip.id),
+              ),
+            )}
           >
             {showLibraryControls &&
             clip.status === "completed" &&
             clip.video_url ? (
-              <label className="text-muted-foreground flex cursor-pointer items-center gap-2 text-xs">
+              <label className="text-muted-foreground hover:text-foreground flex w-fit cursor-pointer items-center gap-2 rounded-md text-xs transition-colors">
                 <input
                   type="checkbox"
                   checked={selectedForDownload.has(clip.id)}
@@ -254,7 +272,7 @@ export function ClipsGallery({
                       return next;
                     });
                   }}
-                  className="accent-primary size-4"
+                  className="accent-primary border-border focus-visible:outline-ring size-4 rounded focus-visible:outline-2 focus-visible:outline-offset-2"
                   aria-label={t("gallery_select_for_download")}
                 />
                 {t("gallery_select_for_download")}
@@ -301,11 +319,7 @@ export function ClipsGallery({
                     <span
                       className={cn(
                         "inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold",
-                        clip.score >= 80
-                          ? "bg-emerald-500/15 text-emerald-600"
-                          : clip.score >= 50
-                            ? "bg-amber-500/15 text-amber-600"
-                            : "bg-red-500/15 text-red-600",
+                        getGalleryScoreClassName(clip.score),
                       )}
                       title={t("gallery_hook_score_tooltip")}
                     >
@@ -340,7 +354,7 @@ export function ClipsGallery({
                 {formatDate(clip.created_at)}
               </p>
               {clip.status === "failed" && clip.error_message && (
-                <p className="text-xs text-red-500">
+                <p className="text-destructive text-xs">
                   {clip.error_message.startsWith("no_speech_detected:")
                     ? t("errors.no_speech_detected")
                     : clip.error_message.startsWith("source_too_large:")

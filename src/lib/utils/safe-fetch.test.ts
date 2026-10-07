@@ -95,7 +95,7 @@ describe("safeFetch — SSRF et redirections", () => {
   });
 
   it("permet le stockage Docker HTTP exact sans DNS et bloque sa redirection", async () => {
-    const allowHttpOrigin = "http://127.0.0.1:54321";
+    const allowHttpOrigin = "http://127.0.0.1:55321";
     const lookup = vi.fn();
     const fetchImpl = vi
       .fn()

@@ -56,11 +56,8 @@ function assertDuration(
 
 async function main(): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), "clipsflow-shorts-media-"));
-  const twoHourAudio = join(directory, "synthetic-two-hour-audio.m4a");
-  const twentyMinuteVideo = join(
-    directory,
-    "synthetic-twenty-minute-video.mp4",
-  );
+  const fourHourAudio = join(directory, "synthetic-four-hour-audio.m4a");
+  const fourHourVideo = join(directory, "synthetic-four-hour-video.mp4");
   let lastAudioChunk: string | null = null;
 
   try {
@@ -72,7 +69,7 @@ async function main(): Promise<void> {
         "-f",
         "lavfi",
         "-i",
-        "sine=frequency=440:sample_rate=16000:duration=7200",
+        "sine=frequency=440:sample_rate=16000:duration=14400",
         "-ac",
         "1",
         "-c:a",
@@ -80,28 +77,28 @@ async function main(): Promise<void> {
         "-b:a",
         "16k",
         "-y",
-        twoHourAudio,
+        fourHourAudio,
       ],
-      "two-hour audio",
+      "four-hour audio",
     );
 
-    const audioProbe = await probeLongformMedia(twoHourAudio);
+    const audioProbe = await probeLongformMedia(fourHourAudio);
     assertDuration(
       audioProbe.durationSeconds,
-      7_199,
-      7_200.5,
-      "two-hour audio",
+      14_399,
+      14_400.5,
+      "four-hour audio",
     );
     if (
       assertLongformEpisodeDuration(Math.round(audioProbe.durationSeconds)) !==
-      7_200
+      14_400
     ) {
       throw new Error(
-        "two-hour audio: rounded duration was not accepted at the limit",
+        "four-hour audio: rounded duration was not accepted at the limit",
       );
     }
     if (audioProbe.hasVideo) {
-      throw new Error("two-hour audio: unexpected video stream");
+      throw new Error("four-hour audio: unexpected video stream");
     }
 
     const chunks = buildLongformAudioChunkRanges(audioProbe.durationSeconds);
@@ -110,22 +107,22 @@ async function main(): Promise<void> {
       chunks.length < 12 ||
       chunks[0]?.start_seconds !== 0 ||
       !lastChunk ||
-      lastChunk.end_seconds < 7_199 ||
-      lastChunk.end_seconds > 7_200.5
+      lastChunk.end_seconds < 14_399 ||
+      lastChunk.end_seconds > 14_400.5
     ) {
       throw new Error(
-        "two-hour audio: chunk plan does not cover the full source",
+        "four-hour audio: chunk plan does not cover the full source",
       );
     }
 
     lastAudioChunk = await extractLongformAudioChunk(
-      twoHourAudio,
+      fourHourAudio,
       lastChunk.start_seconds,
       lastChunk.end_seconds,
-      "local-two-hour-smoke",
+      "local-four-hour-smoke",
     );
     if ((await stat(lastAudioChunk)).size < 1) {
-      throw new Error("two-hour audio: final transcription chunk is empty");
+      throw new Error("four-hour audio: final transcription chunk is empty");
     }
 
     await runFfmpeg(
@@ -136,11 +133,11 @@ async function main(): Promise<void> {
         "-f",
         "lavfi",
         "-i",
-        "color=c=blue:s=160x90:r=1:d=1200",
+        "color=c=blue:s=160x90:r=1:d=14400",
         "-f",
         "lavfi",
         "-i",
-        "sine=frequency=660:sample_rate=16000:duration=1200",
+        "sine=frequency=660:sample_rate=16000:duration=14400",
         "-shortest",
         "-c:v",
         "mpeg4",
@@ -153,31 +150,31 @@ async function main(): Promise<void> {
         "-b:a",
         "16k",
         "-y",
-        twentyMinuteVideo,
+        fourHourVideo,
       ],
-      "twenty-minute audio-video",
+      "four-hour audio-video",
     );
 
-    const videoProbe = await probeLongformMedia(twentyMinuteVideo);
+    const videoProbe = await probeLongformMedia(fourHourVideo);
     assertDuration(
       videoProbe.durationSeconds,
-      1_199,
-      1_200.5,
-      "twenty-minute video",
+      14_399,
+      14_400.5,
+      "four-hour video",
     );
     if (
       assertLongformEpisodeDuration(Math.round(videoProbe.durationSeconds)) !==
-      1_200
+      14_400
     ) {
       throw new Error(
-        "twenty-minute video: rounded duration was not accepted at the limit",
+        "four-hour video: rounded duration was not accepted at the limit",
       );
     }
     if (!videoProbe.hasVideo) {
-      throw new Error("twenty-minute video: video stream was not detected");
+      throw new Error("four-hour video: video stream was not detected");
     }
 
-    const visualFrames = await extractCandidateVisualFrames(twentyMinuteVideo, [
+    const visualFrames = await extractCandidateVisualFrames(fourHourVideo, [
       {
         id: "local-media-smoke",
         index: 0,
@@ -194,7 +191,7 @@ async function main(): Promise<void> {
       frames.some((frame) => frame.bytes.byteLength > 400 * 1024)
     ) {
       throw new Error(
-        "twenty-minute video: bounded visual frame extraction failed",
+        "four-hour video: bounded visual frame extraction failed",
       );
     }
 
