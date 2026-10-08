@@ -1359,6 +1359,19 @@
   line-height: 1.35;
 }
 
+.readinessNotice {
+  grid-column: 1 / -1;
+  margin: 0;
+  border: 1px solid rgb(113 88 245 / 34%);
+  border-left: 3px solid #806bff;
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: #bac8e4;
+  background: rgb(32 28 68 / 48%);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .modeChoice input,
 .checkboxRow input {
   accent-color: #755cff;

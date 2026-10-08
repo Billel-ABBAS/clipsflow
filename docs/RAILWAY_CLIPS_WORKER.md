@@ -28,6 +28,14 @@ CLIPS_AI_BUDGET_AUTHORIZED=false
 CLIPS_VISUAL_ANALYSIS_ENABLED=false
 ```
 
+Le site Vercel utilise aussi `SHORTS_ANALYSIS_WORKER_READY=false` comme garde
+d'admission. Ne définir cette variable à `true` côté application web qu'après
+avoir provisionné et déployé ce worker séparé, configuré son budget et ses
+fournisseurs côté Railway, puis validé un smoke authentifié sans données
+utilisateur. La variable n'active pas le worker et ne remplace pas
+`SHORTS_ANALYSIS_WORKER_ENABLED=true` sur le service Railway. En son absence,
+l'interface et l'API refusent de mettre une analyse en file.
+
 Le quota mensuel est résolu par l'application web, pas par ce worker, via
 `SHORTS_ANALYSIS_MONTHLY_SOURCE_SECONDS_FREE`, `_SOLO`, `_PRO` et `_STUDIO`.
 Les valeurs sont des secondes de source et doivent être choisies selon l'offre
@@ -228,10 +236,15 @@ sa confirmation par l’utilisateur.
 5. Pour la production seulement après ces preuves : vérifier l'historique des
    migrations plutôt que les rejouer (les 12 migrations Shorts autorisées sont
    déjà appliquées), activer `CLIPS_WORKER_ENABLED=true` côté worker Railway,
-   déployer le garde de coupure et définir `CLIPS_WORKER_BACKEND=railway` côté Vercel.
-   Le fichier `vercel.json` ne déclare plus de cron de traitement : Railway est
-   l'unique dispatcher. Ne livrer cette suppression qu'après avoir vérifié que
-   le worker Railway de production est prêt, afin d'éviter une interruption.
+   déployer le garde de coupure et définir `CLIPS_WORKER_BACKEND=railway` côté
+   Vercel. Après vérification du worker et du garde de coûts, définir aussi
+   `CLIPS_WORKER_ENABLED=true` côté Vercel : cette variable distincte en pratique
+   contrôle l'admission des demandes dans les API de rendu. Son absence ou sa
+   valeur `false` garde les nouveaux rendus bloqués sans réserver de quota,
+   même lorsque Railway traite correctement le cron. Le fichier `vercel.json`
+   ne déclare plus de cron de traitement : Railway est l'unique dispatcher. Ne
+   livrer cette suppression qu'après avoir vérifié que le worker Railway de
+   production est prêt, afin d'éviter une interruption.
 6. Les trois anciens services Railway sont déjà supprimés comme indiqué plus
    haut. Calpyra-AI et Cal-Halal restent hors de ce projet et ne doivent pas
    être modifiés.

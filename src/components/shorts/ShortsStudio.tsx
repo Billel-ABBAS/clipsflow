@@ -354,6 +354,8 @@ type Copy = {
   audioVideoSourceRequired: string;
   analysisQuotaExceeded: string;
   analysisUnavailable: string;
+  analysisReadinessUnavailable: string;
+  videoAnalysisReadinessUnavailable: string;
   projectError: string;
   saveError: string;
   noEpisode: string;
@@ -490,6 +492,10 @@ const COPY: Record<"fr" | "en", Copy> = {
       "Le quota mensuel d’analyse de sources est atteint pour votre offre.",
     analysisUnavailable:
       "L’analyse IA est temporairement indisponible. Votre fichier est conservé ; réessayez dans quelques minutes.",
+    analysisReadinessUnavailable:
+      "Le service d’analyse Shorts n’est pas encore prêt dans cet environnement. Vous pouvez importer et préparer votre source ; l’analyse sera disponible après la mise en service du worker et de sa configuration fournisseur.",
+    videoAnalysisReadinessUnavailable:
+      "L’analyse audio est prête, mais le fournisseur d’analyse vidéo n’est pas configuré. Le mode Audio reste disponible.",
     projectError:
       "Impossible de créer ou de lire le projet d’analyse. Vérifiez la source puis réessayez.",
     saveError:
@@ -626,6 +632,10 @@ const COPY: Record<"fr" | "en", Copy> = {
       "Your plan’s monthly source-analysis quota has been reached.",
     analysisUnavailable:
       "AI analysis is temporarily unavailable. Your file is safe; please try again in a few minutes.",
+    analysisReadinessUnavailable:
+      "The Shorts analysis service is not ready in this environment. You can upload and prepare your source; analysis will be available after the worker and its provider configuration are deployed.",
+    videoAnalysisReadinessUnavailable:
+      "Audio analysis is ready, but the visual analysis provider is not configured. Audio mode remains available.",
     projectError:
       "The analysis project could not be created or read. Check the source and try again.",
     saveError: "The selection was not saved. No render was started.",
@@ -3442,7 +3452,12 @@ export function ShortsStudio({
                                 value={mode}
                                 checked={checked}
                                 onChange={() => setAnalysisMode(mode)}
-                                disabled={creatingProject}
+                                disabled={
+                                  creatingProject ||
+                                  (!isAudio &&
+                                    !providerCapabilities.videoAnalysis &&
+                                    !previewOnly)
+                                }
                               />
                               <span>
                                 <strong>
@@ -3461,6 +3476,18 @@ export function ShortsStudio({
                         })}
                       </div>
                     </fieldset>
+                    {!previewOnly && !providerCapabilities.audioAnalysis ? (
+                      <p className={styles.readinessNotice} role="status">
+                        {copy.analysisReadinessUnavailable}
+                      </p>
+                    ) : null}
+                    {!previewOnly &&
+                    providerCapabilities.audioAnalysis &&
+                    !providerCapabilities.videoAnalysis ? (
+                      <p className={styles.readinessNotice} role="status">
+                        {copy.videoAnalysisReadinessUnavailable}
+                      </p>
+                    ) : null}
 
                     <label className={styles.wideField}>
                       {copy.instructionsLabel}
@@ -3512,6 +3539,10 @@ export function ShortsStudio({
                       className={styles.primaryButton}
                       disabled={
                         creatingProject ||
+                        (!previewOnly &&
+                          (!providerCapabilities.audioAnalysis ||
+                            (analysisMode === "audio_video" &&
+                              !providerCapabilities.videoAnalysis))) ||
                         (sourceLoadError && availableEpisodes.length === 0) ||
                         availableEpisodes.length === 0 ||
                         sourceUploadState.status === "uploading"

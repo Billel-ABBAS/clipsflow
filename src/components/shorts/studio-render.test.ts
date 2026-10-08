@@ -3,6 +3,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ShortsStudio, type ShortsProject } from "./ShortsStudio";
 
+const unavailableCapabilities = {
+  audioAnalysis: false,
+  videoAnalysis: false,
+  creativeDirection: false,
+  elevenLabs: false,
+};
+
 afterEach(() => vi.unstubAllEnvs());
 
 describe("Studio visual truthfulness", () => {
@@ -11,7 +18,7 @@ describe("Studio visual truthfulness", () => {
       createElement(ShortsStudio, {
         locale: "fr",
         episodes: [],
-        providerCapabilities: { creativeDirection: false, elevenLabs: false },
+        providerCapabilities: unavailableCapabilities,
       }),
     );
     expect(html).toContain("Prêt à analyser");
@@ -19,6 +26,39 @@ describe("Studio visual truthfulness", () => {
     expect(html).not.toContain("Analyse IA en cours");
     expect(html).not.toContain("moments trouvés");
     expect(html).not.toContain("shorts-reference");
+    expect(html).toContain("Le service d’analyse Shorts n’est pas encore prêt");
+  });
+
+  it("keeps audio analysis available while clearly disabling video analysis", () => {
+    const html = renderToStaticMarkup(
+      createElement(ShortsStudio, {
+        locale: "fr",
+        episodes: [
+          {
+            id: "episode-ready",
+            title: "Podcast de démonstration",
+            sourceType: "upload",
+            durationSeconds: 1_200,
+            status: "ready",
+            createdAt: "2026-10-08T10:00:00.000Z",
+          },
+        ],
+        providerCapabilities: {
+          audioAnalysis: true,
+          videoAnalysis: false,
+          creativeDirection: false,
+          elevenLabs: false,
+        },
+      }),
+    );
+
+    expect(html).toContain(
+      "L’analyse audio est prête, mais le fournisseur d’analyse vidéo n’est pas configuré",
+    );
+    const videoModeInput = html
+      .match(/<input[^>]*>/gu)
+      ?.find((input) => input.includes('value="audio_video"'));
+    expect(videoModeInput).toContain('disabled=""');
   });
 
   it("never substitutes Canva media or invented cues in the real production studio", () => {
@@ -52,7 +92,7 @@ describe("Studio visual truthfulness", () => {
         episodes: [],
         initialProject: project,
         viewerName: "Jean Dupont",
-        providerCapabilities: { creativeDirection: false, elevenLabs: false },
+        providerCapabilities: unavailableCapabilities,
         designReference: {
           sourcePoster: "/images/shorts-reference/source.webp",
           candidatePosters: ["/images/shorts-reference/moment-1.webp"],
@@ -81,7 +121,7 @@ describe("Studio visual truthfulness", () => {
         locale: "fr",
         episodes: [],
         previewOnly: true,
-        providerCapabilities: { creativeDirection: false, elevenLabs: false },
+        providerCapabilities: unavailableCapabilities,
       }),
     );
     expect(html).toContain('data-preview-only="true"');

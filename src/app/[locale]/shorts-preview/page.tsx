@@ -134,7 +134,12 @@ export default async function ShortsPreviewPage({
               ],
             }
       }
-      providerCapabilities={{ creativeDirection: true, elevenLabs: true }}
+      providerCapabilities={{
+        audioAnalysis: true,
+        videoAnalysis: true,
+        creativeDirection: true,
+        elevenLabs: true,
+      }}
     />
   );
 }
