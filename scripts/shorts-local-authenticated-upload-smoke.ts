@@ -123,6 +123,7 @@ async function main(): Promise<void> {
     const missingStudioMarkers = [
       "STUDIO SHORTS",
       "Importer une vidéo ou un podcast",
+      "Le service d’analyse Shorts n’est pas encore prêt",
     ].filter((marker) => !studioMarkup.includes(marker));
     if (studioPage.status !== 200 || missingStudioMarkers.length > 0) {
       const location = studioPage.headers.get("location");
@@ -288,7 +289,7 @@ async function main(): Promise<void> {
     }
 
     console.log(
-      "Local authenticated Shorts Studio smoke test passed: authenticated French Studio rendered its import controls, anonymous upload and source-preview requests rejected, authenticated TUS upload finalized and replayed through a private signed URL, and paid-AI analysis remained blocked without budget authorization.",
+      "Local authenticated Shorts Studio smoke test passed: authenticated French Studio rendered its import controls and closed-readiness notice, anonymous upload and source-preview requests rejected, authenticated TUS upload finalized and replayed through a private signed URL, and analysis remained blocked by the configured budget/worker readiness gate.",
     );
   } finally {
     if (storagePath) {

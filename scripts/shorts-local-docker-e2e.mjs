@@ -168,7 +168,12 @@ async function waitForRunner() {
   throw new Error("The isolated Next server did not start within 45 seconds");
 }
 
-async function startRunner(local, containers, budgetAuthorized) {
+async function startRunner(
+  local,
+  containers,
+  budgetAuthorized,
+  analysisWorkerReady = budgetAuthorized,
+) {
   const environment = [
     "NODE_ENV=development",
     "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321",
@@ -177,6 +182,7 @@ async function startRunner(local, containers, budgetAuthorized) {
     "NEXT_PUBLIC_APP_URL=http://127.0.0.1:3104",
     "CLIPSFLOW_ISOLATED_LOCAL_SMOKE=true",
     `CLIPS_AI_BUDGET_AUTHORIZED=${budgetAuthorized ? "true" : "false"}`,
+    `SHORTS_ANALYSIS_WORKER_READY=${analysisWorkerReady ? "true" : "false"}`,
     "CLIPS_ELEVENLABS_ENABLED=false",
     "CLIPS_CREATIVE_DIRECTOR_ENABLED=false",
     "CLIPS_JEV_HOOK_SCORE=off",
@@ -294,6 +300,10 @@ async function main() {
     await runSmoke(local, "scripts/shorts-local-authenticated-upload-smoke.ts");
     await stopRunner();
 
+    await startRunner(local, containers, true, false);
+    await runSmoke(local, "scripts/shorts-local-authenticated-upload-smoke.ts");
+    await stopRunner();
+
     await startRunner(local, containers, true);
     await runSmoke(local, "scripts/shorts-local-analysis-smoke.ts");
     await runSmoke(local, "scripts/youtube-local-publication-smoke.ts");
@@ -310,7 +320,7 @@ async function main() {
     );
 
     console.log(
-      "Local Docker Shorts E2E passed: authenticated Studio, fail-closed AI budget, TUS upload/resume, audio and audio-video analysis, creator selection, renders/downloads, motion, YouTube mock, and 27 SQL assertions.",
+      "Local Docker Shorts E2E passed: authenticated Studio, closed-budget and worker-not-ready fail-closed gates, TUS upload/resume, audio and audio-video analysis, creator selection, renders/downloads, motion, YouTube mock, and 27 SQL assertions.",
     );
   } finally {
     await stopRunner();

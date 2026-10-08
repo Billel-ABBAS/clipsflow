@@ -17,10 +17,13 @@ import {
   createShortsProjectSchema,
   type ShortsAnalysisMode,
 } from "@/lib/shorts/project-contract";
+import {
+  resolveShortsProviderCapabilities,
+  type ShortsProviderEnvironment,
+} from "@/lib/shorts/provider-capabilities";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { routing } from "@/i18n/routing";
-import { resolveShortsVisualConfig } from "@/lib/shorts/visual-analysis";
 import { resolveShortsAnalysisQuotaSeconds } from "@/lib/shorts/analysis-quota";
 
 export const runtime = "nodejs";
@@ -94,10 +97,6 @@ async function isShortsEnabledForCurrentUser(userId: string): Promise<boolean> {
   const cookieStore = await cookies();
   const locale = cookieStore.get("NEXT_LOCALE")?.value ?? routing.defaultLocale;
   return isClipsEnabled({ locale, userId });
-}
-
-function analysisBudgetIsAuthorized(): boolean {
-  return process.env.CLIPS_AI_BUDGET_AUTHORIZED === "true";
 }
 
 function unavailableResponse(): NextResponse {
@@ -248,7 +247,10 @@ export async function POST(request: Request): Promise<Response> {
   if (!(await isShortsEnabledForCurrentUser(user.id))) {
     return NextResponse.json({ error: "not_yet_available" }, { status: 403 });
   }
-  if (!analysisBudgetIsAuthorized()) {
+  const providerCapabilities = resolveShortsProviderCapabilities(
+    process.env as ShortsProviderEnvironment,
+  );
+  if (!providerCapabilities.audioAnalysis) {
     return unavailableResponse();
   }
 
@@ -297,13 +299,13 @@ export async function POST(request: Request): Promise<Response> {
   if (!parsed.success) {
     return NextResponse.json({ error: "validation_error" }, { status: 400 });
   }
+  if (
+    parsed.data.analysis_mode === "audio_video" &&
+    !providerCapabilities.videoAnalysis
+  ) {
+    return unavailableResponse();
+  }
   if (parsed.data.analysis_mode === "audio_video") {
-    try {
-      resolveShortsVisualConfig();
-    } catch (error) {
-      logSubmissionFailure("visual_config", error);
-      return unavailableResponse();
-    }
     const { data: episode, error: episodeError } = await admin
       .from("episodes")
       .select("id, source_type, source_storage_path, source_url, status")
