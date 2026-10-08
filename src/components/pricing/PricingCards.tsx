@@ -80,6 +80,12 @@ export function PricingCards({ locale, isLoggedIn }: PricingCardsProps) {
           <CardContent className="flex-1">
             <ul className="text-muted-foreground space-y-2 text-sm">
               <li>{t(`${plan}.feature1`)}</li>
+              <li
+                className="text-foreground font-medium"
+                data-testid={`pricing-source-quota-${plan}`}
+              >
+                {t(`${plan}.sourceQuota`)}
+              </li>
               <li>{t(`${plan}.feature2`)}</li>
               <li>{t(`${plan}.feature3`)}</li>
             </ul>
