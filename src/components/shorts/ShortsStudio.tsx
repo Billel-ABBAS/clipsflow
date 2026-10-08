@@ -353,6 +353,7 @@ type Copy = {
   genericError: string;
   audioVideoSourceRequired: string;
   analysisQuotaExceeded: string;
+  analysisQuotaUnconfigured: string;
   analysisUnavailable: string;
   analysisReadinessUnavailable: string;
   videoAnalysisReadinessUnavailable: string;
@@ -490,6 +491,8 @@ const COPY: Record<"fr" | "en", Copy> = {
       "Le mode audio + vidéo nécessite un fichier vidéo. Pour un podcast audio, choisissez le mode Audio.",
     analysisQuotaExceeded:
       "Le quota mensuel d’analyse de sources est atteint pour votre offre.",
+    analysisQuotaUnconfigured:
+      "Le quota mensuel d’analyse n’est pas encore configuré pour votre offre. Aucune analyse n’a été lancée ; réessayez après la configuration de votre forfait.",
     analysisUnavailable:
       "L’analyse IA est temporairement indisponible. Votre fichier est conservé ; réessayez dans quelques minutes.",
     analysisReadinessUnavailable:
@@ -630,6 +633,8 @@ const COPY: Record<"fr" | "en", Copy> = {
       "Audio + video mode requires a video file. For an audio-only podcast, choose Audio mode.",
     analysisQuotaExceeded:
       "Your plan’s monthly source-analysis quota has been reached.",
+    analysisQuotaUnconfigured:
+      "The monthly source-analysis allowance is not configured for your plan yet. No analysis was started; try again after the plan allowance is configured.",
     analysisUnavailable:
       "AI analysis is temporarily unavailable. Your file is safe; please try again in a few minutes.",
     analysisReadinessUnavailable:
@@ -902,6 +907,31 @@ export function isShortsAnalysisUnavailable(
   errorCode: unknown,
 ): boolean {
   return status >= 500 || errorCode === "analysis_temporarily_unavailable";
+}
+
+export type ShortsAnalysisErrorCopyKey =
+  | "analysisQuotaUnconfigured"
+  | "analysisQuotaExceeded"
+  | "analysisUnavailable"
+  | "audioVideoSourceRequired"
+  | "projectError";
+
+export function resolveShortsAnalysisErrorCopyKey(
+  status: number,
+  errorCode: unknown,
+): ShortsAnalysisErrorCopyKey {
+  if (errorCode === "analysis_quota_unconfigured") {
+    return "analysisQuotaUnconfigured";
+  }
+  if (errorCode === "analysis_quota_exceeded") {
+    return "analysisQuotaExceeded";
+  }
+  if (errorCode === "audio_video_requires_video_source") {
+    return "audioVideoSourceRequired";
+  }
+  return isShortsAnalysisUnavailable(status, errorCode)
+    ? "analysisUnavailable"
+    : "projectError";
 }
 
 export function buildProductionProfile(input: {
@@ -1731,13 +1761,7 @@ export function ShortsStudio({
         if (!response.ok || !nextProjectId || !isProjectStatus(nextStatus)) {
           const errorCode = safeApiError(payload, "");
           setCreateError(
-            isShortsAnalysisUnavailable(response.status, errorCode)
-              ? copy.analysisUnavailable
-              : errorCode === "audio_video_requires_video_source"
-                ? copy.audioVideoSourceRequired
-                : errorCode === "analysis_quota_exceeded"
-                  ? copy.analysisQuotaExceeded
-                  : copy.projectError,
+            copy[resolveShortsAnalysisErrorCopyKey(response.status, errorCode)],
           );
           return;
         }
@@ -1763,13 +1787,7 @@ export function ShortsStudio({
     },
     [
       analysisMode,
-      copy.audioVideoSourceRequired,
-      copy.analysisUnavailable,
-      copy.analysisQuotaExceeded,
-      copy.durationInvalid,
-      copy.genericError,
-      copy.noEpisode,
-      copy.projectError,
+      copy,
       designPreviewNotice,
       durationSeconds,
       instructions,
