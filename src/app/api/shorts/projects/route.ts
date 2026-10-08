@@ -99,9 +99,13 @@ async function isShortsEnabledForCurrentUser(userId: string): Promise<boolean> {
   return isClipsEnabled({ locale, userId });
 }
 
-function unavailableResponse(): NextResponse {
+function unavailableResponse(
+  errorCode:
+    | "analysis_temporarily_unavailable"
+    | "analysis_quota_unconfigured" = "analysis_temporarily_unavailable",
+): NextResponse {
   return NextResponse.json(
-    { error: "analysis_temporarily_unavailable", retry_after_seconds: 300 },
+    { error: errorCode, retry_after_seconds: 300 },
     { status: 503, headers: { "Retry-After": "300" } },
   );
 }
@@ -143,8 +147,9 @@ function submissionError(errorCode: unknown): NextResponse | null {
       );
     case "budget_exceeded":
     case "budget_unconfigured":
-    case "analysis_quota_unconfigured":
       return unavailableResponse();
+    case "analysis_quota_unconfigured":
+      return unavailableResponse("analysis_quota_unconfigured");
     case "analysis_quota_exceeded":
       return NextResponse.json(
         { error: "analysis_quota_exceeded" },
@@ -355,7 +360,7 @@ export async function POST(request: Request): Promise<Response> {
   );
   if (monthlyQuotaSeconds === null) {
     logSubmissionFailure("monthly_quota_configuration");
-    return unavailableResponse();
+    return unavailableResponse("analysis_quota_unconfigured");
   }
 
   const { data, error } = await admin.rpc(

@@ -9,6 +9,7 @@ import {
   isValidShortsSourceDuration,
   normaliseShortsProject,
   resolveShortsCandidatePage,
+  resolveShortsAnalysisErrorCopyKey,
   SHORTS_MAX_SOURCE_DURATION_SECONDS,
   SHORTS_MIN_SOURCE_DURATION_SECONDS,
 } from "./ShortsStudio";
@@ -59,6 +60,24 @@ describe("ShortsStudio pure boundaries", () => {
     ).toBe(true);
     expect(isShortsAnalysisUnavailable(503, null)).toBe(true);
     expect(isShortsAnalysisUnavailable(400, "episode_not_found")).toBe(false);
+  });
+
+  it("explains an unconfigured plan quota instead of suggesting a transient retry", () => {
+    expect(
+      resolveShortsAnalysisErrorCopyKey(503, "analysis_quota_unconfigured"),
+    ).toBe("analysisQuotaUnconfigured");
+    expect(
+      resolveShortsAnalysisErrorCopyKey(402, "analysis_quota_exceeded"),
+    ).toBe("analysisQuotaExceeded");
+    expect(
+      resolveShortsAnalysisErrorCopyKey(
+        503,
+        "analysis_temporarily_unavailable",
+      ),
+    ).toBe("analysisUnavailable");
+    expect(resolveShortsAnalysisErrorCopyKey(400, "episode_not_found")).toBe(
+      "projectError",
+    );
   });
 
   it("formats timestamps without a time-zone-dependent Date conversion", () => {
