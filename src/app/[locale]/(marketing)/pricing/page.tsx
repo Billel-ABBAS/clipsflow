@@ -49,6 +49,7 @@ export default async function PricingPage({
         <PricingCards locale={locale} isLoggedIn={!!user} />
 
         <div className="text-muted-foreground mt-12 text-center text-sm">
+          <p>{t("quota_note")}</p>
           <p>{t("note")}</p>
         </div>
       </main>
