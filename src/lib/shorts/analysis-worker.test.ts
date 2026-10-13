@@ -25,12 +25,15 @@ describe("fenced Shorts analysis worker", () => {
   it("does not claim work when the worker switch is off", async () => {
     const rpc = vi.fn();
     const admin = { rpc } as unknown as SupabaseClient;
+    const onSuccessfulQueuePoll = vi.fn(async () => true);
     await expect(
       processOneShortsAnalysisJob(admin, {
         environment: { SHORTS_ANALYSIS_WORKER_ENABLED: "false" },
+        onSuccessfulQueuePoll,
       }),
     ).resolves.toEqual({ kind: "idle" });
     expect(rpc).not.toHaveBeenCalled();
+    expect(onSuccessfulQueuePoll).not.toHaveBeenCalled();
   });
 
   it("leaves paid analysis queued until the budget is authorized", async () => {
@@ -64,14 +67,34 @@ describe("fenced Shorts analysis worker", () => {
   it("returns idle when the fenced queue has no job", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: [], error: null });
     const admin = { rpc } as unknown as SupabaseClient;
+    const onSuccessfulQueuePoll = vi.fn(async () => true);
     await expect(
       processOneShortsAnalysisJob(admin, {
         environment: validEnvironment,
+        onSuccessfulQueuePoll,
       }),
     ).resolves.toEqual({ kind: "idle" });
+    expect(onSuccessfulQueuePoll).toHaveBeenCalledOnce();
     expect(rpc).toHaveBeenCalledWith("shorts_claim_analysis_job", {
       p_lease_seconds: 1_800,
     });
+  });
+
+  it("does not record health when the queue poll fails", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: new Error("database unavailable"),
+    });
+    const admin = { rpc } as unknown as SupabaseClient;
+    const onSuccessfulQueuePoll = vi.fn(async () => true);
+
+    await expect(
+      processOneShortsAnalysisJob(admin, {
+        environment: validEnvironment,
+        onSuccessfulQueuePoll,
+      }),
+    ).rejects.toThrow("analysis_queue_unavailable");
+    expect(onSuccessfulQueuePoll).not.toHaveBeenCalled();
   });
 
   it("transcribes a queued long-form project and persists its music and motion recommendations", async () => {
