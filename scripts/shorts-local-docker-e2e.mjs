@@ -401,6 +401,16 @@ async function main() {
     previousHeartbeat = await readLocalWorkerHeartbeat(containers.databaseName);
     heartbeatCaptured = true;
     await recordLocalWorkerHeartbeat();
+
+    // Exercise the application-side rollback with a fresh worker heartbeat:
+    // readiness=false must still reject analysis before any queue write.
+    await stopRunner();
+    await startRunner(local, containers, true, false);
+    await runSmoke(local, "scripts/shorts-local-authenticated-upload-smoke.ts");
+    await stopRunner();
+    await assertAnalysisQueueEmpty(containers.databaseName);
+
+    await startRunner(local, containers, true, true);
     await runSmoke(local, "scripts/shorts-local-analysis-smoke.ts");
     await runSmoke(local, "scripts/youtube-local-publication-smoke.ts");
     await runSmoke(local, "scripts/shorts-tus-resume-local-smoke.ts", false);
@@ -420,7 +430,7 @@ async function main() {
     );
 
     console.log(
-      "Local Docker Shorts E2E passed: authenticated Studio, closed-budget and stale-heartbeat fail-closed gates, a successful idle analysis-worker poll, TUS upload/resume, audio and audio-video analysis, creator selection, renders/downloads, motion, YouTube mock, and 36 SQL assertions.",
+      "Local Docker Shorts E2E passed: authenticated Studio, closed-budget/stale-heartbeat gates, readiness-off rollback with a fresh heartbeat and empty analysis queue, successful worker poll, resumable TUS upload, audio and audio-video analysis, creator selection, renders/downloads, motion, YouTube mock, and 36 SQL assertions.",
     );
   } finally {
     await stopRunner();
