@@ -20,10 +20,17 @@ const configuredEnvironment: ShortsProviderEnvironment = {
   ELEVENLABS_API_KEY: "private-test-key",
 };
 
+const withFreshWorker = (
+  environment: ShortsProviderEnvironment = configuredEnvironment,
+) =>
+  resolveShortsProviderCapabilities(environment, {
+    analysisWorkerHeartbeatFresh: true,
+  });
+
 describe("Shorts provider capabilities", () => {
   it("fails closed when provider budgets are not authorized", () => {
     expect(
-      resolveShortsProviderCapabilities({
+      withFreshWorker({
         ...configuredEnvironment,
         CLIPS_AI_BUDGET_AUTHORIZED: "false",
       }),
@@ -36,7 +43,7 @@ describe("Shorts provider capabilities", () => {
   });
 
   it("exposes analysis and creative providers only when their server configurations are ready", () => {
-    expect(resolveShortsProviderCapabilities(configuredEnvironment)).toEqual({
+    expect(withFreshWorker()).toEqual({
       audioAnalysis: true,
       videoAnalysis: true,
       creativeDirection: true,
@@ -44,8 +51,14 @@ describe("Shorts provider capabilities", () => {
     });
   });
 
+  it("does not treat the rollout flag as proof of a running worker", () => {
+    expect(
+      resolveShortsProviderCapabilities(configuredEnvironment).audioAnalysis,
+    ).toBe(false);
+  });
+
   it("keeps queued analysis closed until the separate worker is declared ready", () => {
-    const capabilities = resolveShortsProviderCapabilities({
+    const capabilities = withFreshWorker({
       ...configuredEnvironment,
       SHORTS_ANALYSIS_WORKER_READY: "false",
     });
@@ -58,14 +71,14 @@ describe("Shorts provider capabilities", () => {
 
   it("requires a transcription provider and a configured visual provider", () => {
     expect(
-      resolveShortsProviderCapabilities({
+      withFreshWorker({
         ...configuredEnvironment,
         GROQ_API_KEY: undefined,
         OPENAI_API_KEY: undefined,
       }).audioAnalysis,
     ).toBe(false);
 
-    const audioOnly = resolveShortsProviderCapabilities({
+    const audioOnly = withFreshWorker({
       ...configuredEnvironment,
       CLIPS_VISUAL_ANALYSIS_ENABLED: "false",
     });
@@ -75,25 +88,25 @@ describe("Shorts provider capabilities", () => {
 
   it("rejects public keys and model overrides that the workers will reject", () => {
     expect(
-      resolveShortsProviderCapabilities({
+      withFreshWorker({
         ...configuredEnvironment,
         NEXT_PUBLIC_ANTHROPIC_API_KEY: "misconfigured-public-key",
       }).creativeDirection,
     ).toBe(false);
     expect(
-      resolveShortsProviderCapabilities({
+      withFreshWorker({
         ...configuredEnvironment,
         CLIPS_CREATIVE_DIRECTOR_MODEL: "claude-opus-5",
       }).creativeDirection,
     ).toBe(false);
     expect(
-      resolveShortsProviderCapabilities({
+      withFreshWorker({
         ...configuredEnvironment,
         CLIPS_ELEVENLABS_MUSIC_MODEL: "unexpected-model",
       }).elevenLabs,
     ).toBe(false);
     expect(
-      resolveShortsProviderCapabilities({
+      withFreshWorker({
         ...configuredEnvironment,
         NEXT_PUBLIC_OPENAI_API_KEY: "misconfigured-public-key",
       }).audioAnalysis,

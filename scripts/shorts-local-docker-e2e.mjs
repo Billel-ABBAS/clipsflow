@@ -277,14 +277,104 @@ async function runDatabaseAssertions(databaseName, testFile) {
   );
 }
 
+async function assertAnalysisQueueEmpty(databaseName) {
+  const { output } = await run("docker", [
+    "exec",
+    databaseName,
+    "psql",
+    "-U",
+    "postgres",
+    "-d",
+    "postgres",
+    "-At",
+    "-c",
+    "select count(*) from public.shorts_analysis_jobs where status in ('queued', 'processing')",
+  ]);
+  if (output.trim() !== "0") {
+    throw new Error(
+      "Refusing to run the local analysis worker poll while the queue is non-empty",
+    );
+  }
+}
+
+async function readLocalWorkerHeartbeat(databaseName) {
+  const { output } = await run("docker", [
+    "exec",
+    databaseName,
+    "psql",
+    "-U",
+    "postgres",
+    "-d",
+    "postgres",
+    "-At",
+    "-c",
+    "select to_char(last_heartbeat_at at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US') || 'Z' from public.shorts_analysis_worker_health where singleton is true",
+  ]);
+  const value = output.trim();
+  if (value === "") return null;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/u.test(value)) {
+    throw new Error("The local worker heartbeat timestamp was not parseable");
+  }
+  return value;
+}
+
+async function restoreLocalWorkerHeartbeat(databaseName, originalValue) {
+  const sql =
+    originalValue === null
+      ? "delete from public.shorts_analysis_worker_health where singleton is true"
+      : `insert into public.shorts_analysis_worker_health (singleton, last_heartbeat_at) values (true, '${originalValue}'::timestamptz) on conflict (singleton) do update set last_heartbeat_at = excluded.last_heartbeat_at`;
+  await run("docker", [
+    "exec",
+    databaseName,
+    "psql",
+    "-U",
+    "postgres",
+    "-d",
+    "postgres",
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-c",
+    sql,
+  ]);
+  const restoredValue = await readLocalWorkerHeartbeat(databaseName);
+  if (restoredValue !== originalValue) {
+    throw new Error(
+      "The local worker heartbeat did not return to its prior state",
+    );
+  }
+}
+
+async function recordLocalWorkerHeartbeat() {
+  const { output } = await run("docker", [
+    "exec",
+    "--env",
+    "SHORTS_ANALYSIS_WORKER_ENABLED=true",
+    runnerName,
+    "./node_modules/.bin/tsx",
+    "scripts/shorts-analysis-worker.ts",
+  ]);
+  if (
+    !output.includes('"message":"worker_complete"') ||
+    !output.includes('"result":"idle"') ||
+    output.includes("worker_heartbeat_write_failed")
+  ) {
+    throw new Error(
+      "The local analysis worker did not complete an idle queue poll and record its health heartbeat",
+    );
+  }
+}
+
 async function main() {
   let imageBuilt = false;
+  let heartbeatCaptured = false;
+  let previousHeartbeat = null;
+  let containers;
   try {
     const status = await run("pnpm", ["supabase", "status", "-o", "env"], {
       secretOutput: true,
     });
     const local = parseLocalSupabaseStatus(status.output);
-    const containers = await discoverSupabaseContainers();
+    containers = await discoverSupabaseContainers();
 
     await run("docker", [
       "build",
@@ -300,11 +390,17 @@ async function main() {
     await runSmoke(local, "scripts/shorts-local-authenticated-upload-smoke.ts");
     await stopRunner();
 
-    await startRunner(local, containers, true, false);
+    // Even with rollout/configuration flags enabled, the stale database
+    // heartbeat must keep the API closed until the worker actually polls.
+    await startRunner(local, containers, true, true);
     await runSmoke(local, "scripts/shorts-local-authenticated-upload-smoke.ts");
     await stopRunner();
 
     await startRunner(local, containers, true);
+    await assertAnalysisQueueEmpty(containers.databaseName);
+    previousHeartbeat = await readLocalWorkerHeartbeat(containers.databaseName);
+    heartbeatCaptured = true;
+    await recordLocalWorkerHeartbeat();
     await runSmoke(local, "scripts/shorts-local-analysis-smoke.ts");
     await runSmoke(local, "scripts/youtube-local-publication-smoke.ts");
     await runSmoke(local, "scripts/shorts-tus-resume-local-smoke.ts", false);
@@ -318,16 +414,29 @@ async function main() {
       containers.databaseName,
       "supabase/tests/shorts_source_duration.sql",
     );
+    await runDatabaseAssertions(
+      containers.databaseName,
+      "supabase/tests/shorts_analysis_worker_health.sql",
+    );
 
     console.log(
-      "Local Docker Shorts E2E passed: authenticated Studio, closed-budget and worker-not-ready fail-closed gates, TUS upload/resume, audio and audio-video analysis, creator selection, renders/downloads, motion, YouTube mock, and 27 SQL assertions.",
+      "Local Docker Shorts E2E passed: authenticated Studio, closed-budget and stale-heartbeat fail-closed gates, a successful idle analysis-worker poll, TUS upload/resume, audio and audio-video analysis, creator selection, renders/downloads, motion, YouTube mock, and 36 SQL assertions.",
     );
   } finally {
     await stopRunner();
-    if (imageBuilt) {
-      await run("docker", ["image", "rm", imageName], {
-        allowFailure: true,
-      });
+    try {
+      if (heartbeatCaptured) {
+        await restoreLocalWorkerHeartbeat(
+          containers.databaseName,
+          previousHeartbeat,
+        );
+      }
+    } finally {
+      if (imageBuilt) {
+        await run("docker", ["image", "rm", imageName], {
+          allowFailure: true,
+        });
+      }
     }
   }
 }

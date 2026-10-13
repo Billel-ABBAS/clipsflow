@@ -17,10 +17,7 @@ import {
   createShortsProjectSchema,
   type ShortsAnalysisMode,
 } from "@/lib/shorts/project-contract";
-import {
-  resolveShortsProviderCapabilities,
-  type ShortsProviderEnvironment,
-} from "@/lib/shorts/provider-capabilities";
+import { resolveShortsProviderCapabilitiesForServer } from "@/lib/shorts/provider-capabilities-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { routing } from "@/i18n/routing";
@@ -252,9 +249,8 @@ export async function POST(request: Request): Promise<Response> {
   if (!(await isShortsEnabledForCurrentUser(user.id))) {
     return NextResponse.json({ error: "not_yet_available" }, { status: 403 });
   }
-  const providerCapabilities = resolveShortsProviderCapabilities(
-    process.env as ShortsProviderEnvironment,
-  );
+  const providerCapabilities =
+    await resolveShortsProviderCapabilitiesForServer();
   if (!providerCapabilities.audioAnalysis) {
     return unavailableResponse();
   }

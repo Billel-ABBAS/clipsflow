@@ -9,7 +9,10 @@ import {
 import { assertLongformOpenAIAvailable } from "./longform-openai";
 import { resolveShortsVisualConfig } from "./visual-analysis";
 
-export interface ShortsProviderEnvironment {
+export interface ShortsProviderEnvironment extends Record<
+  string,
+  string | undefined
+> {
   CLIPS_AI_BUDGET_AUTHORIZED?: string;
   SHORTS_ANALYSIS_WORKER_READY?: string;
   CLIPS_FORCE_OPENAI_WHISPER?: string;
@@ -40,6 +43,11 @@ export interface ShortsProviderCapabilities {
   elevenLabs: boolean;
 }
 
+export interface ShortsProviderHealth {
+  /** Must come from the protected database heartbeat, never an env flag. */
+  analysisWorkerHeartbeatFresh: boolean;
+}
+
 function hasPrivateKey(value: string | undefined): boolean {
   return Boolean(value?.trim());
 }
@@ -56,9 +64,9 @@ function matchesConfiguredModel(
  * Expose only readiness booleans to the browser; never serialize provider
  * keys, model errors, or other server configuration.
  */
-export function resolveShortsProviderCapabilities(
+export function isShortsAnalysisConfigurationEligible(
   environment: ShortsProviderEnvironment,
-): ShortsProviderCapabilities {
+): boolean {
   const paidCallsAuthorized = environment.CLIPS_AI_BUDGET_AUTHORIZED === "true";
   const privateProviderConfiguration =
     !hasPrivateKey(environment.NEXT_PUBLIC_OPENAI_API_KEY) &&
@@ -70,20 +78,36 @@ export function resolveShortsProviderCapabilities(
       : hasPrivateKey(environment.GROQ_API_KEY) ||
         hasPrivateKey(environment.OPENAI_API_KEY);
 
-  let audioAnalysis = false;
   if (
-    paidCallsAuthorized &&
-    environment.SHORTS_ANALYSIS_WORKER_READY === "true" &&
-    privateProviderConfiguration &&
-    transcriptionProviderAvailable
+    !paidCallsAuthorized ||
+    environment.SHORTS_ANALYSIS_WORKER_READY !== "true" ||
+    !privateProviderConfiguration ||
+    !transcriptionProviderAvailable
   ) {
-    try {
-      assertLongformOpenAIAvailable(environment);
-      audioAnalysis = true;
-    } catch {
-      audioAnalysis = false;
-    }
+    return false;
   }
+
+  try {
+    assertLongformOpenAIAvailable(environment);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Expose only readiness booleans to the browser; never serialize provider
+ * keys, model errors, or other server configuration. The worker flag is only
+ * an operator gate; a fresh database heartbeat is required as runtime proof.
+ */
+export function resolveShortsProviderCapabilities(
+  environment: ShortsProviderEnvironment,
+  health: ShortsProviderHealth = { analysisWorkerHeartbeatFresh: false },
+): ShortsProviderCapabilities {
+  const paidCallsAuthorized = environment.CLIPS_AI_BUDGET_AUTHORIZED === "true";
+  const audioAnalysis =
+    health.analysisWorkerHeartbeatFresh &&
+    isShortsAnalysisConfigurationEligible(environment);
 
   let videoAnalysis = false;
   if (audioAnalysis) {
