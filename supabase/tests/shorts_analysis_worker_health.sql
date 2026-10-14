@@ -57,9 +57,10 @@ SELECT ok(
   'only service_role can read the heartbeat health result'
 );
 
-UPDATE public.shorts_analysis_worker_health
-SET last_heartbeat_at = pg_catalog.clock_timestamp() - interval '16 minutes'
-WHERE singleton IS TRUE;
+INSERT INTO public.shorts_analysis_worker_health (singleton, last_heartbeat_at)
+VALUES (true, pg_catalog.clock_timestamp() - interval '16 minutes')
+ON CONFLICT (singleton) DO UPDATE
+  SET last_heartbeat_at = EXCLUDED.last_heartbeat_at;
 
 SELECT is(
   public.shorts_is_analysis_worker_healthy(),

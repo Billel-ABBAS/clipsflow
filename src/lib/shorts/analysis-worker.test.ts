@@ -97,6 +97,23 @@ describe("fenced Shorts analysis worker", () => {
     expect(onSuccessfulQueuePoll).not.toHaveBeenCalled();
   });
 
+  it("does not record health when the queue returns a malformed claim", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ id: "not-a-valid-claim" }],
+      error: null,
+    });
+    const admin = { rpc } as unknown as SupabaseClient;
+    const onSuccessfulQueuePoll = vi.fn(async () => true);
+
+    await expect(
+      processOneShortsAnalysisJob(admin, {
+        environment: validEnvironment,
+        onSuccessfulQueuePoll,
+      }),
+    ).resolves.toEqual({ kind: "idle" });
+    expect(onSuccessfulQueuePoll).not.toHaveBeenCalled();
+  });
+
   it("transcribes a queued long-form project and persists its music and motion recommendations", async () => {
     const jobId = "40000000-0000-4000-8000-000000000001";
     const projectId = "10000000-0000-4000-8000-000000000001";
