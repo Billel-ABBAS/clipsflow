@@ -76,6 +76,7 @@ export interface ShortsAnalysisWorkerEnvironment
 
 export interface ShortsAnalysisWorkerDependencies {
   environment?: ShortsAnalysisWorkerEnvironment;
+  onSuccessfulQueuePoll?: () => Promise<boolean>;
   resolveSource?: typeof resolveLongformSourceUrl;
   downloadSource?: typeof downloadLongformSource;
   probeMedia?: typeof probeLongformMedia;
@@ -748,9 +749,9 @@ export async function processOneShortsAnalysisJob(
   }
   if (claimResult.error) throw new Error("analysis_queue_unavailable");
   const job = parseClaim(claimResult.data);
-  if (!job) {
-    const row = firstRow(claimResult.data);
-    if (!row) return { kind: "idle" };
+  const queueIsEmpty =
+    Array.isArray(claimResult.data) && claimResult.data.length === 0;
+  if (!job && !queueIsEmpty) {
     console.error(
       JSON.stringify({
         level: "error",
@@ -760,5 +761,28 @@ export async function processOneShortsAnalysisJob(
     );
     return { kind: "idle" };
   }
+  if (dependencies.onSuccessfulQueuePoll) {
+    try {
+      const heartbeatRecorded = await dependencies.onSuccessfulQueuePoll();
+      if (!heartbeatRecorded) {
+        console.error(
+          JSON.stringify({
+            level: "error",
+            source: "shorts-analysis-worker",
+            message: "worker_heartbeat_write_failed",
+          }),
+        );
+      }
+    } catch {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          source: "shorts-analysis-worker",
+          message: "worker_heartbeat_write_failed",
+        }),
+      );
+    }
+  }
+  if (!job) return { kind: "idle" };
   return processClaimedJob(admin, job, { ...dependencies, environment });
 }

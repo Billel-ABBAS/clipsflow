@@ -19,12 +19,19 @@ async function main(): Promise<void> {
     return;
   }
 
-  const [{ createAdminClient }, { processOneShortsAnalysisJob }] =
-    await Promise.all([
-      import("../src/lib/supabase/admin"),
-      import("../src/lib/shorts/analysis-worker"),
-    ]);
-  const result = await processOneShortsAnalysisJob(createAdminClient());
+  const [
+    { createAdminClient },
+    { processOneShortsAnalysisJob },
+    { recordShortsAnalysisWorkerHeartbeat },
+  ] = await Promise.all([
+    import("../src/lib/supabase/admin"),
+    import("../src/lib/shorts/analysis-worker"),
+    import("../src/lib/shorts/analysis-worker-health"),
+  ]);
+  const admin = createAdminClient();
+  const result = await processOneShortsAnalysisJob(admin, {
+    onSuccessfulQueuePoll: () => recordShortsAnalysisWorkerHeartbeat(admin),
+  });
   console.info(
     JSON.stringify({
       level: "info",
