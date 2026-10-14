@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  analysisQueueCountSql,
+  assertAnalysisQueueEmptyCount,
+} from "./shorts-analysis-queue-guard.mjs";
 
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const loopbackHosts = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -277,11 +281,8 @@ async function runDatabaseAssertions(databaseName, testFile) {
   );
 }
 
-export async function assertAnalysisQueueEmpty(
-  databaseName,
-  commandRunner = run,
-) {
-  const { output } = await commandRunner("docker", [
+async function assertAnalysisQueueEmpty(databaseName) {
+  const { output } = await run("docker", [
     "exec",
     databaseName,
     "psql",
@@ -291,13 +292,9 @@ export async function assertAnalysisQueueEmpty(
     "postgres",
     "-At",
     "-c",
-    "select count(*) from public.shorts_analysis_jobs where status in ('pending', 'processing')",
+    analysisQueueCountSql,
   ]);
-  if (output.trim() !== "0") {
-    throw new Error(
-      "Refusing to run the local analysis worker poll while the queue is non-empty",
-    );
-  }
+  assertAnalysisQueueEmptyCount(output);
 }
 
 async function readLocalWorkerHeartbeat(databaseName) {
@@ -454,14 +451,9 @@ async function main() {
   }
 }
 
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
-  main().catch((error) => {
-    const message =
-      error instanceof Error ? error.message : "Unknown local E2E error";
-    console.error(`Local Docker Shorts E2E failed: ${message}`);
-    process.exitCode = 1;
-  });
-}
+main().catch((error) => {
+  const message =
+    error instanceof Error ? error.message : "Unknown local E2E error";
+  console.error(`Local Docker Shorts E2E failed: ${message}`);
+  process.exitCode = 1;
+});
