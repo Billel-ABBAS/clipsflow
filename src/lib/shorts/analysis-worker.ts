@@ -748,6 +748,19 @@ export async function processOneShortsAnalysisJob(
     throw new Error("analysis_queue_unavailable");
   }
   if (claimResult.error) throw new Error("analysis_queue_unavailable");
+  const job = parseClaim(claimResult.data);
+  const queueIsEmpty =
+    Array.isArray(claimResult.data) && claimResult.data.length === 0;
+  if (!job && !queueIsEmpty) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        source: "shorts-analysis-worker",
+        message: "analysis_claim_invalid",
+      }),
+    );
+    return { kind: "idle" };
+  }
   if (dependencies.onSuccessfulQueuePoll) {
     try {
       const heartbeatRecorded = await dependencies.onSuccessfulQueuePoll();
@@ -770,18 +783,6 @@ export async function processOneShortsAnalysisJob(
       );
     }
   }
-  const job = parseClaim(claimResult.data);
-  if (!job) {
-    const row = firstRow(claimResult.data);
-    if (!row) return { kind: "idle" };
-    console.error(
-      JSON.stringify({
-        level: "error",
-        source: "shorts-analysis-worker",
-        message: "analysis_claim_invalid",
-      }),
-    );
-    return { kind: "idle" };
-  }
+  if (!job) return { kind: "idle" };
   return processClaimedJob(admin, job, { ...dependencies, environment });
 }
