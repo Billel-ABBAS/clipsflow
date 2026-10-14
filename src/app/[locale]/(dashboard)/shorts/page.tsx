@@ -7,7 +7,7 @@ import {
 } from "@/components/shorts/ShortsStudio";
 import { redirect } from "@/i18n/navigation";
 import { isClipsEnabled } from "@/lib/clips/feature-flag";
-import { resolveShortsProviderCapabilities } from "@/lib/shorts/provider-capabilities";
+import { resolveShortsProviderCapabilitiesForServer } from "@/lib/shorts/provider-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -66,35 +66,7 @@ export default async function ShortsPage({
           : undefined
       }
       episodes={episodes}
-      providerCapabilities={resolveShortsProviderCapabilities({
-        CLIPS_AI_BUDGET_AUTHORIZED: process.env.CLIPS_AI_BUDGET_AUTHORIZED,
-        SHORTS_ANALYSIS_WORKER_READY: process.env.SHORTS_ANALYSIS_WORKER_READY,
-        CLIPS_FORCE_OPENAI_WHISPER: process.env.CLIPS_FORCE_OPENAI_WHISPER,
-        OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-        NEXT_PUBLIC_OPENAI_API_KEY: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
-        GROQ_API_KEY: process.env.GROQ_API_KEY,
-        NEXT_PUBLIC_GROQ_API_KEY: process.env.NEXT_PUBLIC_GROQ_API_KEY,
-        CLIPS_VISUAL_ANALYSIS_ENABLED:
-          process.env.CLIPS_VISUAL_ANALYSIS_ENABLED,
-        CLIPS_VISUAL_ANALYSIS_PROVIDER:
-          process.env.CLIPS_VISUAL_ANALYSIS_PROVIDER,
-        CLIPS_VISUAL_ANALYSIS_MODEL: process.env.CLIPS_VISUAL_ANALYSIS_MODEL,
-        GEMINI_API_KEY: process.env.GEMINI_API_KEY,
-        NEXT_PUBLIC_GEMINI_API_KEY: process.env.NEXT_PUBLIC_GEMINI_API_KEY,
-        CLIPS_CREATIVE_DIRECTOR_ENABLED:
-          process.env.CLIPS_CREATIVE_DIRECTOR_ENABLED,
-        CLIPS_CREATIVE_DIRECTOR_MODEL:
-          process.env.CLIPS_CREATIVE_DIRECTOR_MODEL,
-        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-        NEXT_PUBLIC_ANTHROPIC_API_KEY:
-          process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY,
-        CLIPS_ELEVENLABS_ENABLED: process.env.CLIPS_ELEVENLABS_ENABLED,
-        CLIPS_ELEVENLABS_MUSIC_MODEL: process.env.CLIPS_ELEVENLABS_MUSIC_MODEL,
-        CLIPS_ELEVENLABS_SOUND_MODEL: process.env.CLIPS_ELEVENLABS_SOUND_MODEL,
-        ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
-        NEXT_PUBLIC_ELEVENLABS_API_KEY:
-          process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY,
-      })}
+      providerCapabilities={await resolveShortsProviderCapabilitiesForServer()}
       sourceLoadError={Boolean(error)}
     />
   );
