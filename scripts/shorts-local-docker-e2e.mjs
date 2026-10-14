@@ -277,8 +277,11 @@ async function runDatabaseAssertions(databaseName, testFile) {
   );
 }
 
-async function assertAnalysisQueueEmpty(databaseName) {
-  const { output } = await run("docker", [
+export async function assertAnalysisQueueEmpty(
+  databaseName,
+  commandRunner = run,
+) {
+  const { output } = await commandRunner("docker", [
     "exec",
     databaseName,
     "psql",
@@ -288,7 +291,7 @@ async function assertAnalysisQueueEmpty(databaseName) {
     "postgres",
     "-At",
     "-c",
-    "select count(*) from public.shorts_analysis_jobs where status in ('queued', 'processing')",
+    "select count(*) from public.shorts_analysis_jobs where status in ('pending', 'processing')",
   ]);
   if (output.trim() !== "0") {
     throw new Error(
@@ -451,9 +454,14 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  const message =
-    error instanceof Error ? error.message : "Unknown local E2E error";
-  console.error(`Local Docker Shorts E2E failed: ${message}`);
-  process.exitCode = 1;
-});
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  main().catch((error) => {
+    const message =
+      error instanceof Error ? error.message : "Unknown local E2E error";
+    console.error(`Local Docker Shorts E2E failed: ${message}`);
+    process.exitCode = 1;
+  });
+}
