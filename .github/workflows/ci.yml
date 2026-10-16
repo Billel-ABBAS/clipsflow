@@ -19,9 +19,9 @@ concurrency:
 
 jobs:
   quality:
-    name: Tests, types, lint, and production build
+    name: Tests, types, lint, build, and Shorts Docker E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 55
     steps:
       - name: Check out source
         # actions/checkout v7.0.1
@@ -55,3 +55,14 @@ jobs:
 
       - name: Build production application
         run: pnpm build
+
+      - name: Start ephemeral Supabase for the Shorts smoke
+        run: pnpm exec supabase start
+
+      - name: Run authenticated Shorts Docker E2E
+        run: pnpm smoke:shorts:docker
+
+      - name: Stop ephemeral Supabase
+        if: always()
+        continue-on-error: true
+        run: pnpm exec supabase stop --project-id p0-security-hardening
