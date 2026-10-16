@@ -31,6 +31,7 @@ async function main(): Promise<void> {
   const admin = createAdminClient();
   const result = await processOneShortsAnalysisJob(admin, {
     onSuccessfulQueuePoll: () => recordShortsAnalysisWorkerHeartbeat(admin),
+    refreshWorkerHeartbeat: () => recordShortsAnalysisWorkerHeartbeat(admin),
   });
   console.info(
     JSON.stringify({
