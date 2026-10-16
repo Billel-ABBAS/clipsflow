@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
@@ -37,8 +38,10 @@ import {
   resolveLongformSourceUrl,
   type LongformSourceEpisode,
 } from "./analysis-media";
+import { withAnalysisRequestTimeout } from "./analysis-request";
 
 const DEFAULT_ANALYSIS_LEASE_SECONDS = 1_800;
+const MAX_ANALYSIS_CLAIM_ATTEMPTS = 2;
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const MAX_TRANSCRIPT_WORDS = 100_000;
 
@@ -77,6 +80,7 @@ export interface ShortsAnalysisWorkerEnvironment
 export interface ShortsAnalysisWorkerDependencies {
   environment?: ShortsAnalysisWorkerEnvironment;
   onSuccessfulQueuePoll?: () => Promise<boolean>;
+  refreshWorkerHeartbeat?: () => Promise<boolean>;
   resolveSource?: typeof resolveLongformSourceUrl;
   downloadSource?: typeof downloadLongformSource;
   probeMedia?: typeof probeLongformMedia;
@@ -287,6 +291,7 @@ function safeFailureCode(error: unknown): string {
     "analysis_lease_lost",
     "analysis_quota_exceeded",
     "analysis_quota_adjustment_unavailable",
+    "analysis_persistence_failed",
   ]);
   if (known.has(message)) return message;
   if (message.startsWith("shorts_audio_extract"))
@@ -328,20 +333,24 @@ async function getProjectAndEpisode(
     { data: projectData, error: projectError },
     { data: episodeData, error: episodeError },
   ] = await Promise.all([
-    admin
-      .from("shorts_projects")
-      .select(
-        "id,user_id,episode_id,analysis_mode,user_instructions,jev_shadow_consent,status,source_duration_seconds",
-      )
-      .eq("id", job.project_id)
-      .eq("user_id", job.user_id)
-      .maybeSingle(),
-    admin
-      .from("episodes")
-      .select("id,user_id,source_type,source_url,source_storage_path,status")
-      .eq("id", job.episode_id)
-      .eq("user_id", job.user_id)
-      .maybeSingle(),
+    withAnalysisRequestTimeout(
+      admin
+        .from("shorts_projects")
+        .select(
+          "id,user_id,episode_id,analysis_mode,user_instructions,jev_shadow_consent,status,source_duration_seconds",
+        )
+        .eq("id", job.project_id)
+        .eq("user_id", job.user_id)
+        .maybeSingle(),
+    ),
+    withAnalysisRequestTimeout(
+      admin
+        .from("episodes")
+        .select("id,user_id,source_type,source_url,source_storage_path,status")
+        .eq("id", job.episode_id)
+        .eq("user_id", job.user_id)
+        .maybeSingle(),
+    ),
   ]);
   if (projectError || episodeError)
     throw new Error("analysis_data_unavailable");
@@ -382,15 +391,44 @@ async function processClaimedJob(
   const heartbeatTimer = setInterval(() => {
     if (heartbeatBusy || leaseLost) return;
     heartbeatBusy = true;
-    heartbeatTask = Promise.resolve(
+    heartbeatTask = withAnalysisRequestTimeout(
       admin.rpc("shorts_renew_analysis_lease", {
         p_job_id: job.id,
         p_lease_token: job.lease_token,
         p_lease_seconds: DEFAULT_ANALYSIS_LEASE_SECONDS,
       }),
     )
-      .then(({ data, error }) => {
-        if (error || !parseRenewal(data)) leaseLost = true;
+      .then(async ({ data, error }) => {
+        if (error || !parseRenewal(data)) {
+          leaseLost = true;
+          return;
+        }
+        if (dependencies.refreshWorkerHeartbeat) {
+          try {
+            const heartbeatRecorded = await withAnalysisRequestTimeout(
+              dependencies.refreshWorkerHeartbeat(),
+            );
+            if (!heartbeatRecorded) {
+              console.error(
+                JSON.stringify({
+                  level: "error",
+                  source: "shorts-analysis-worker",
+                  message: "worker_heartbeat_refresh_failed",
+                  job_id: job.id,
+                }),
+              );
+            }
+          } catch {
+            console.error(
+              JSON.stringify({
+                level: "error",
+                source: "shorts-analysis-worker",
+                message: "worker_heartbeat_refresh_failed",
+                job_id: job.id,
+              }),
+            );
+          }
+        }
       })
       .catch(() => {
         leaseLost = true;
@@ -423,10 +461,12 @@ async function processClaimedJob(
       dependencies.downloadSource ?? downloadLongformSource
     )(source.url, source.allowedHosts);
     sourcePath = downloaded.path;
+    ensureLease();
 
     const media = await (dependencies.probeMedia ?? probeLongformMedia)(
       sourcePath,
     );
+    ensureLease();
     const durationSeconds = assertLongformEpisodeDuration(
       Math.round(media.durationSeconds),
     );
@@ -437,11 +477,13 @@ async function processClaimedJob(
 
     let quotaAdjustment;
     try {
-      quotaAdjustment = await admin.rpc("shorts_adjust_analysis_quota", {
-        p_job_id: job.id,
-        p_lease_token: job.lease_token,
-        p_actual_duration_seconds: durationSeconds,
-      });
+      quotaAdjustment = await withAnalysisRequestTimeout(
+        admin.rpc("shorts_adjust_analysis_quota", {
+          p_job_id: job.id,
+          p_lease_token: job.lease_token,
+          p_actual_duration_seconds: durationSeconds,
+        }),
+      );
     } catch {
       throw new Error("analysis_quota_adjustment_unavailable");
     }
@@ -467,6 +509,7 @@ async function processClaimedJob(
         dependencies.extractAudioChunk ?? extractLongformAudioChunk
       )(sourcePath, range.start_seconds, range.end_seconds, job.id);
       try {
+        ensureLease();
         const result = await (dependencies.transcribe ?? transcribeChunk)(
           source.url,
           chunkPath,
@@ -480,7 +523,8 @@ async function processClaimedJob(
           result.detectedLanguage.trim().toLowerCase() || "unknown";
         languageCounts.set(language, (languageCounts.get(language) ?? 0) + 1);
         transcriptionModels.add(result.model);
-      } catch {
+      } catch (error) {
+        if (error instanceof AnalysisLeaseLost) throw error;
         throw new Error("transcription_failed");
       } finally {
         await unlink(chunkPath).catch(() => {});
@@ -509,12 +553,21 @@ async function processClaimedJob(
     }
 
     ensureLease();
-    const { data: analyzingData, error: analyzingError } = await admin.rpc(
-      "shorts_mark_analysis_analyzing",
-      { p_job_id: job.id, p_lease_token: job.lease_token },
-    );
+    let analyzingResult;
+    try {
+      analyzingResult = await withAnalysisRequestTimeout(
+        admin.rpc("shorts_mark_analysis_analyzing", {
+          p_job_id: job.id,
+          p_lease_token: job.lease_token,
+        }),
+      );
+    } catch {
+      throw new AnalysisLeaseLost();
+    }
+    const { data: analyzingData, error: analyzingError } = analyzingResult;
     if (analyzingError || !boolResult(analyzingData))
       throw new AnalysisLeaseLost();
+    ensureLease();
 
     const analysis = await (
       dependencies.analyzeCandidates ?? analyzeLongformCandidates
@@ -545,6 +598,7 @@ async function processClaimedJob(
         baselineRank: index + 1,
       };
     });
+    ensureLease();
     const jev = await runJevShadowRankingWithConsent(
       {
         creatorInstructions: project.user_instructions,
@@ -554,6 +608,7 @@ async function processClaimedJob(
       { environment },
       dependencies.rankWithJev ?? runJevShadowRanking,
     );
+    ensureLease();
 
     let visualModel: string | null = null;
     let visualSummaryById = new Map<string, string>();
@@ -570,6 +625,7 @@ async function processClaimedJob(
       const frames = await (
         dependencies.extractVisualFrames ?? extractCandidateVisualFrames
       )(sourcePath, selectedWindows);
+      ensureLease();
       const visualSummaries: ShortsVisualSummary[] = await (
         dependencies.analyzeVisualFrames ?? analyzeShortsVisualFrames
       )(frames, { environment });
@@ -660,23 +716,44 @@ async function processClaimedJob(
     };
 
     ensureLease();
-    const { data: completedData, error: completedError } = await admin.rpc(
-      "shorts_complete_analysis_job",
-      {
-        p_job_id: job.id,
-        p_lease_token: job.lease_token,
-        p_transcript_language: transcriptLanguage,
-        p_transcription_model: transcriptionModel,
-        p_analysis_model:
-          environment.CLIPS_LONGFORM_ANALYSIS_MODEL || "gpt-5.4-mini",
-        p_vision_model: visualModel,
-        p_analysis_payload: analysisPayload,
-        p_source_duration_seconds: durationSeconds,
-        p_transcript_text: transcriptText,
-        p_transcript_segments: transcriptWords,
-        p_candidates: candidates,
-      },
-    );
+    let completionResult: { data: unknown; error: unknown };
+    try {
+      completionResult = await withAnalysisRequestTimeout(
+        admin.rpc("shorts_complete_analysis_job", {
+          p_job_id: job.id,
+          p_lease_token: job.lease_token,
+          p_transcript_language: transcriptLanguage,
+          p_transcription_model: transcriptionModel,
+          p_analysis_model:
+            environment.CLIPS_LONGFORM_ANALYSIS_MODEL || "gpt-5.4-mini",
+          p_vision_model: visualModel,
+          p_analysis_payload: analysisPayload,
+          p_source_duration_seconds: durationSeconds,
+          p_transcript_text: transcriptText,
+          p_transcript_segments: transcriptWords,
+          p_candidates: candidates,
+        }),
+      );
+    } catch {
+      // A timeout/transport rejection can happen after the transaction committed.
+      // Reconcile before returning so a committed job is not analyzed again.
+      try {
+        const persisted = await withAnalysisRequestTimeout(
+          admin
+            .from("shorts_analysis_jobs")
+            .select("status")
+            .eq("id", job.id)
+            .maybeSingle(),
+        );
+        if (!persisted.error && persisted.data?.status === "completed") {
+          return { kind: "completed", jobId: job.id };
+        }
+      } catch {
+        // The lease remains fenced; the next poll can safely reconcile it.
+      }
+      return { kind: "stale", jobId: job.id };
+    }
+    const { data: completedData, error: completedError } = completionResult;
     if (completedError) throw new Error("analysis_persistence_failed");
     if (!boolResult(completedData)) return { kind: "stale", jobId: job.id };
     return { kind: "completed", jobId: job.id };
@@ -694,13 +771,20 @@ async function processClaimedJob(
         error_code: errorCode,
       }),
     );
-    await Promise.resolve(
-      admin.rpc("shorts_fail_analysis_job", {
-        p_job_id: job.id,
-        p_lease_token: job.lease_token,
-        p_error_message: errorCode,
-      }),
-    ).catch(() => null);
+    try {
+      const failure = await withAnalysisRequestTimeout(
+        admin.rpc("shorts_fail_analysis_job", {
+          p_job_id: job.id,
+          p_lease_token: job.lease_token,
+          p_error_message: errorCode,
+        }),
+      );
+      if (failure.error || !boolResult(failure.data)) {
+        return { kind: "stale", jobId: job.id };
+      }
+    } catch {
+      return { kind: "stale", jobId: job.id };
+    }
     return { kind: "failed", jobId: job.id };
   } finally {
     clearInterval(heartbeatTimer);
@@ -740,15 +824,41 @@ export async function processOneShortsAnalysisJob(
     );
     return { kind: "idle" };
   }
+  const claimRequestId = randomUUID();
   let claimResult;
-  try {
-    claimResult = await admin.rpc("shorts_claim_analysis_job", {
-      p_lease_seconds: DEFAULT_ANALYSIS_LEASE_SECONDS,
-    });
-  } catch {
-    throw new Error("analysis_queue_unavailable");
+  for (let attempt = 0; attempt < MAX_ANALYSIS_CLAIM_ATTEMPTS; attempt += 1) {
+    try {
+      claimResult = await withAnalysisRequestTimeout(
+        admin.rpc("shorts_claim_analysis_job_idempotent", {
+          p_claim_request_id: claimRequestId,
+          p_lease_seconds: DEFAULT_ANALYSIS_LEASE_SECONDS,
+        }),
+      );
+    } catch {
+      // A claim may have committed even if its PostgREST response was lost.
+      // Replaying the same request id returns that exact live lease, rather
+      // than consuming another attempt or taking a different queued job.
+      if (attempt + 1 === MAX_ANALYSIS_CLAIM_ATTEMPTS) {
+        throw new Error("analysis_queue_unavailable");
+      }
+      continue;
+    }
+
+    if (claimResult.error) {
+      // Supabase PostgREST resolves fetch/network failures as { error, status: 0 }
+      // by default instead of rejecting the thenable. Replay only that
+      // transport-uncertain case, using the same durable request id.
+      if (
+        claimResult.status === 0 &&
+        attempt + 1 < MAX_ANALYSIS_CLAIM_ATTEMPTS
+      ) {
+        continue;
+      }
+      throw new Error("analysis_queue_unavailable");
+    }
+    break;
   }
-  if (claimResult.error) throw new Error("analysis_queue_unavailable");
+  if (!claimResult) throw new Error("analysis_queue_unavailable");
   const job = parseClaim(claimResult.data);
   const queueIsEmpty =
     Array.isArray(claimResult.data) && claimResult.data.length === 0;
@@ -764,7 +874,9 @@ export async function processOneShortsAnalysisJob(
   }
   if (dependencies.onSuccessfulQueuePoll) {
     try {
-      const heartbeatRecorded = await dependencies.onSuccessfulQueuePoll();
+      const heartbeatRecorded = await withAnalysisRequestTimeout(
+        dependencies.onSuccessfulQueuePoll(),
+      );
       if (!heartbeatRecorded) {
         console.error(
           JSON.stringify({
