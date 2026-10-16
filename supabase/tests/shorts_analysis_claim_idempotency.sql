@@ -4,7 +4,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA public;
 
-SELECT plan(20);
+SELECT plan(22);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 VALUES (
@@ -365,6 +365,28 @@ SELECT is(
   (SELECT id FROM fourth_claim),
   '00000000-0000-4000-8000-000000000040'::uuid,
   'a fresh key can claim work after a non-queueable result'
+);
+
+-- Legacy claim calls could pass NULL for the lease duration, leaving jobs in
+-- processing with no expiration. The current claim sweep must recover them.
+UPDATE public.shorts_analysis_jobs
+SET lease_expires_at = NULL
+WHERE id = '00000000-0000-4000-8000-000000000040';
+CREATE TEMP TABLE null_lease_reclaim ON COMMIT DROP AS
+SELECT *
+FROM public.shorts_claim_analysis_job_idempotent(
+  '00000000-0000-4000-8000-000000000042',
+  1800
+);
+SELECT is(
+  (SELECT id FROM null_lease_reclaim),
+  '00000000-0000-4000-8000-000000000040'::uuid,
+  'a processing job with a legacy null lease is reclaimed'
+);
+SELECT is(
+  (SELECT attempt_count FROM null_lease_reclaim),
+  2,
+  'reclaiming a null lease uses the existing single-retry policy'
 );
 
 SELECT * FROM finish();
