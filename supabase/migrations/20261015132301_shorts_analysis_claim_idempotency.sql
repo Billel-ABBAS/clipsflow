@@ -136,9 +136,13 @@ BEGIN
     SELECT job.*
     FROM public.shorts_analysis_jobs AS job
     WHERE job.status = 'processing'
-      AND job.lease_expires_at IS NOT NULL
-      AND job.lease_expires_at <= v_now
-    ORDER BY job.lease_expires_at ASC
+      -- Older RPC calls accepted an explicit NULL lease duration. Such jobs
+      -- cannot be renewed or fenced, so treat them as stale during recovery.
+      AND (
+        job.lease_expires_at IS NULL
+        OR job.lease_expires_at <= v_now
+      )
+    ORDER BY job.lease_expires_at ASC NULLS FIRST
     LIMIT 100
     FOR UPDATE SKIP LOCKED
   LOOP
