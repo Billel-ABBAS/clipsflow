@@ -21,8 +21,10 @@
 // ============================================================================
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createAbortableAnalysisFetch } from "@/lib/shorts/analysis-request";
 
 let cached: SupabaseClient | null = null;
+let shortsAnalysisStorageClient: SupabaseClient | null = null;
 
 /**
  * Retourne le client Supabase service_role mémoïsé.
@@ -47,4 +49,28 @@ export function createAdminClient(): SupabaseClient {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   return cached;
+}
+
+/**
+ * A separate service-role client used only for Shorts source URL signing.
+ * Its fetch deadline cancels the underlying Storage request without imposing
+ * the same short timeout on the shared admin client (which also handles large
+ * uploads and other long-running operations).
+ */
+export function createShortsAnalysisStorageClient(): SupabaseClient {
+  if (shortsAnalysisStorageClient) return shortsAnalysisStorageClient;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error(
+      "createShortsAnalysisStorageClient: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set",
+    );
+  }
+
+  shortsAnalysisStorageClient = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: createAbortableAnalysisFetch() },
+  });
+  return shortsAnalysisStorageClient;
 }

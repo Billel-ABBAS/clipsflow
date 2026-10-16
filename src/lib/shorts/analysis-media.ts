@@ -31,6 +31,8 @@ import {
   validateOutboundUrl,
 } from "@/lib/security/validate-outbound-url";
 import { safeFetch } from "@/lib/utils/safe-fetch";
+import { withAnalysisRequestTimeout } from "./analysis-request";
+import { createShortsAnalysisStorageClient } from "@/lib/supabase/admin";
 
 import type { LongformCandidateWindow } from "@/lib/clips/longform-analysis";
 import type { ShortsVisualFrameSet } from "./visual-analysis";
@@ -112,7 +114,6 @@ function sourceAllowedHosts(
 }
 
 export async function resolveLongformSourceUrl(
-  admin: import("@supabase/supabase-js").SupabaseClient,
   source: LongformSourceEpisode,
 ): Promise<{ url: string; allowedHosts?: string[] }> {
   try {
@@ -121,9 +122,13 @@ export async function resolveLongformSourceUrl(
       return { url: source.source_url };
     }
     if (!source.source_storage_path) throw new Error("source_missing");
-    const { data, error } = await admin.storage
-      .from("clip-sources")
-      .createSignedUrl(source.source_storage_path, 6 * 60 * 60);
+    // Use a separate Supabase fetch client so a timed-out signing request is
+    // aborted without changing the timeout behavior of normal admin traffic.
+    const { data, error } = await withAnalysisRequestTimeout(
+      createShortsAnalysisStorageClient()
+        .storage.from("clip-sources")
+        .createSignedUrl(source.source_storage_path, 6 * 60 * 60),
+    );
     if (error || !data?.signedUrl) throw new Error("source_sign_failed");
     const allowedHosts = sourceAllowedHosts(source);
     validateOutboundUrl(data.signedUrl, { allowedHosts });
