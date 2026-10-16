@@ -1,6 +1,27 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { buildLongformAudioChunkRanges } from "./analysis-media";
+import { createShortsAnalysisStorageClient } from "@/lib/supabase/admin";
+import {
+  buildLongformAudioChunkRanges,
+  resolveLongformSourceUrl,
+} from "./analysis-media";
+
+const mocks = vi.hoisted(() => ({
+  createShortsAnalysisStorageClient: vi.fn(),
+}));
+
+vi.mock("@/lib/supabase/admin", () => mocks);
+
+const previousSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+afterEach(() => {
+  vi.clearAllMocks();
+  if (previousSupabaseUrl === undefined) {
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+  } else {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = previousSupabaseUrl;
+  }
+});
 
 describe("long-form source chunking", () => {
   it("covers the complete duration with bounded, overlapping audio segments", () => {
@@ -58,6 +79,44 @@ describe("long-form source chunking", () => {
     );
     expect(() => buildLongformAudioChunkRanges(100, 30, 30)).toThrow(
       "shorts_audio_chunk_options_invalid",
+    );
+  });
+});
+
+describe("long-form source URL resolution", () => {
+  it("signs private source objects with the isolated analysis storage client", async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://clipsflow-test.supabase.co";
+    const createSignedUrl = vi.fn().mockResolvedValue({
+      data: {
+        signedUrl:
+          "https://clipsflow-test.supabase.co/storage/v1/object/sign/clip-sources/source-token",
+      },
+      error: null,
+    });
+    const from = vi.fn(() => ({ createSignedUrl }));
+    mocks.createShortsAnalysisStorageClient.mockReturnValue({
+      storage: { from },
+    });
+
+    await expect(
+      resolveLongformSourceUrl({
+        id: "episode-id",
+        user_id: "user-id",
+        source_type: "upload",
+        source_url: null,
+        source_storage_path: "user-id/shorts/source.mp4",
+        status: "ready",
+      }),
+    ).resolves.toEqual({
+      url: "https://clipsflow-test.supabase.co/storage/v1/object/sign/clip-sources/source-token",
+      allowedHosts: ["clipsflow-test.supabase.co"],
+    });
+
+    expect(createShortsAnalysisStorageClient).toHaveBeenCalledOnce();
+    expect(from).toHaveBeenCalledWith("clip-sources");
+    expect(createSignedUrl).toHaveBeenCalledWith(
+      "user-id/shorts/source.mp4",
+      6 * 60 * 60,
     );
   });
 });

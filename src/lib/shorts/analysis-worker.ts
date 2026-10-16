@@ -417,7 +417,8 @@ async function processClaimedJob(
 
     const source = await (
       dependencies.resolveSource ?? resolveLongformSourceUrl
-    )(admin, episode);
+    )(episode);
+    ensureLease();
     const downloaded = await (
       dependencies.downloadSource ?? downloadLongformSource
     )(source.url, source.allowedHosts);
