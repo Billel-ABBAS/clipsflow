@@ -2,7 +2,7 @@
 
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA public;
-SELECT plan(17);
+SELECT plan(19);
 
 INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 VALUES (
@@ -141,10 +141,27 @@ SELECT is(
    WHERE user_id = '00000000-0000-4000-8000-000000000071'),
   1200::bigint, 'retry does not release the held source seconds'
 );
+SELECT ok(
+  (SELECT next_attempt_at > now() FROM public.shorts_analysis_jobs
+   WHERE id = '00000000-0000-4000-8000-000000000077'),
+  'the transient retry is deferred by a persisted backoff'
+);
 
-CREATE TEMP TABLE retry_claim ON COMMIT DROP AS
+CREATE TEMP TABLE retry_not_due ON COMMIT DROP AS
 SELECT * FROM public.shorts_claim_analysis_job_idempotent(
   '00000000-0000-4000-8000-000000000081', 1800
+);
+SELECT is(
+  (SELECT count(*) FROM retry_not_due),
+  0::bigint, 'the claim RPC skips retries before their due time'
+);
+
+UPDATE public.shorts_analysis_jobs
+SET next_attempt_at = now() - interval '1 second'
+WHERE id = '00000000-0000-4000-8000-000000000077';
+CREATE TEMP TABLE retry_claim ON COMMIT DROP AS
+SELECT * FROM public.shorts_claim_analysis_job_idempotent(
+  '00000000-0000-4000-8000-000000000082', 1800
 );
 SELECT is(
   (SELECT id FROM retry_claim),
