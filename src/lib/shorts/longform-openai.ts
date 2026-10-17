@@ -12,6 +12,7 @@ import {
   type LongformAnalysisResponse,
   type LongformCandidateWindow,
 } from "@/lib/clips/longform-analysis";
+import { isTransientAnalysisUpstreamError } from "./analysis-retry";
 import { SHORTS_MUSIC_MOODS } from "./project-contract";
 
 export const DEFAULT_SHORTS_ANALYSIS_MODEL = "gpt-5.4-mini" as const;
@@ -108,6 +109,7 @@ export class LongformOpenAIError extends Error {
       | "longform_analysis_unavailable"
       | "longform_analysis_provider_failed"
       | "longform_analysis_invalid_response",
+    public readonly retryable = false,
   ) {
     super(code);
     this.name = "LongformOpenAIError";
@@ -251,8 +253,11 @@ export async function analyzeLongformCandidates(
         },
       },
     });
-  } catch {
-    throw new LongformOpenAIError("longform_analysis_provider_failed");
+  } catch (error) {
+    throw new LongformOpenAIError(
+      "longform_analysis_provider_failed",
+      isTransientAnalysisUpstreamError(error),
+    );
   }
 
   return parseProviderResult(response, candidateWindows);
