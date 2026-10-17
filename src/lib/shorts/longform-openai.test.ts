@@ -129,6 +129,37 @@ describe("bounded OpenAI long-form analysis", () => {
     expect(request?.instructions).toContain("untrusted source data");
   });
 
+  it.each([
+    { status: 503, expectedRetryable: true },
+    { status: 401, expectedRetryable: false },
+    {
+      status: 429,
+      code: "insufficient_quota",
+      expectedRetryable: false,
+    },
+  ])(
+    "preserves bounded retry classification for provider status $status",
+    async ({ status, code, expectedRetryable }) => {
+      const { client, create } = mockClient(null);
+      create.mockRejectedValue(
+        Object.assign(new Error("provider failure"), { status, code }),
+      );
+      await expect(
+        analyzeLongformCandidates(
+          {
+            episodeDurationSeconds: 1_200,
+            creatorInstructions: "",
+            candidateWindows,
+          },
+          { environment, client },
+        ),
+      ).rejects.toMatchObject({
+        code: "longform_analysis_provider_failed",
+        retryable: expectedRetryable,
+      });
+    },
+  );
+
   it("rejects candidates outside the fixed catalogue and incomplete provider output", async () => {
     const invalidClient = mockClient({
       status: "completed",

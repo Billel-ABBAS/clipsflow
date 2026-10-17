@@ -6,6 +6,8 @@
 // in this branch. Output is descriptive context, never identity or timestamps.
 // ============================================================================
 
+import { isTransientAnalysisUpstreamError } from "./analysis-retry";
+
 export const DEFAULT_SHORTS_VISUAL_MODEL = "gemini-3.8-flash" as const;
 export const DEFAULT_OPENAI_SHORTS_VISUAL_MODEL = "gpt-5.4-mini" as const;
 export const SHORTS_VISUAL_MAX_CANDIDATES = 12;
@@ -65,6 +67,7 @@ export class ShortsVisualAnalysisError extends Error {
       | "visual_analysis_input_invalid"
       | "visual_analysis_provider_failed"
       | "visual_analysis_invalid_response",
+    public readonly retryable = false,
   ) {
     super(code);
     this.name = "ShortsVisualAnalysisError";
@@ -437,11 +440,18 @@ export async function analyzeShortsVisualFrames(
             }),
             signal: AbortSignal.timeout(90_000),
           });
-  } catch {
-    throw new ShortsVisualAnalysisError("visual_analysis_provider_failed");
+  } catch (error) {
+    throw new ShortsVisualAnalysisError(
+      "visual_analysis_provider_failed",
+      isTransientAnalysisUpstreamError(error),
+    );
   }
   if (!response.ok) {
-    throw new ShortsVisualAnalysisError("visual_analysis_provider_failed");
+    await response.body?.cancel().catch(() => undefined);
+    throw new ShortsVisualAnalysisError(
+      "visual_analysis_provider_failed",
+      isTransientAnalysisUpstreamError({ status: response.status }),
+    );
   }
 
   let payload: unknown;
