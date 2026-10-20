@@ -39,15 +39,20 @@ import {
   type LongformSourceEpisode,
 } from "./analysis-media";
 import { withAnalysisRequestTimeout } from "./analysis-request";
+import {
+  isTransientAnalysisUpstreamError,
+  RetryableShortsAnalysisError,
+} from "./analysis-retry";
 
 const DEFAULT_ANALYSIS_LEASE_SECONDS = 1_800;
 const MAX_ANALYSIS_CLAIM_ATTEMPTS = 2;
+const MAX_ANALYSIS_JOB_ATTEMPTS = 2;
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const MAX_TRANSCRIPT_WORDS = 100_000;
 
 export type ShortsAnalysisWorkerResult =
   | { kind: "idle" }
-  | { kind: "completed" | "failed" | "stale"; jobId: string };
+  | { kind: "completed" | "failed" | "retrying" | "stale"; jobId: string };
 
 interface AnalysisLeaseJob {
   id: string;
@@ -270,10 +275,12 @@ function safeFailureCode(error: unknown): string {
     "paid_ai_not_authorized",
     "transcription_unavailable",
     "source_unavailable",
+    "source_resolve_transient",
     "source_url_rejected",
     "source_too_large",
     "source_download_timeout",
     "source_download_failed",
+    "source_download_transient",
     "source_download_invalid_size",
     "source_media_type_invalid",
     "source_duration_probe_failed",
@@ -281,6 +288,7 @@ function safeFailureCode(error: unknown): string {
     "source_visual_track_required",
     "no_speech_detected",
     "transcription_failed",
+    "analysis_provider_transient",
     "longform_analysis_unavailable",
     "longform_analysis_provider_failed",
     "longform_analysis_invalid_response",
@@ -484,11 +492,17 @@ async function processClaimedJob(
           p_actual_duration_seconds: durationSeconds,
         }),
       );
-    } catch {
+    } catch (error) {
+      if (isTransientAnalysisUpstreamError(error)) {
+        throw new RetryableShortsAnalysisError("analysis_provider_transient");
+      }
       throw new Error("analysis_quota_adjustment_unavailable");
     }
     ensureLease();
     if (quotaAdjustment.error) {
+      if (isTransientAnalysisUpstreamError(quotaAdjustment.error)) {
+        throw new RetryableShortsAnalysisError("analysis_provider_transient");
+      }
       throw new Error("analysis_quota_adjustment_unavailable");
     }
     if (!boolResult(quotaAdjustment.data)) {
@@ -525,6 +539,9 @@ async function processClaimedJob(
         transcriptionModels.add(result.model);
       } catch (error) {
         if (error instanceof AnalysisLeaseLost) throw error;
+        if (isTransientAnalysisUpstreamError(error)) {
+          throw new RetryableShortsAnalysisError("analysis_provider_transient");
+        }
         throw new Error("transcription_failed");
       } finally {
         await unlink(chunkPath).catch(() => {});
@@ -762,21 +779,29 @@ async function processClaimedJob(
       return { kind: "stale", jobId: job.id };
     }
     const errorCode = safeFailureCode(error);
+    const retryable =
+      error instanceof RetryableShortsAnalysisError ||
+      asRecord(error)?.retryable === true;
+    const retryScheduled =
+      retryable && job.attempt_count < MAX_ANALYSIS_JOB_ATTEMPTS;
     console.error(
       JSON.stringify({
         level: "error",
         source: "shorts-analysis-worker",
-        message: "analysis_job_failed",
+        message: retryScheduled
+          ? "analysis_job_retry_scheduled"
+          : "analysis_job_failed",
         job_id: job.id,
         error_code: errorCode,
       }),
     );
     try {
       const failure = await withAnalysisRequestTimeout(
-        admin.rpc("shorts_fail_analysis_job", {
+        admin.rpc("shorts_fail_or_retry_analysis_job", {
           p_job_id: job.id,
           p_lease_token: job.lease_token,
           p_error_message: errorCode,
+          p_retryable: retryable,
         }),
       );
       if (failure.error || !boolResult(failure.data)) {
@@ -785,7 +810,10 @@ async function processClaimedJob(
     } catch {
       return { kind: "stale", jobId: job.id };
     }
-    return { kind: "failed", jobId: job.id };
+    return {
+      kind: retryScheduled ? "retrying" : "failed",
+      jobId: job.id,
+    };
   } finally {
     clearInterval(heartbeatTimer);
     await heartbeatTask.catch(() => {});

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { AnalyzeLongformCandidatesInput } from "@/lib/shorts/longform-openai";
+import { LongformOpenAIError } from "@/lib/shorts/longform-openai";
 import type { JevShadowInput, JevShadowResult } from "./jev-shadow";
 import type {
   ShortsVisualFrameSet,
@@ -178,6 +179,111 @@ describe("fenced Shorts analysis worker", () => {
     expect(rpc).toHaveBeenCalledTimes(2);
     expect(calls[0]?.name).toBe("shorts_claim_analysis_job_idempotent");
     expect(calls[0]?.args).toEqual(calls[1]?.args);
+  });
+
+  it("requeues a retryable provider failure on the first analysis attempt", async () => {
+    const jobId = "40000000-0000-4000-8000-000000000091";
+    const projectId = "10000000-0000-4000-8000-000000000091";
+    const userId = "20000000-0000-4000-8000-000000000091";
+    const episodeId = "30000000-0000-4000-8000-000000000091";
+    const leaseToken = "50000000-0000-4000-8000-000000000091";
+    const project = {
+      id: projectId,
+      user_id: userId,
+      episode_id: episodeId,
+      analysis_mode: "audio",
+      user_instructions: "",
+      jev_shadow_consent: false,
+      status: "transcribing",
+      source_duration_seconds: 1_200,
+    };
+    const episode = {
+      id: episodeId,
+      user_id: userId,
+      source_type: "upload",
+      source_url: null,
+      source_storage_path: `${userId}/shorts/source.mp4`,
+      status: "ready",
+    };
+    const queryFor = (data: unknown) => {
+      const query = {
+        select: vi.fn(() => query),
+        eq: vi.fn(() => query),
+        maybeSingle: vi.fn(async () => ({ data, error: null })),
+      };
+      return query;
+    };
+    const from = vi.fn((table: string) => {
+      if (table === "shorts_projects") return queryFor(project);
+      if (table === "episodes") return queryFor(episode);
+      throw new Error(`unexpected_table:${table}`);
+    });
+    const rpc = vi.fn(async (name: string) => {
+      if (name === "shorts_claim_analysis_job_idempotent") {
+        return {
+          data: [
+            {
+              id: jobId,
+              project_id: projectId,
+              user_id: userId,
+              episode_id: episodeId,
+              status: "processing",
+              attempt_count: 1,
+              lease_token: leaseToken,
+            },
+          ],
+          error: null,
+        };
+      }
+      if (
+        name === "shorts_adjust_analysis_quota" ||
+        name === "shorts_mark_analysis_analyzing"
+      ) {
+        return { data: true, error: null };
+      }
+      if (name === "shorts_fail_or_retry_analysis_job") {
+        return { data: true, error: null };
+      }
+      throw new Error(`unexpected_rpc:${name}`);
+    });
+    const admin = { rpc, from } as unknown as SupabaseClient;
+
+    await expect(
+      processOneShortsAnalysisJob(admin, {
+        environment: validEnvironment,
+        resolveSource: vi.fn(async () => ({
+          url: "https://media.example/test",
+        })),
+        downloadSource: vi.fn(async () => ({
+          path: "retry-test-source.media",
+          bytes: 100,
+          contentType: "audio/mpeg",
+        })),
+        probeMedia: vi.fn(async () => ({
+          durationSeconds: 1_200,
+          hasVideo: false,
+        })),
+        extractAudioChunk: vi.fn(async () => "retry-test-chunk.wav"),
+        transcribe: vi.fn(async () => ({
+          words: [{ text: "useful transcript", start: 20, end: 20.5 }],
+          detectedLanguage: "en",
+          model: "whisper-test",
+        })),
+        analyzeCandidates: vi.fn(async () => {
+          throw new LongformOpenAIError(
+            "longform_analysis_provider_failed",
+            true,
+          );
+        }),
+      }),
+    ).resolves.toEqual({ kind: "retrying", jobId });
+
+    expect(rpc).toHaveBeenCalledWith("shorts_fail_or_retry_analysis_job", {
+      p_job_id: jobId,
+      p_lease_token: leaseToken,
+      p_error_message: "longform_analysis_provider_failed",
+      p_retryable: true,
+    });
   });
 
   it("returns idle when the fenced queue has no job", async () => {
@@ -422,7 +528,7 @@ describe("fenced Shorts analysis worker", () => {
           error: completionFailure,
         };
       }
-      if (name === "shorts_fail_analysis_job") {
+      if (name === "shorts_fail_or_retry_analysis_job") {
         return { data: true, error: null };
       }
       throw new Error(`unexpected_rpc:${name}`);
@@ -518,13 +624,14 @@ describe("fenced Shorts analysis worker", () => {
     await expect(
       processOneShortsAnalysisJob(admin, workerDependencies),
     ).resolves.toEqual({ kind: "failed", jobId });
-    expect(rpc).toHaveBeenCalledWith("shorts_fail_analysis_job", {
+    expect(rpc).toHaveBeenCalledWith("shorts_fail_or_retry_analysis_job", {
       p_job_id: jobId,
       p_lease_token: leaseToken,
       p_error_message: "analysis_persistence_failed",
+      p_retryable: false,
     });
     const failCallsBeforeAmbiguousCompletion = rpc.mock.calls.filter(
-      ([name]) => name === "shorts_fail_analysis_job",
+      ([name]) => name === "shorts_fail_or_retry_analysis_job",
     ).length;
 
     vi.useFakeTimers();
@@ -551,7 +658,9 @@ describe("fenced Shorts analysis worker", () => {
     expect(completionSignal?.aborted).toBe(true);
     expect(jobStateQuery.maybeSingle).toHaveBeenCalledOnce();
     expect(
-      rpc.mock.calls.filter(([name]) => name === "shorts_fail_analysis_job"),
+      rpc.mock.calls.filter(
+        ([name]) => name === "shorts_fail_or_retry_analysis_job",
+      ),
     ).toHaveLength(failCallsBeforeAmbiguousCompletion);
   });
 
