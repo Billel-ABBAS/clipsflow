@@ -1,0 +1,72 @@
+name: Shorts analysis recovery
+
+on:
+  push:
+    branches: [codex/shorts-analysis-recovery-20261020]
+    paths:
+      - .github/workflows/shorts-analysis-recovery.yml
+      - scripts/shorts-analysis-recovery.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clipsflow-production-shorts-analysis
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: github.repository == 'Billel-ABBAS/clipsflow' && github.actor == 'Billel-ABBAS'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: shorts-analysis-recovery
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - name: Check out recovery controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: recovery-control
+          persist-credentials: false
+      - name: Check out tested worker release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: e2592d79cd0fd5aa1239b37f715904f42f5f5e3e
+          path: worker
+          persist-credentials: false
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          version: 11.20.0
+          run_install: false
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 25.9.0
+          cache: pnpm
+          cache-dependency-path: worker/pnpm-lock.yaml
+      - name: Verify release and recovery controls
+        run: |
+          test "$(git rev-parse HEAD)" = e2592d79cd0fd5aa1239b37f715904f42f5f5e3e
+          node --test ../recovery-control/scripts/shorts-analysis-recovery.test.mjs
+      - name: Install locked worker dependencies
+        env:
+          HUSKY: "0"
+        run: pnpm install --frozen-lockfile
+      - name: Run one bounded worker invocation
+        timeout-minutes: 3
+        env:
+          SHORTS_RECOVERY_MODE: probe
+          SHORTS_RECOVERY_WORKER_SHA: e2592d79cd0fd5aa1239b37f715904f42f5f5e3e
+          SHORTS_ANALYSIS_WORKER_ENABLED: "true"
+          CLIPS_AI_BUDGET_AUTHORIZED: "true"
+          CLIPS_VISUAL_ANALYSIS_ENABLED: "false"
+          SHORTS_MAX_SOURCE_BYTES: "8589934592"
+          NEXT_PUBLIC_SUPABASE_URL: https://ifwdzqzoqwitahffrvcr.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: node ../recovery-control/scripts/shorts-analysis-recovery.mjs
