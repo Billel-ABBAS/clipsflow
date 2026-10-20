@@ -428,9 +428,17 @@ async function main() {
       containers.databaseName,
       "supabase/tests/shorts_analysis_worker_health.sql",
     );
+    await runDatabaseAssertions(
+      containers.databaseName,
+      "supabase/tests/shorts_analysis_claim_idempotency.sql",
+    );
+    await runDatabaseAssertions(
+      containers.databaseName,
+      "supabase/tests/shorts_analysis_claim_idempotency_security.sql",
+    );
 
     console.log(
-      "Local Docker Shorts E2E passed: authenticated Studio, closed-budget/stale-heartbeat gates, readiness-off rollback with a fresh heartbeat and empty analysis queue, successful worker poll, resumable TUS upload, audio and audio-video analysis, creator selection, renders/downloads, motion, YouTube mock, and 36 SQL assertions.",
+      "Local Docker Shorts E2E passed: authenticated Studio, closed-budget/stale-heartbeat gates, readiness-off rollback with a fresh heartbeat and empty analysis queue, successful worker poll, resumable TUS upload, audio and audio-video analysis, creator selection, renders/downloads, motion, YouTube mock, and all Shorts SQL assertion suites.",
     );
   } finally {
     await stopRunner();

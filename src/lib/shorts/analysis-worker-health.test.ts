@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
@@ -9,6 +9,10 @@ import {
 function healthClient(rpc: ReturnType<typeof vi.fn>) {
   return { rpc } as unknown as Pick<SupabaseClient, "rpc">;
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("Shorts analysis worker heartbeat RPC adapter", () => {
   it("accepts only an explicit healthy boolean", async () => {
@@ -37,6 +41,25 @@ describe("Shorts analysis worker heartbeat RPC adapter", () => {
         healthClient(vi.fn().mockRejectedValue(new Error("offline"))),
       ),
     ).resolves.toBe(false);
+  });
+
+  it("fails closed and aborts a health RPC that never completes", async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    const pending = new Promise<never>(() => {}) as Promise<never> & {
+      abortSignal: (value: AbortSignal) => Promise<never>;
+    };
+    pending.abortSignal = (value) => {
+      signal = value;
+      return pending;
+    };
+    const rpc = vi.fn(() => pending);
+    const result = isShortsAnalysisWorkerHeartbeatFresh(healthClient(rpc));
+
+    const expectation = expect(result).resolves.toBe(false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expectation;
+    expect(signal?.aborted).toBe(true);
   });
 
   it("records a heartbeat only when the protected RPC confirms success", async () => {
