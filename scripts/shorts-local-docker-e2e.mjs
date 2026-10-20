@@ -7,6 +7,7 @@ import {
   analysisQueueCountSql,
   assertAnalysisQueueEmptyCount,
 } from "./shorts-analysis-queue-guard.mjs";
+import { assertTapOutput } from "../src/lib/shorts/pgtap-output.mjs";
 
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const loopbackHosts = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -263,7 +264,7 @@ async function runSmoke(local, script, needsApp = true) {
 
 async function runDatabaseAssertions(databaseName, testFile) {
   const sql = await readFile(resolve(workspace, testFile));
-  await run(
+  const { output } = await run(
     "docker",
     [
       "exec",
@@ -274,11 +275,17 @@ async function runDatabaseAssertions(databaseName, testFile) {
       "postgres",
       "-d",
       "postgres",
+      "-q",
+      "-A",
+      "-t",
+      "-X",
       "-v",
       "ON_ERROR_STOP=1",
     ],
     { input: sql },
   );
+  const { assertions } = assertTapOutput(output, testFile);
+  console.info(`pgTAP passed: ${testFile} (${assertions} assertions)`);
 }
 
 async function assertAnalysisQueueEmpty(databaseName) {
