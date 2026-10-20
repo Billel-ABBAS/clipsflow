@@ -32,6 +32,10 @@ import {
 } from "@/lib/security/validate-outbound-url";
 import { safeFetch } from "@/lib/utils/safe-fetch";
 import { withAnalysisRequestTimeout } from "./analysis-request";
+import {
+  isTransientAnalysisUpstreamError,
+  RetryableShortsAnalysisError,
+} from "./analysis-retry";
 import { createShortsAnalysisStorageClient } from "@/lib/supabase/admin";
 
 import type { LongformCandidateWindow } from "@/lib/clips/longform-analysis";
@@ -129,6 +133,9 @@ export async function resolveLongformSourceUrl(
         .storage.from("clip-sources")
         .createSignedUrl(source.source_storage_path, 6 * 60 * 60),
     );
+    if (error && isTransientAnalysisUpstreamError(error)) {
+      throw new RetryableShortsAnalysisError("source_resolve_transient");
+    }
     if (error || !data?.signedUrl) throw new Error("source_sign_failed");
     const allowedHosts = sourceAllowedHosts(source);
     validateOutboundUrl(data.signedUrl, { allowedHosts });
@@ -136,6 +143,10 @@ export async function resolveLongformSourceUrl(
   } catch (error) {
     if (error instanceof OutboundUrlError) {
       throw new Error("source_url_rejected");
+    }
+    if (error instanceof RetryableShortsAnalysisError) throw error;
+    if (isTransientAnalysisUpstreamError(error)) {
+      throw new RetryableShortsAnalysisError("source_resolve_transient");
     }
     throw new Error("source_unavailable");
   }
@@ -154,8 +165,14 @@ export async function downloadLongformSource(
       timeoutMs: 60_000,
       allowedHosts,
     });
-    if (!response.ok || !response.body)
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      if (isTransientAnalysisUpstreamError({ status: response.status })) {
+        throw new RetryableShortsAnalysisError("source_download_transient");
+      }
       throw new Error("source_download_failed");
+    }
+    if (!response.body) throw new Error("source_download_failed");
     const length = Number(response.headers.get("content-length"));
     if (Number.isFinite(length) && length > MAX_SHORTS_SOURCE_BYTES) {
       throw new Error("source_too_large");
@@ -182,9 +199,11 @@ export async function downloadLongformSource(
     });
     try {
       await pipeline(input, output);
-    } catch {
+    } catch (error) {
       if (tooLarge) throw new Error("source_too_large");
-      if (timedOut) throw new Error("source_download_timeout");
+      if (timedOut || isTransientAnalysisUpstreamError(error)) {
+        throw new RetryableShortsAnalysisError("source_download_transient");
+      }
       throw new Error("source_download_failed");
     } finally {
       clearTimeout(timer);
@@ -210,6 +229,10 @@ export async function downloadLongformSource(
     return { path, bytes: size, contentType };
   } catch (error) {
     await unlink(path).catch(() => {});
+    if (error instanceof RetryableShortsAnalysisError) throw error;
+    if (isTransientAnalysisUpstreamError(error)) {
+      throw new RetryableShortsAnalysisError("source_download_transient");
+    }
     throw error instanceof Error ? error : new Error("source_download_failed");
   }
 }

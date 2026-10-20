@@ -123,6 +123,22 @@ describe("selected-short visual analysis", () => {
     ]);
   });
 
+  it.each([
+    { status: 503, expectedRetryable: true },
+    { status: 401, expectedRetryable: false },
+  ])(
+    "classifies visual provider HTTP $status as retryable=$expectedRetryable",
+    async ({ status, expectedRetryable }) => {
+      const fetch = vi.fn(async () => Response.json({}, { status }));
+      await expect(
+        analyzeShortsVisualFrames(input, { environment, fetch }),
+      ).rejects.toMatchObject({
+        code: "visual_analysis_provider_failed",
+        retryable: expectedRetryable,
+      });
+    },
+  );
+
   it("sends bounded JPEG frames to OpenAI Responses without storing the response", async () => {
     const openAiEnvironment: ShortsVisualEnvironment = {
       ...environment,
