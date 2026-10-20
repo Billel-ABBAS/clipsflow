@@ -11,7 +11,9 @@ import { z } from "zod";
 
 export const TYPESAFE_SYSTEM_ONE_URL =
   "https://api.typesafe.ai/v1/systemone" as const;
-export const JEV_SHADOW_MODEL = "jev-1.13.0" as const;
+// Pin the newly released 1.14 model explicitly while it is still in the
+// provider's preview channel; do not rely on the stable jev-latest alias yet.
+export const JEV_SHADOW_MODEL = "jev-1.14.0" as const;
 export const JEV_SHADOW_MAX_CANDIDATES = 160;
 export const JEV_SHADOW_BATCH_SIZE = 24;
 export const JEV_SHADOW_MAX_TRANSCRIPT_CHARACTERS = 1_200;
