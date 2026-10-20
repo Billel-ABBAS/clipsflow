@@ -2,6 +2,8 @@
 
 BEGIN;
 
+CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA public;
+
 SELECT plan(9);
 
 SELECT ok(
