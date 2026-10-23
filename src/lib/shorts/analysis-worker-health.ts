@@ -20,6 +20,24 @@ export async function isShortsAnalysisWorkerHeartbeatFresh(
   }
 }
 
+/**
+ * Executes only the protected, read-only health RPC. This is used during a
+ * post-rotation verification before a worker may poll or claim the queue.
+ */
+export async function probeShortsAnalysisWorkerHealthRpc(
+  admin: AnalysisWorkerHealthClient,
+): Promise<"healthy" | "stale" | "unavailable"> {
+  try {
+    const { data, error } = await withAnalysisRequestTimeout(
+      admin.rpc("shorts_is_analysis_worker_healthy"),
+    );
+    if (error || typeof data !== "boolean") return "unavailable";
+    return data ? "healthy" : "stale";
+  } catch {
+    return "unavailable";
+  }
+}
+
 export async function recordShortsAnalysisWorkerHeartbeat(
   admin: AnalysisWorkerHealthClient,
 ): Promise<boolean> {
