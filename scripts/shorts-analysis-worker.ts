@@ -1,21 +1,48 @@
+import { runShortsAnalysisWorkerEntrypoint } from "../src/lib/shorts/analysis-worker-entrypoint";
+import { resolveShortsAnalysisWorkerRunMode } from "../src/lib/shorts/analysis-worker-run-mode";
+
 // Railway Cron entrypoint for the long-form Shorts analysis queue. It processes
 // at most one fenced job per invocation; a separate service keeps source-file
 // disk usage and AI budgets isolated from short-clip rendering.
 
 export {};
 
+function report(entry: Record<string, unknown>): void {
+  console.info(JSON.stringify(entry));
+}
+
 async function main(): Promise<void> {
-  if (
-    process.env.SHORTS_ANALYSIS_WORKER_ENABLED !== "true" &&
-    process.env.SHORTS_ANALYSIS_WORKER_ENABLED !== "1"
-  ) {
-    console.info(
-      JSON.stringify({
-        level: "info",
-        source: "railway-shorts-analysis-worker",
-        message: "worker_disabled",
-      }),
-    );
+  const runMode = resolveShortsAnalysisWorkerRunMode({
+    SHORTS_ANALYSIS_WORKER_ENABLED: process.env.SHORTS_ANALYSIS_WORKER_ENABLED,
+    SHORTS_ANALYSIS_WORKER_VERIFY_ONLY:
+      process.env.SHORTS_ANALYSIS_WORKER_VERIFY_ONLY,
+  });
+  if (runMode === "verify-only") {
+    const [{ createAdminClient }, { probeShortsAnalysisWorkerHealthRpc }] =
+      await Promise.all([
+        import("../src/lib/supabase/admin"),
+        import("../src/lib/shorts/analysis-worker-health"),
+      ]);
+    await runShortsAnalysisWorkerEntrypoint({
+      mode: runMode,
+      createAdminClient,
+      probeWorkerHealth: probeShortsAnalysisWorkerHealthRpc,
+      report,
+      setExitCode: (exitCode) => {
+        process.exitCode = exitCode;
+      },
+    });
+    return;
+  }
+
+  if (runMode === "disabled") {
+    await runShortsAnalysisWorkerEntrypoint({
+      mode: runMode,
+      report,
+      setExitCode: (exitCode) => {
+        process.exitCode = exitCode;
+      },
+    });
     return;
   }
 
@@ -28,20 +55,16 @@ async function main(): Promise<void> {
     import("../src/lib/shorts/analysis-worker"),
     import("../src/lib/shorts/analysis-worker-health"),
   ]);
-  const admin = createAdminClient();
-  const result = await processOneShortsAnalysisJob(admin, {
-    onSuccessfulQueuePoll: () => recordShortsAnalysisWorkerHeartbeat(admin),
-    refreshWorkerHeartbeat: () => recordShortsAnalysisWorkerHeartbeat(admin),
+  await runShortsAnalysisWorkerEntrypoint({
+    mode: runMode,
+    createAdminClient,
+    processOneJob: processOneShortsAnalysisJob,
+    recordHeartbeat: recordShortsAnalysisWorkerHeartbeat,
+    report,
+    setExitCode: (exitCode) => {
+      process.exitCode = exitCode;
+    },
   });
-  console.info(
-    JSON.stringify({
-      level: "info",
-      source: "railway-shorts-analysis-worker",
-      message: "worker_complete",
-      result: result.kind,
-      job_id: "jobId" in result ? result.jobId : undefined,
-    }),
-  );
 }
 
 main().catch((error: unknown) => {

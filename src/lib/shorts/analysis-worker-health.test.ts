@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
   isShortsAnalysisWorkerHeartbeatFresh,
+  probeShortsAnalysisWorkerHealthRpc,
   recordShortsAnalysisWorkerHeartbeat,
 } from "./analysis-worker-health";
 
@@ -41,6 +42,26 @@ describe("Shorts analysis worker heartbeat RPC adapter", () => {
         healthClient(vi.fn().mockRejectedValue(new Error("offline"))),
       ),
     ).resolves.toBe(false);
+  });
+
+  it("probes the protected health RPC without recording a heartbeat", async () => {
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({ data: true, error: null })
+      .mockResolvedValueOnce({ data: false, error: null })
+      .mockResolvedValueOnce({ data: null, error: new Error("unavailable") });
+
+    await expect(
+      probeShortsAnalysisWorkerHealthRpc(healthClient(rpc)),
+    ).resolves.toBe("healthy");
+    await expect(
+      probeShortsAnalysisWorkerHealthRpc(healthClient(rpc)),
+    ).resolves.toBe("stale");
+    await expect(
+      probeShortsAnalysisWorkerHealthRpc(healthClient(rpc)),
+    ).resolves.toBe("unavailable");
+    expect(rpc).toHaveBeenCalledTimes(3);
+    expect(rpc).toHaveBeenNthCalledWith(1, "shorts_is_analysis_worker_healthy");
   });
 
   it("fails closed and aborts a health RPC that never completes", async () => {
