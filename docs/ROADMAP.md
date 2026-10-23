@@ -59,6 +59,28 @@ sur média synthétique, avec budget et nettoyage explicitement bornés.
 
 Préflight conteneur worker Shorts — 14 octobre 2026 : `docker build -f Dockerfile.worker` réussit sur la tête locale de PR (`5658366`, digest local `sha256:f42e498e7950a14bf8718a8039ecb347b58fd2cb9262d1f5f1efc9cedec56e9c`). Lancé avec le `startCommand` Railway staged exact (`node_modules/.bin/tsx scripts/shorts-analysis-worker.ts`), `SHORTS_ANALYSIS_WORKER_ENABLED=false` et `--network none`, le conteneur sort avec code 0 et le message `worker_disabled`; aucune clé ni requête externe n'est nécessaire. L'image éphémère a ensuite été supprimée. Limite importante : le `CMD` par défaut de `Dockerfile.worker` reste `scripts/clips-worker.ts`; le service d'analyse dépend donc bien de la surcharge Railway `deploy.startCommand`, qui est présente dans les 21 changements staged mais n'a pas été appliquée. Si elle est absente, le worker d'analyse ne publie pas de heartbeat et la garde reste fermée. Ceci valide build et démarrage désactivé en local, pas l'accès Supabase, le cron ou le traitement Production.
 
+**P0 Production — poll contrôlé sur file vide, 23 octobre 2026 :** après
+autorisation explicite, seule la variable non secrète
+`SHORTS_ANALYSIS_WORKER_VERIFY_ONLY` du service
+`shorts-analysis-worker-production` a été passée de `true` à `false`. Railway
+a reconstruit puis activé le déploiement
+`7e0d8f29-f2ce-416a-a6d7-d030052dabfe` au commit `174130d`; son planning reste
+`*/5 * * * *`. Le gate Vercel `SHORTS_ANALYSIS_WORKER_READY` n'a pas été
+modifié et reste fermé.
+
+Une seule exécution cron manuelle autorisée a ensuite démarré ce déploiement.
+Son journal applicatif indique `worker_complete` avec `result="idle"` : aucun
+job n'a été réclamé. Le contrôle Supabase Production effectué immédiatement
+après renvoie `analysis_worker_healthy = true` et `active_analysis_jobs = 0`.
+Cette preuve établit que le worker peut démarrer, joindre Supabase, interroger
+une file vide et publier un heartbeat frais sans appel fournisseur. Elle ne
+prouve toujours ni upload, ni transcription, ni analyse, ni rendu, ni coût IA,
+ni publication YouTube. Aucune migration, aucun job synthétique ou utilisateur,
+aucun média, aucune clé, aucune dépense ni ouverture du gate web n'a été
+effectué. La prochaine action séparée exige l'autorisation explicite d'ouvrir
+temporairement le gate et de créer un unique job synthétique authentifié, avec
+son fournisseur, son budget, ses critères de succès et son nettoyage bornés.
+
 Recontrôle P0 — 14 octobre 2026 : les PR #13 (`9b5b962`, cible `main`) et #14 (`18ded02`, empilée sur #13) sont ouvertes et fusionnables. La dernière preview Vercel de #14 est `READY`; la Production reste sur `main` au commit `cb25a6c46b2cf889b388c37e88e703207e12800c`. Sur la tête de code validée juste avant les commits documentaires, `pnpm test` (676 tests / 86 fichiers), `pnpm typecheck`, `pnpm lint`, `pnpm build` (37 pages) et `pnpm smoke:shorts:docker` passent; le smoke authentifié synthétique rapporte 36 assertions SQL. Le préflight de l'image Docker et du démarrage désactivé est consigné ci-dessus. GitHub ne rapporte aucun workflow-run pour la PR; les validations observées restent locales et la preview Vercel. Supabase Production a la migration heartbeat mais `healthy=false`, zéro ligne et aucun timestamp. Railway a zéro déploiement du worker et 21 changements `STAGED`. Aucune fusion, écriture Supabase distante, activation Railway ou publication réelle n'a eu lieu. Prochaine étape : attendre l'autorisation explicite de fusion, puis vérifier séparément la Production avant toute activation Railway.
 
 Revalidation après le dernier push P0 — 14 octobre 2026 : les PR #13 (`9b5b962`) et #14 (commit courant `9ac46b8`, empilée sur #13) restent ouvertes et fusionnables; les checks GitGuardian et Vercel Preview sont réussis. La preview du commit #14 est `READY`. Requêtes anonymes : `/api/health` répond `200`, `/fr/shorts` redirige vers la connexion (`307`) et `/fr/shorts-preview` répond `200`; cela vérifie les routes, pas le parcours Studio authentifié. Supabase Production retourne `healthy=false`, zéro ligne de heartbeat et zéro job d’analyse. Railway indique le worker d’analyse `Offline` et conserve son patch `STAGED`; Vercel Production reste `READY` sur `main` au commit `cb25a6c`. Aucun job, changement distant, merge, activation Railway ou publication n'a été effectué. Prochaine étape : attendre une autorisation explicite de fusion; le patch Railway et le flag de readiness restent séparés.
