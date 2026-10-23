@@ -18,6 +18,45 @@ La génération de nouvelles maquettes Superdesign n'a pas été relancée : la 
 
 ## État actuel vérifié dans le dépôt
 
+**P0 Production — worker d’analyse en mode vérification seule, 23 octobre
+2026 :** à la demande explicite du propriétaire, les clés existantes sont
+conservées ; aucune rotation, lecture de valeur, copie ou exposition de secret
+ne fait partie de cette reprise. Le risque résiduel associé à l’absence de
+rotation est donc connu et accepté par le propriétaire pour cette étape.
+
+La PR [#27](https://github.com/Billel-ABBAS/clipsflow/pull/27), limitée à sept
+fichiers du worker, a été fusionnée au commit
+`f028683d7ad1987a271d562aa2e49942a6679153`. Elle sépare strictement les trois
+modes `disabled`, `verify-only` et `process-one` : `verify-only` a priorité sur
+les flags historiques, ne charge pas le processeur de file, ne réclame pas de
+job et n’écrit pas de heartbeat. La CI GitHub de cette révision a validé tests,
+types, ESLint, build, démarrage/arrêt de Supabase éphémère et smoke Shorts
+authentifié en 5 min 22 s ; Vercel et GitGuardian sont également passés. Le
+déploiement Vercel associé au commit est réussi.
+
+L’auto-déploiement Railway issu de GitHub (`17e1eb33-1e8a-4b0e-b39e-913b9a20edb4`)
+a construit l’image mais a échoué avant d’activer la nouvelle révision cron,
+alors que le planning `*/5 * * * *` du service était toujours présent. Après
+diagnostic, une seule variable non secrète a été ajoutée au service
+`shorts-analysis-worker-production` :
+`SHORTS_ANALYSIS_WORKER_VERIFY_ONLY=true`, sans redéploiement implicite à cette
+étape et sans modifier `SHORTS_ANALYSIS_WORKER_ENABLED` ni
+`CLIPS_AI_BUDGET_AUTHORIZED`. Une relance manuelle, épinglée au commit fusionné,
+a ensuite produit le déploiement Railway réussi
+`d44c32d0-697e-4f99-ac0a-3d71e3992d98`.
+
+Une exécution cron manuelle contrôlée a utilisé ce nouveau déploiement et s’est
+terminée `EXITED` en 2 s. Son seul journal applicatif est
+`worker_verify_only_complete` avec `health="healthy"`. Une requête SQL
+Production agrégée, en lecture seule, retourne encore zéro job
+`pending`/`processing`. Cette preuve couvre le worker, son accès RPC de santé et
+l’absence de prise de file; elle ne prouve ni transcription, ni appel IA, ni
+rendu. Aucune migration Supabase, création de job, appel fournisseur, upload,
+publication YouTube ou ouverture de `SHORTS_ANALYSIS_WORKER_READY` n’a été
+effectuée dans cette étape. Le prochain lot exige une autorisation distincte
+pour ouvrir le gate applicatif puis lancer une recette authentifiée contrôlée
+sur média synthétique, avec budget et nettoyage explicitement bornés.
+
 Préflight conteneur worker Shorts — 14 octobre 2026 : `docker build -f Dockerfile.worker` réussit sur la tête locale de PR (`5658366`, digest local `sha256:f42e498e7950a14bf8718a8039ecb347b58fd2cb9262d1f5f1efc9cedec56e9c`). Lancé avec le `startCommand` Railway staged exact (`node_modules/.bin/tsx scripts/shorts-analysis-worker.ts`), `SHORTS_ANALYSIS_WORKER_ENABLED=false` et `--network none`, le conteneur sort avec code 0 et le message `worker_disabled`; aucune clé ni requête externe n'est nécessaire. L'image éphémère a ensuite été supprimée. Limite importante : le `CMD` par défaut de `Dockerfile.worker` reste `scripts/clips-worker.ts`; le service d'analyse dépend donc bien de la surcharge Railway `deploy.startCommand`, qui est présente dans les 21 changements staged mais n'a pas été appliquée. Si elle est absente, le worker d'analyse ne publie pas de heartbeat et la garde reste fermée. Ceci valide build et démarrage désactivé en local, pas l'accès Supabase, le cron ou le traitement Production.
 
 Recontrôle P0 — 14 octobre 2026 : les PR #13 (`9b5b962`, cible `main`) et #14 (`18ded02`, empilée sur #13) sont ouvertes et fusionnables. La dernière preview Vercel de #14 est `READY`; la Production reste sur `main` au commit `cb25a6c46b2cf889b388c37e88e703207e12800c`. Sur la tête de code validée juste avant les commits documentaires, `pnpm test` (676 tests / 86 fichiers), `pnpm typecheck`, `pnpm lint`, `pnpm build` (37 pages) et `pnpm smoke:shorts:docker` passent; le smoke authentifié synthétique rapporte 36 assertions SQL. Le préflight de l'image Docker et du démarrage désactivé est consigné ci-dessus. GitHub ne rapporte aucun workflow-run pour la PR; les validations observées restent locales et la preview Vercel. Supabase Production a la migration heartbeat mais `healthy=false`, zéro ligne et aucun timestamp. Railway a zéro déploiement du worker et 21 changements `STAGED`. Aucune fusion, écriture Supabase distante, activation Railway ou publication réelle n'a eu lieu. Prochaine étape : attendre l'autorisation explicite de fusion, puis vérifier séparément la Production avant toute activation Railway.
