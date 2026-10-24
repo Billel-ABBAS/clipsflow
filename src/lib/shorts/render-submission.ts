@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 
 import type { ShortsProductionProfile } from "./project-contract";
 
-/** A Short is not renderable until its adapted instrumental bed is authorized. */
+/**
+ * Returns true only when an enabled ElevenLabs music option has each required
+ * creator authorisation. It deliberately returns false when music is OFF: that
+ * is not an authorisation, but it is still a valid no-music render choice.
+ */
 export function hasAuthorizedShortsMusic(
   profile: ShortsProductionProfile,
 ): boolean {
@@ -14,6 +18,16 @@ export function hasAuthorizedShortsMusic(
     authorization.synthetic_voice === false &&
     authorization.use_cases.includes("instrumental_music")
   );
+}
+
+/**
+ * A creator can render without generated music. When sound design is ON, the
+ * consent, commercial-rights and instrumental-music checks stay fail-closed.
+ */
+export function canRenderShortsWithAudioProfile(
+  profile: ShortsProductionProfile,
+): boolean {
+  return !profile.elevenlabs.enabled || hasAuthorizedShortsMusic(profile);
 }
 
 /**
