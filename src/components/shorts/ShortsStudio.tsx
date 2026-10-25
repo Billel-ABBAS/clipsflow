@@ -59,7 +59,9 @@ import {
 } from "@/lib/shorts/source-upload-resume";
 import {
   SHORTS_MUSIC_MOODS,
+  shortsProductionProfileSchema,
   type ShortsMusicMood,
+  type ShortsProductionProfile,
 } from "@/lib/shorts/project-contract";
 import {
   releaseShortsProjectIdempotencyIntent,
@@ -187,6 +189,7 @@ export type ShortsCandidate = Readonly<{
   motionDirection: string;
   visualSummary: string | null;
   selected: boolean;
+  productionProfile?: ShortsProductionProfile | null;
 }>;
 
 export type ShortsProject = Readonly<{
@@ -196,30 +199,7 @@ export type ShortsProject = Readonly<{
   candidates: readonly ShortsCandidate[];
 }>;
 
-export type ProductionProfileInput = Readonly<{
-  aspect_ratio: AspectRatio;
-  subtitle_style: SubtitleStyle;
-  subtitles: Readonly<{
-    synchronized: true;
-    auto_emphasis: boolean;
-  }>;
-  motion: Readonly<{
-    template: MotionTemplate;
-    reduced_motion: boolean;
-    renderer: "deterministic";
-  }>;
-  elevenlabs: Readonly<{
-    enabled: boolean;
-    explicit_consent: boolean;
-    commercial_license_confirmed: boolean;
-    use_cases: readonly ("instrumental_music" | "sound_effects")[];
-    synthetic_voice: false;
-  }>;
-  creative_direction: Readonly<{
-    enabled: boolean;
-    explicit_consent: boolean;
-  }>;
-}>;
+export type ProductionProfileInput = ShortsProductionProfile;
 
 export interface ShortsStudioProps {
   locale: string;
@@ -834,6 +814,9 @@ function normaliseCandidate(value: unknown): ShortsCandidate | null {
     return null;
   }
   const visualSummary = shortText(value.visual_summary, 1_200) || null;
+  const productionProfile = shortsProductionProfileSchema.safeParse(
+    value.production_profile,
+  );
   return {
     id,
     rank: Math.round(rank),
@@ -848,6 +831,9 @@ function normaliseCandidate(value: unknown): ShortsCandidate | null {
     motionDirection,
     visualSummary,
     selected: value.selected === true,
+    productionProfile: productionProfile.success
+      ? productionProfile.data
+      : null,
   };
 }
 
@@ -985,17 +971,38 @@ export function buildProductionProfile(input: {
   };
 }
 
+export function isShortsProductionProfileReadyForRender(input: {
+  productionProfile: ProductionProfileInput;
+  elevenLabsAvailable: boolean;
+}): boolean {
+  const { elevenlabs } = input.productionProfile;
+  return (
+    !elevenlabs.enabled ||
+    (input.elevenLabsAvailable &&
+      elevenlabs.explicit_consent &&
+      elevenlabs.commercial_license_confirmed)
+  );
+}
+
 export function isShortsRenderDisabled(input: {
   candidatesReady: boolean;
   selectedCandidateCount: number;
-  adaptedMusicAuthorized: boolean;
+  /**
+   * The current per-candidate readiness state. `adaptedMusicAuthorized` stays
+   * accepted for a rolling deployment while a cached browser may still run the
+   * previous Studio bundle.
+   */
+  selectedProfilesReady?: boolean;
+  adaptedMusicAuthorized?: boolean;
   savingSelection: boolean;
   renderingSelected: boolean;
 }): boolean {
+  const profilesReady =
+    input.selectedProfilesReady ?? input.adaptedMusicAuthorized ?? false;
   return (
     !input.candidatesReady ||
     input.selectedCandidateCount === 0 ||
-    !input.adaptedMusicAuthorized ||
+    !profilesReady ||
     input.savingSelection ||
     input.renderingSelected
   );
@@ -1013,6 +1020,21 @@ export function isShortsSelectionSaveDisabled(input: {
     input.savingSelection ||
     input.renderingSelected
   );
+}
+
+function retainPersistedProductionProfiles(
+  current: Readonly<Record<string, ProductionProfileInput>>,
+  project: ShortsProject,
+): Readonly<Record<string, ProductionProfileInput>> {
+  let changed = false;
+  const next = { ...current };
+  for (const candidate of project.candidates) {
+    if (candidate.productionProfile && !next[candidate.id]) {
+      next[candidate.id] = candidate.productionProfile;
+      changed = true;
+    }
+  }
+  return changed ? next : current;
 }
 
 function safeApiError(value: unknown, fallback: string): string {
@@ -1149,24 +1171,33 @@ export function ShortsStudio({
     },
     [],
   );
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
-  const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>("viral");
-  const [motionTemplate, setMotionTemplate] =
-    useState<MotionTemplate>("editorial-focus");
-  const [reducedMotion, setReducedMotion] = useState(false);
-  const [elevenLabsEnabled, setElevenLabsEnabled] = useState(
-    providerCapabilities.elevenLabs,
+  const defaultProductionProfile = useMemo(
+    () =>
+      buildProductionProfile({
+        aspectRatio: "9:16",
+        subtitleStyle: "viral",
+        motionTemplate: "editorial-focus",
+        reducedMotion: false,
+        elevenLabsEnabled: false,
+        elevenLabsAvailable: providerCapabilities.elevenLabs,
+        elevenLabsConsent: false,
+        commercialLicenseConfirmed: false,
+        creativeDirectionEnabled: false,
+        creativeDirectionAvailable: providerCapabilities.creativeDirection,
+        creativeDirectionConsent: false,
+      }),
+    [providerCapabilities.creativeDirection, providerCapabilities.elevenLabs],
   );
-  const [elevenLabsConsent, setElevenLabsConsent] = useState(false);
-  const [commercialLicenseConfirmed, setCommercialLicenseConfirmed] =
-    useState(false);
-  const [creativeDirectionEnabled, setCreativeDirectionEnabled] =
-    useState(false);
-  const adaptedMusicAuthorized =
-    providerCapabilities.elevenLabs &&
-    elevenLabsEnabled &&
-    elevenLabsConsent &&
-    commercialLicenseConfirmed;
+  const [productionProfilesByCandidate, setProductionProfilesByCandidate] =
+    useState<Readonly<Record<string, ProductionProfileInput>>>(() =>
+      Object.fromEntries(
+        (initialProject?.candidates ?? []).flatMap((candidate) =>
+          candidate.productionProfile
+            ? [[candidate.id, candidate.productionProfile] as const]
+            : [],
+        ),
+      ),
+    );
   const [savingSelection, setSavingSelection] = useState(false);
   const [renderingSelected, setRenderingSelected] = useState(false);
   const [renderStatus, setRenderStatus] = useState<string | null>(null);
@@ -1267,6 +1298,25 @@ export function ShortsStudio({
     () => selectedCandidateIdsForProject(selectedCandidateIds, project),
     [project, selectedCandidateIds],
   );
+  const productionProfileForCandidate = useCallback(
+    (candidateId: string): ProductionProfileInput =>
+      productionProfilesByCandidate[candidateId] ?? defaultProductionProfile,
+    [defaultProductionProfile, productionProfilesByCandidate],
+  );
+  const selectedProfilesReady = useMemo(
+    () =>
+      selectedCandidateIdsForCurrentProject.every((candidateId) =>
+        isShortsProductionProfileReadyForRender({
+          productionProfile: productionProfileForCandidate(candidateId),
+          elevenLabsAvailable: providerCapabilities.elevenLabs,
+        }),
+      ),
+    [
+      productionProfileForCandidate,
+      providerCapabilities.elevenLabs,
+      selectedCandidateIdsForCurrentProject,
+    ],
+  );
 
   useEffect(() => {
     if (isDesignPreview || !projectId) return;
@@ -1288,6 +1338,11 @@ export function ShortsStudio({
           if (!cancelled) setPollingError(copy.projectError);
         } else if (!cancelled) {
           setProject(nextProject);
+          // Preserve unsaved local choices while making the first persisted
+          // profile for every candidate available to the control panel.
+          setProductionProfilesByCandidate((current) =>
+            retainPersistedProductionProfiles(current, nextProject),
+          );
           setPollingError(null);
           if (isTerminalProjectStatus(nextProject.status)) {
             idempotencyRef.current = releaseShortsProjectIdempotencyIntent(
@@ -1778,7 +1833,7 @@ export function ShortsStudio({
         );
         setSelectedCandidateIds(new Set());
         setActiveCandidateId(null);
-        setCreativeDirectionEnabled(false);
+        setProductionProfilesByCandidate({});
       } catch {
         setCreateError(copy.projectError);
       } finally {
@@ -1798,21 +1853,29 @@ export function ShortsStudio({
     ],
   );
 
-  const toggleCandidate = useCallback((candidateId: string) => {
-    setSaveError(null);
-    setSaveSuccess(null);
-    setActiveCandidateId(candidateId);
-    sourcePlayerRef.current?.pause();
-    if (sourcePlayerRef.current) sourcePlayerRef.current.currentTime = 0;
-    setIsPlaying(false);
-    setPlaybackSeconds(0);
-    setSelectedCandidateIds((current) => {
-      const next = new Set(current);
-      if (next.has(candidateId)) next.delete(candidateId);
-      else next.add(candidateId);
-      return next;
-    });
-  }, []);
+  const toggleCandidate = useCallback(
+    (candidateId: string) => {
+      setSaveError(null);
+      setSaveSuccess(null);
+      setActiveCandidateId(candidateId);
+      sourcePlayerRef.current?.pause();
+      if (sourcePlayerRef.current) sourcePlayerRef.current.currentTime = 0;
+      setIsPlaying(false);
+      setPlaybackSeconds(0);
+      setSelectedCandidateIds((current) => {
+        const next = new Set(current);
+        if (next.has(candidateId)) next.delete(candidateId);
+        else next.add(candidateId);
+        return next;
+      });
+      setProductionProfilesByCandidate((current) =>
+        current[candidateId]
+          ? current
+          : { ...current, [candidateId]: defaultProductionProfile },
+      );
+    },
+    [defaultProductionProfile],
+  );
 
   const onSaveSelection = useCallback(async () => {
     const currentProject = project;
@@ -1837,21 +1900,12 @@ export function ShortsStudio({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            selected_candidate_ids: currentSelectedCandidateIds,
-            production_profile: buildProductionProfile({
-              aspectRatio,
-              subtitleStyle,
-              motionTemplate,
-              reducedMotion,
-              elevenLabsEnabled,
-              elevenLabsAvailable: providerCapabilities.elevenLabs,
-              elevenLabsConsent,
-              commercialLicenseConfirmed,
-              creativeDirectionEnabled,
-              creativeDirectionAvailable:
-                providerCapabilities.creativeDirection,
-              creativeDirectionConsent: creativeDirectionEnabled,
-            }),
+            candidate_profiles: currentSelectedCandidateIds.map(
+              (candidate_id) => ({
+                candidate_id,
+                production_profile: productionProfileForCandidate(candidate_id),
+              }),
+            ),
           }),
         },
       );
@@ -1870,21 +1924,12 @@ export function ShortsStudio({
       setSavingSelection(false);
     }
   }, [
-    aspectRatio,
-    commercialLicenseConfirmed,
-    creativeDirectionEnabled,
-    providerCapabilities.creativeDirection,
-    providerCapabilities.elevenLabs,
     copy,
     designPreviewNotice,
-    elevenLabsConsent,
-    elevenLabsEnabled,
     isDesignPreview,
-    motionTemplate,
     project,
-    reducedMotion,
+    productionProfileForCandidate,
     selectedCandidateIds,
-    subtitleStyle,
   ]);
 
   const onGenerateSelected = useCallback(async () => {
@@ -1894,7 +1939,7 @@ export function ShortsStudio({
       currentProject,
     );
     if (!currentProject || currentSelectedCandidateIds.length === 0) return;
-    if (!adaptedMusicAuthorized) {
+    if (!selectedProfilesReady) {
       setSaveError(copy.adaptedMusicRequired);
       return;
     }
@@ -1907,19 +1952,6 @@ export function ShortsStudio({
     setRenderingSelected(true);
     setRenderStatus(null);
     setSaveError(null);
-    const productionProfile = buildProductionProfile({
-      aspectRatio,
-      subtitleStyle,
-      motionTemplate,
-      reducedMotion,
-      elevenLabsEnabled,
-      elevenLabsAvailable: providerCapabilities.elevenLabs,
-      elevenLabsConsent,
-      commercialLicenseConfirmed,
-      creativeDirectionEnabled,
-      creativeDirectionAvailable: providerCapabilities.creativeDirection,
-      creativeDirectionConsent: creativeDirectionEnabled,
-    });
     try {
       const saveResponse = await fetch(
         `/api/shorts/projects/${encodeURIComponent(currentProject.id)}`,
@@ -1927,8 +1959,12 @@ export function ShortsStudio({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            selected_candidate_ids: currentSelectedCandidateIds,
-            production_profile: productionProfile,
+            candidate_profiles: currentSelectedCandidateIds.map(
+              (candidate_id) => ({
+                candidate_id,
+                production_profile: productionProfileForCandidate(candidate_id),
+              }),
+            ),
           }),
         },
       );
@@ -1978,22 +2014,13 @@ export function ShortsStudio({
       setRenderingSelected(false);
     }
   }, [
-    adaptedMusicAuthorized,
-    aspectRatio,
-    commercialLicenseConfirmed,
-    creativeDirectionEnabled,
-    providerCapabilities.creativeDirection,
-    providerCapabilities.elevenLabs,
     copy,
     designPreviewNotice,
-    elevenLabsConsent,
-    elevenLabsEnabled,
     isDesignPreview,
-    motionTemplate,
     project,
-    reducedMotion,
+    productionProfileForCandidate,
+    selectedProfilesReady,
     selectedCandidateIds,
-    subtitleStyle,
   ]);
 
   const projectStatusText = project
@@ -2057,6 +2084,8 @@ export function ShortsStudio({
         privateLabel: "Privé",
         reducedMotion: "Mouvement réduit",
         productionOptions: "Options de production",
+        productionScope: (candidateTitle: string) =>
+          `Réglages propres à « ${candidateTitle} »`,
         reset: "Réinitialiser",
         directionOptions: "Direction créative et droits",
         renderGallery: "Voir les rendus dans la galerie",
@@ -2127,6 +2156,8 @@ export function ShortsStudio({
         privateLabel: "Private",
         reducedMotion: "Reduced motion",
         productionOptions: "Production options",
+        productionScope: (candidateTitle: string) =>
+          `Settings for “${candidateTitle}” only`,
         reset: "Reset",
         directionOptions: "Creative direction and rights",
         renderGallery: "View renders in the gallery",
@@ -2173,6 +2204,93 @@ export function ShortsStudio({
     ) ??
     project?.candidates[0] ??
     null;
+  const activeProductionProfile = activeCandidate
+    ? productionProfileForCandidate(activeCandidate.id)
+    : defaultProductionProfile;
+  const aspectRatio = activeProductionProfile.aspect_ratio;
+  const subtitleStyle = activeProductionProfile.subtitle_style;
+  const motionTemplate = activeProductionProfile.motion.template;
+  const reducedMotion = activeProductionProfile.motion.reduced_motion;
+  const elevenLabsEnabled = activeProductionProfile.elevenlabs.enabled;
+  const elevenLabsConsent = activeProductionProfile.elevenlabs.explicit_consent;
+  const commercialLicenseConfirmed =
+    activeProductionProfile.elevenlabs.commercial_license_confirmed;
+  const creativeDirectionEnabled =
+    activeProductionProfile.creative_direction.enabled;
+  const activeProfileReadyForRender = isShortsProductionProfileReadyForRender({
+    productionProfile: activeProductionProfile,
+    elevenLabsAvailable: providerCapabilities.elevenLabs,
+  });
+  const updateActiveProductionProfile = useCallback(
+    (update: (current: ProductionProfileInput) => ProductionProfileInput) => {
+      if (!activeCandidate) return;
+      setProductionProfilesByCandidate((current) => ({
+        ...current,
+        [activeCandidate.id]: update(
+          current[activeCandidate.id] ?? defaultProductionProfile,
+        ),
+      }));
+    },
+    [activeCandidate, defaultProductionProfile],
+  );
+  const setAspectRatio = (value: AspectRatio) =>
+    updateActiveProductionProfile((current) => ({
+      ...current,
+      aspect_ratio: value,
+    }));
+  const setSubtitleStyle = (value: SubtitleStyle) =>
+    updateActiveProductionProfile((current) => ({
+      ...current,
+      subtitle_style: value,
+    }));
+  const setMotionTemplate = (value: MotionTemplate) =>
+    updateActiveProductionProfile((current) => ({
+      ...current,
+      motion: { ...current.motion, template: value },
+    }));
+  const setReducedMotion = (value: boolean) =>
+    updateActiveProductionProfile((current) => ({
+      ...current,
+      motion: {
+        ...current.motion,
+        template: value ? "minimal-static" : current.motion.template,
+        reduced_motion: value,
+      },
+    }));
+  const setElevenLabsEnabled = (value: boolean) =>
+    updateActiveProductionProfile((current) => ({
+      ...current,
+      elevenlabs: value
+        ? {
+            ...current.elevenlabs,
+            enabled: true,
+            // The toggle confirmation is the explicit permission. Keep the
+            // persisted profile valid at every keystroke; an invalid partial
+            // consent must never be selectable or rendered.
+            explicit_consent: true,
+            commercial_license_confirmed: true,
+            use_cases: ["instrumental_music", "sound_effects"],
+          }
+        : {
+            ...current.elevenlabs,
+            enabled: false,
+            explicit_consent: false,
+            commercial_license_confirmed: false,
+            use_cases: [],
+          },
+    }));
+  const setElevenLabsConsent = (value: boolean) =>
+    value ? undefined : setElevenLabsEnabled(false);
+  const setCommercialLicenseConfirmed = (value: boolean) =>
+    value ? undefined : setElevenLabsEnabled(false);
+  const setCreativeDirectionEnabled = (value: boolean) =>
+    updateActiveProductionProfile((current) => ({
+      ...current,
+      creative_direction: {
+        enabled: value,
+        explicit_consent: value,
+      },
+    }));
   const activeCandidateDuration = activeCandidate
     ? formatShortsTimestamp(
         Math.max(0, activeCandidate.endSeconds - activeCandidate.startSeconds),
@@ -2282,7 +2400,7 @@ export function ShortsStudio({
     setSaveError(null);
     setSaveSuccess(null);
     setRenderStatus(null);
-    setCreativeDirectionEnabled(false);
+    setProductionProfilesByCandidate({});
     setCandidateFilter("all");
     setCandidateQuery("");
     setCandidateSort("rank");
@@ -3761,7 +3879,12 @@ export function ShortsStudio({
                   </div>
 
                   <div className={styles.productionHeading}>
-                    <h2>{studio.productionOptions}</h2>
+                    <div>
+                      <h2>{studio.productionOptions}</h2>
+                      <p className={styles.productionScope}>
+                        {studio.productionScope(activeCandidate.title)}
+                      </p>
+                    </div>
                     <button
                       type="button"
                       className={styles.resetButton}
@@ -3873,11 +3996,17 @@ export function ShortsStudio({
                           checked={elevenLabsEnabled}
                           onChange={(event) => {
                             const enabled = event.target.checked;
-                            setElevenLabsEnabled(enabled);
-                            if (!enabled) {
-                              setElevenLabsConsent(false);
-                              setCommercialLicenseConfirmed(false);
+                            if (
+                              enabled &&
+                              !window.confirm(
+                                locale.startsWith("fr")
+                                  ? "Vous confirmez utiliser uniquement de la musique instrumentale et des effets sonores avec les droits commerciaux requis pour ce Short."
+                                  : "You confirm that this Short may use instrumental music and sound effects with the required commercial rights.",
+                              )
+                            ) {
+                              return;
                             }
+                            setElevenLabsEnabled(enabled);
                           }}
                           disabled={
                             !providerCapabilities.elevenLabs || savingSelection
@@ -3916,7 +4045,7 @@ export function ShortsStudio({
                       candidatesReady: showCandidateControls,
                       selectedCandidateCount:
                         selectedCandidateIdsForCurrentProject.length,
-                      adaptedMusicAuthorized,
+                      selectedProfilesReady,
                       savingSelection,
                       renderingSelected,
                     })}
@@ -3929,7 +4058,7 @@ export function ShortsStudio({
                         : "Generate render"}
                     <ArrowRight size={20} aria-hidden="true" />
                   </button>
-                  {elevenLabsEnabled && !adaptedMusicAuthorized ? (
+                  {elevenLabsEnabled && !activeProfileReadyForRender ? (
                     <button
                       type="button"
                       className={styles.rightsReminder}

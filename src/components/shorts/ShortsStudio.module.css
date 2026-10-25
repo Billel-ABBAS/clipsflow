@@ -1570,6 +1570,16 @@
   font-weight: 550;
 }
 
+.productionScope {
+  overflow: hidden;
+  max-width: 206px;
+  margin: 3px 0 0;
+  color: #91a6cb;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .resetButton {
   border: 0;
   padding: 0;
