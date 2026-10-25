@@ -130,6 +130,7 @@ export async function POST(
     return NextResponse.json({ error: "project_not_ready" }, { status: 409 });
   }
 
+  const requestedCandidateIds = parsedBody.data.candidate_ids;
   const { data: rows, error: candidateError } = await admin
     .from("shorts_candidates")
     .select(
@@ -138,11 +139,11 @@ export async function POST(
     .eq("project_id", project.id)
     .eq("user_id", user.id)
     .eq("selected", true)
-    .in("id", parsedBody.data.candidate_ids);
+    .in("id", requestedCandidateIds);
   if (candidateError) return unavailableResponse();
 
   const byId = new Map((rows ?? []).map((row) => [row.id as string, row]));
-  const orderedRows = parsedBody.data.candidate_ids.map((id) => byId.get(id));
+  const orderedRows = requestedCandidateIds.map((id) => byId.get(id));
   if (orderedRows.some((row) => !row) || orderedRows.length === 0) {
     return NextResponse.json(
       { error: "candidate_selection_conflict" },
@@ -154,8 +155,12 @@ export async function POST(
   if (!firstRow) return unavailableResponse();
   const selectedIds = orderedRows.map((row) => (row as { id: string }).id);
   const selection = selectShortsCandidatesSchema.safeParse({
-    candidate_ids: selectedIds,
-    production_profile: firstRow.production_profile,
+    candidate_profiles: [
+      {
+        candidate_id: selectedIds[0],
+        production_profile: firstRow.production_profile,
+      },
+    ],
   });
   if (!selection.success) {
     return NextResponse.json(
@@ -163,7 +168,9 @@ export async function POST(
       { status: 409 },
     );
   }
-  const productionProfile = selection.data.production_profile;
+  const productionProfile =
+    selection.data.candidate_profiles[0]?.production_profile;
+  if (!productionProfile) return unavailableResponse();
   if (!canRenderShortsWithAudioProfile(productionProfile)) {
     return NextResponse.json(
       { error: "adapted_music_required" },
