@@ -433,6 +433,10 @@ async function main() {
     );
     await runDatabaseAssertions(
       containers.databaseName,
+      "supabase/tests/per_short_production_profiles.sql",
+    );
+    await runDatabaseAssertions(
+      containers.databaseName,
       "supabase/tests/shorts_analysis_worker_health.sql",
     );
     await runDatabaseAssertions(
