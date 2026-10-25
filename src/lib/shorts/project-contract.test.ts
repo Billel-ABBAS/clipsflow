@@ -150,7 +150,12 @@ describe("Shorts candidate selection contract", () => {
       production_profile: validProductionProfile,
     });
 
-    expect(parsed.production_profile).toEqual(validProductionProfile);
+    expect(parsed.candidate_profiles).toEqual(
+      candidateIds.map((candidate_id) => ({
+        candidate_id,
+        production_profile: validProductionProfile,
+      })),
+    );
   });
 
   it("fails closed for missing ElevenLabs consent or a missing commercial license", () => {
@@ -294,7 +299,66 @@ describe("Shorts candidate selection contract", () => {
           },
           elevenlabs: validProductionProfile.elevenlabs,
         },
-      }).production_profile.creative_direction,
+      }).candidate_profiles[0]?.production_profile.creative_direction,
     ).toEqual({ enabled: false, explicit_consent: false });
+  });
+
+  it("accepts a distinct bounded production profile for every selected candidate", () => {
+    const parsed = selectShortsCandidatesSchema.parse({
+      candidate_profiles: [
+        {
+          candidate_id: candidateIds[0],
+          production_profile: validProductionProfile,
+        },
+        {
+          candidate_id: candidateIds[1],
+          production_profile: {
+            ...validProductionProfile,
+            motion: {
+              ...validProductionProfile.motion,
+              template: "minimal-static",
+              reduced_motion: true,
+            },
+            elevenlabs: {
+              ...validProductionProfile.elevenlabs,
+              enabled: false,
+              explicit_consent: false,
+              commercial_license_confirmed: false,
+              use_cases: [],
+            },
+          },
+        },
+      ],
+    });
+
+    expect(
+      parsed.candidate_profiles[0]?.production_profile.motion.template,
+    ).toBe(validProductionProfile.motion.template);
+    expect(
+      parsed.candidate_profiles[1]?.production_profile.motion,
+    ).toMatchObject({
+      template: "minimal-static",
+      reduced_motion: true,
+    });
+    expect(
+      parsed.candidate_profiles[1]?.production_profile.elevenlabs.enabled,
+    ).toBe(false);
+  });
+
+  it("rejects duplicate IDs in the per-candidate profile payload", () => {
+    expect(
+      selectShortsCandidatesSchema.safeParse({
+        candidate_profiles: [
+          {
+            candidate_id: candidateIds[0],
+            production_profile: validProductionProfile,
+          },
+          {
+            candidate_id: candidateIds[0],
+            production_profile: validProductionProfile,
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
 });

@@ -136,7 +136,13 @@ const creativeDirectionProfileSchema = z
     }
   });
 
-const productionProfileSchema = z.strictObject({
+/**
+ * The bounded, creator-visible profile persisted on exactly one candidate.
+ * It deliberately cannot carry prompts, transcripts, tokens, or arbitrary
+ * renderer input. Export the runtime schema so API reads and renders apply
+ * precisely the same validation as candidate selection.
+ */
+export const shortsProductionProfileSchema = z.strictObject({
   aspect_ratio: z.enum(["9:16", "1:1", "4:5", "16:9"]),
   subtitle_style: z.enum([
     "viral",
@@ -187,15 +193,56 @@ const candidateIdsSchema = z
     }
   });
 
-/**
- * Input of PATCH /api/shorts/projects/[projectId]. The persisted settings
- * are parsed as a strict allow-listed production profile so the worker sees
- * the exact options shown to the creator and nothing else.
- */
-export const selectShortsCandidatesSchema = z.strictObject({
-  candidate_ids: candidateIdsSchema,
-  production_profile: productionProfileSchema,
+const candidateProductionProfileSchema = z.strictObject({
+  candidate_id: z.uuid(),
+  production_profile: shortsProductionProfileSchema,
 });
+
+const candidateProfilesSchema = z
+  .array(candidateProductionProfileSchema)
+  .min(1)
+  .max(SHORTS_MAX_SELECTED_CANDIDATES)
+  .superRefine((candidateProfiles, context) => {
+    const seen = new Set<string>();
+    for (const [index, candidate] of candidateProfiles.entries()) {
+      if (seen.has(candidate.candidate_id)) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "candidate_id"],
+          message:
+            "candidate_profiles must not contain duplicate candidate IDs",
+        });
+      }
+      seen.add(candidate.candidate_id);
+    }
+  });
+
+const perCandidateSelectionSchema = z.strictObject({
+  candidate_profiles: candidateProfilesSchema,
+});
+
+const legacySharedSelectionSchema = z.strictObject({
+  candidate_ids: candidateIdsSchema,
+  production_profile: shortsProductionProfileSchema,
+});
+
+/**
+ * Input of PATCH /api/shorts/projects/[projectId]. Every selected candidate
+ * owns an allow-listed profile. The legacy shared shape remains accepted only
+ * during a rolling web deployment and is normalized immediately, so no render
+ * path needs to assume that a batch shares one profile.
+ */
+export const selectShortsCandidatesSchema = z
+  .union([perCandidateSelectionSchema, legacySharedSelectionSchema])
+  .transform((selection) => {
+    if ("candidate_profiles" in selection) return selection;
+    return {
+      candidate_profiles: selection.candidate_ids.map((candidateId) => ({
+        candidate_id: candidateId,
+        production_profile: selection.production_profile,
+      })),
+    };
+  });
 
 export type SelectShortsCandidatesInput = z.infer<
   typeof selectShortsCandidatesSchema
@@ -206,4 +253,6 @@ export type SelectShortsCandidatesInput = z.infer<
  * prompts, raw transcripts, refresh tokens, and untrusted free-form values
  * are deliberately absent.
  */
-export type ShortsProductionProfile = z.infer<typeof productionProfileSchema>;
+export type ShortsProductionProfile = z.infer<
+  typeof shortsProductionProfileSchema
+>;
