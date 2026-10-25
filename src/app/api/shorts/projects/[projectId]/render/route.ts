@@ -22,7 +22,7 @@ import {
   shortsMusicMoodSchema,
 } from "@/lib/shorts/project-contract";
 import {
-  hasAuthorizedShortsMusic,
+  canRenderShortsWithAudioProfile,
   shortsMotionAnimationSpeed,
   shortsRenderRequestId,
   shortsTitleCardOverlay,
@@ -164,7 +164,7 @@ export async function POST(
     );
   }
   const productionProfile = selection.data.production_profile;
-  if (!hasAuthorizedShortsMusic(productionProfile)) {
+  if (!canRenderShortsWithAudioProfile(productionProfile)) {
     return NextResponse.json(
       { error: "adapted_music_required" },
       { status: 409, headers: { "Cache-Control": "private, no-store" } },

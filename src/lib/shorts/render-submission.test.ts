@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ShortsProductionProfile } from "./project-contract";
 import {
+  canRenderShortsWithAudioProfile,
   hasAuthorizedShortsMusic,
   shortsMotionAnimationSpeed,
   shortsRenderRequestId,
@@ -31,10 +32,23 @@ const profile: ShortsProductionProfile = {
 };
 
 describe("Shorts render submission", () => {
-  it("requires authorized instrumental music before a Shorts render can be queued", () => {
+  it("allows a Short without music and requires authorisation only when music is enabled", () => {
     expect(hasAuthorizedShortsMusic(profile)).toBe(false);
+    expect(canRenderShortsWithAudioProfile(profile)).toBe(true);
     expect(
       hasAuthorizedShortsMusic({
+        ...profile,
+        elevenlabs: {
+          enabled: true,
+          explicit_consent: true,
+          commercial_license_confirmed: true,
+          use_cases: ["instrumental_music"],
+          synthetic_voice: false,
+        },
+      }),
+    ).toBe(true);
+    expect(
+      canRenderShortsWithAudioProfile({
         ...profile,
         elevenlabs: {
           enabled: true,
@@ -71,6 +85,8 @@ describe("Shorts render submission", () => {
 
     expect(hasAuthorizedShortsMusic(enabledWithoutLicense)).toBe(false);
     expect(hasAuthorizedShortsMusic(effectsOnly)).toBe(false);
+    expect(canRenderShortsWithAudioProfile(enabledWithoutLicense)).toBe(false);
+    expect(canRenderShortsWithAudioProfile(effectsOnly)).toBe(false);
   });
 
   it("creates stable idempotency IDs that change with the production profile", () => {
