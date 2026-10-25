@@ -4,6 +4,7 @@ import {
   buildProductionProfile,
   formatShortsTimestamp,
   isShortsAnalysisUnavailable,
+  isShortsProductionProfileReadyForRender,
   isShortsRenderDisabled,
   isShortsSelectionSaveDisabled,
   isValidShortsSourceDuration,
@@ -118,6 +119,27 @@ describe("ShortsStudio pure boundaries", () => {
             transcript_excerpt: "Transcript text",
             music_mood: "energetic",
             motion_direction: "Emphasize the opening phrase once.",
+            production_profile: {
+              aspect_ratio: "9:16",
+              subtitle_style: "viral",
+              subtitles: { synchronized: true, auto_emphasis: true },
+              motion: {
+                template: "editorial-focus",
+                reduced_motion: false,
+                renderer: "deterministic",
+              },
+              elevenlabs: {
+                enabled: false,
+                explicit_consent: false,
+                commercial_license_confirmed: false,
+                use_cases: [],
+                synthetic_voice: false,
+              },
+              creative_direction: {
+                enabled: false,
+                explicit_consent: false,
+              },
+            },
           },
           {
             id: "candidate-1",
@@ -144,6 +166,11 @@ describe("ShortsStudio pure boundaries", () => {
     expect(project?.candidates[0]).toMatchObject({
       musicMood: "energetic",
       motionDirection: "Emphasize the opening phrase once.",
+      productionProfile: {
+        aspect_ratio: "9:16",
+        subtitle_style: "viral",
+        motion: { template: "editorial-focus" },
+      },
     });
   });
 
@@ -247,22 +274,70 @@ describe("ShortsStudio pure boundaries", () => {
     });
   });
 
-  it("keeps render disabled until candidates and adapted music are authorized", () => {
+  it("keeps render disabled until candidates and their individual profiles are ready", () => {
     const ready = {
       candidatesReady: true,
       selectedCandidateCount: 2,
-      adaptedMusicAuthorized: true,
+      selectedProfilesReady: true,
       savingSelection: false,
       renderingSelected: false,
     };
 
     expect(isShortsRenderDisabled(ready)).toBe(false);
     expect(
-      isShortsRenderDisabled({ ...ready, adaptedMusicAuthorized: false }),
+      isShortsRenderDisabled({ ...ready, selectedProfilesReady: false }),
     ).toBe(true);
     expect(
       isShortsRenderDisabled({ ...ready, selectedCandidateCount: 0 }),
     ).toBe(true);
+  });
+
+  it("allows a batch to render when one selected Short explicitly turns music off", () => {
+    const musicOff = buildProductionProfile({
+      aspectRatio: "9:16",
+      subtitleStyle: "viral",
+      motionTemplate: "editorial-focus",
+      reducedMotion: false,
+      elevenLabsEnabled: false,
+      elevenLabsAvailable: false,
+      elevenLabsConsent: false,
+      commercialLicenseConfirmed: false,
+      creativeDirectionEnabled: false,
+      creativeDirectionAvailable: false,
+      creativeDirectionConsent: false,
+    });
+    const musicOn = buildProductionProfile({
+      aspectRatio: "1:1",
+      subtitleStyle: "premium",
+      motionTemplate: "punchy-cuts",
+      reducedMotion: false,
+      elevenLabsEnabled: true,
+      elevenLabsAvailable: true,
+      elevenLabsConsent: true,
+      commercialLicenseConfirmed: true,
+      creativeDirectionEnabled: false,
+      creativeDirectionAvailable: false,
+      creativeDirectionConsent: false,
+    });
+
+    expect(
+      isShortsProductionProfileReadyForRender({
+        productionProfile: musicOff,
+        elevenLabsAvailable: false,
+      }),
+    ).toBe(true);
+    expect(
+      isShortsProductionProfileReadyForRender({
+        productionProfile: musicOn,
+        elevenLabsAvailable: true,
+      }),
+    ).toBe(true);
+    expect(
+      isShortsProductionProfileReadyForRender({
+        productionProfile: musicOn,
+        elevenLabsAvailable: false,
+      }),
+    ).toBe(false);
   });
 
   it("allows saving selected moments without paid music authorization", () => {
