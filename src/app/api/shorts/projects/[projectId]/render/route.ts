@@ -130,6 +130,7 @@ export async function POST(
     return NextResponse.json({ error: "project_not_ready" }, { status: 409 });
   }
 
+  const requestedCandidateIds = parsedBody.data.candidate_ids;
   const { data: rows, error: candidateError } = await admin
     .from("shorts_candidates")
     .select(
@@ -138,11 +139,11 @@ export async function POST(
     .eq("project_id", project.id)
     .eq("user_id", user.id)
     .eq("selected", true)
-    .in("id", parsedBody.data.candidate_ids);
+    .in("id", requestedCandidateIds);
   if (candidateError) return unavailableResponse();
 
   const byId = new Map((rows ?? []).map((row) => [row.id as string, row]));
-  const orderedRows = parsedBody.data.candidate_ids.map((id) => byId.get(id));
+  const orderedRows = requestedCandidateIds.map((id) => byId.get(id));
   if (orderedRows.some((row) => !row) || orderedRows.length === 0) {
     return NextResponse.json(
       { error: "candidate_selection_conflict" },

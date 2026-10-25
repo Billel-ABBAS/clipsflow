@@ -987,14 +987,22 @@ export function isShortsProductionProfileReadyForRender(input: {
 export function isShortsRenderDisabled(input: {
   candidatesReady: boolean;
   selectedCandidateCount: number;
-  selectedProfilesReady: boolean;
+  /**
+   * The current per-candidate readiness state. `adaptedMusicAuthorized` stays
+   * accepted for a rolling deployment while a cached browser may still run the
+   * previous Studio bundle.
+   */
+  selectedProfilesReady?: boolean;
+  adaptedMusicAuthorized?: boolean;
   savingSelection: boolean;
   renderingSelected: boolean;
 }): boolean {
+  const profilesReady =
+    input.selectedProfilesReady ?? input.adaptedMusicAuthorized ?? false;
   return (
     !input.candidatesReady ||
     input.selectedCandidateCount === 0 ||
-    !input.selectedProfilesReady ||
+    !profilesReady ||
     input.savingSelection ||
     input.renderingSelected
   );
