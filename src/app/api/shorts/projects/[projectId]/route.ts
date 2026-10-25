@@ -14,8 +14,10 @@ import { checkDistributedRateLimit } from "@/lib/rate-limit-distributed";
 import {
   selectShortsCandidatesSchema,
   shortsMusicMoodSchema,
+  shortsProductionProfileSchema,
   type ShortsAnalysisMode,
   type ShortsMusicMood,
+  type ShortsProductionProfile,
 } from "@/lib/shorts/project-contract";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -59,6 +61,7 @@ type PublicCandidate = Readonly<{
   motion_direction: string;
   visual_summary: string | null;
   selected: boolean;
+  production_profile: ShortsProductionProfile | null;
 }>;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -109,6 +112,9 @@ function toPublicCandidate(value: unknown): PublicCandidate | null {
   const row = asRecord(value);
   if (!row) return null;
   const musicMood = shortsMusicMoodSchema.safeParse(row.music_mood);
+  const productionProfile = shortsProductionProfileSchema.safeParse(
+    row.production_profile,
+  );
   if (
     !isUuid(row.id) ||
     typeof row.rank !== "number" ||
@@ -152,6 +158,11 @@ function toPublicCandidate(value: unknown): PublicCandidate | null {
     motion_direction: row.motion_direction,
     visual_summary: row.visual_summary,
     selected: row.selected,
+    // Unselected candidates deliberately carry `{}` until configured. A
+    // malformed historical value must not be trusted or exposed to the UI.
+    production_profile: productionProfile.success
+      ? productionProfile.data
+      : null,
   };
 }
 
@@ -257,7 +268,7 @@ export async function GET(
   const { data: candidateData, error: candidateError } = await admin
     .from("shorts_candidates")
     .select(
-      "id, rank, start_seconds, end_seconds, score, hook, title, rationale, transcript_excerpt, music_mood, motion_direction, visual_summary, selected",
+      "id, rank, start_seconds, end_seconds, score, hook, title, rationale, transcript_excerpt, music_mood, motion_direction, visual_summary, selected, production_profile",
     )
     .eq("project_id", project.id)
     .eq("user_id", user.id)
@@ -279,8 +290,8 @@ export async function GET(
 
 /**
  * Atomically selects up to twelve candidates and resets every other candidate
- * in the same owned, ready project. The worker receives only a bounded
- * production profile; ElevenLabs is never called by this request.
+ * in the same owned, ready project. Each selected candidate receives its own
+ * bounded production profile; ElevenLabs is never called by this request.
  */
 export async function PATCH(
   request: Request,
@@ -343,12 +354,14 @@ export async function PATCH(
     return NextResponse.json({ error: "validation_error" }, { status: 400 });
   }
 
-  const { data, error } = await admin.rpc("shorts_set_selected_candidates", {
-    p_user_id: user.id,
-    p_project_id: projectId,
-    p_candidate_ids: parsed.data.candidate_ids,
-    p_production_profile: parsed.data.production_profile,
-  });
+  const { data, error } = await admin.rpc(
+    "shorts_set_selected_candidate_profiles",
+    {
+      p_user_id: user.id,
+      p_project_id: projectId,
+      p_candidate_profiles: parsed.data.candidate_profiles,
+    },
+  );
   if (error) {
     console.error(
       JSON.stringify({
@@ -367,7 +380,7 @@ export async function PATCH(
   if (selectedCount === -1) {
     return NextResponse.json({ error: "project_not_ready" }, { status: 409 });
   }
-  if (selectedCount !== parsed.data.candidate_ids.length) {
+  if (selectedCount !== parsed.data.candidate_profiles.length) {
     return NextResponse.json(
       { error: "candidate_selection_conflict" },
       { status: 409 },
@@ -378,17 +391,22 @@ export async function PATCH(
     {
       data: {
         project_id: projectId,
-        selected_candidate_ids: parsed.data.candidate_ids,
+        selected_candidate_ids: parsed.data.candidate_profiles.map(
+          (candidate) => candidate.candidate_id,
+        ),
         selected_count: selectedCount,
-        reduced_motion: parsed.data.production_profile.motion.reduced_motion,
-        elevenlabs_sound_design: {
-          enabled: parsed.data.production_profile.elevenlabs.enabled,
-          explicit_user_consent:
-            parsed.data.production_profile.elevenlabs.explicit_consent,
-          commercial_license_confirmed:
-            parsed.data.production_profile.elevenlabs
-              .commercial_license_confirmed,
-        },
+        candidate_profiles: parsed.data.candidate_profiles.map((candidate) => ({
+          candidate_id: candidate.candidate_id,
+          reduced_motion: candidate.production_profile.motion.reduced_motion,
+          elevenlabs_sound_design: {
+            enabled: candidate.production_profile.elevenlabs.enabled,
+            explicit_user_consent:
+              candidate.production_profile.elevenlabs.explicit_consent,
+            commercial_license_confirmed:
+              candidate.production_profile.elevenlabs
+                .commercial_license_confirmed,
+          },
+        })),
       },
     },
     { headers: { "Cache-Control": "private, no-store" } },
