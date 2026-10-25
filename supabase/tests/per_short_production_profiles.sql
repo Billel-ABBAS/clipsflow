@@ -6,6 +6,26 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA public;
 
 SELECT plan(8);
 
+-- Some preserved local databases predate the canonical migration history and
+-- still carry this now-unused required column. This suite runs in an outer
+-- transaction and rolls the compatibility adjustment back; the contract under
+-- test does not read or write the legacy column.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'shorts_candidates'
+      AND column_name = 'analysis_source_rank'
+      AND is_nullable = 'NO'
+  ) THEN
+    ALTER TABLE public.shorts_candidates
+      ALTER COLUMN analysis_source_rank DROP NOT NULL;
+  END IF;
+END;
+$$;
+
 INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 VALUES (
   '00000000-0000-4000-8000-000000009901',
@@ -57,7 +77,6 @@ INSERT INTO public.shorts_candidates (
   user_id,
   episode_id,
   rank,
-  analysis_source_rank,
   start_seconds,
   end_seconds,
   score,
@@ -76,7 +95,6 @@ VALUES
     '00000000-0000-4000-8000-000000009901',
     '00000000-0000-4000-8000-000000009902',
     1,
-    1,
     0,
     30,
     92,
@@ -93,7 +111,6 @@ VALUES
     '00000000-0000-4000-8000-000000009903',
     '00000000-0000-4000-8000-000000009901',
     '00000000-0000-4000-8000-000000009902',
-    2,
     2,
     40,
     70,
