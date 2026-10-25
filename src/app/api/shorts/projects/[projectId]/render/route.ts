@@ -18,8 +18,8 @@ import { SubmitClipJobError, submitClipJob } from "@/lib/clips/submit-job";
 import { transcriptWindow } from "@/lib/clips/transcript-window";
 import { checkDistributedRateLimit } from "@/lib/rate-limit-distributed";
 import {
-  selectShortsCandidatesSchema,
   shortsMusicMoodSchema,
+  shortsProductionProfileSchema,
 } from "@/lib/shorts/project-contract";
 import {
   canRenderShortsWithAudioProfile,
@@ -150,28 +150,41 @@ export async function POST(
     );
   }
 
-  const firstRow = orderedRows[0];
-  if (!firstRow) return unavailableResponse();
-  const selectedIds = orderedRows.map((row) => (row as { id: string }).id);
-  const selection = selectShortsCandidatesSchema.safeParse({
-    candidate_ids: selectedIds,
-    production_profile: firstRow.production_profile,
+  const selectedCandidates = orderedRows.map((candidate) => {
+    if (!candidate) return null;
+    const productionProfile = shortsProductionProfileSchema.safeParse(
+      candidate.production_profile,
+    );
+    return productionProfile.success
+      ? { candidate, productionProfile: productionProfile.data }
+      : null;
   });
-  if (!selection.success) {
+  if (selectedCandidates.some((entry) => !entry)) {
     return NextResponse.json(
       { error: "production_profile_invalid" },
       { status: 409 },
     );
   }
-  const productionProfile = selection.data.production_profile;
-  if (!canRenderShortsWithAudioProfile(productionProfile)) {
+  const candidatesWithProfiles = selectedCandidates.filter(
+    (entry): entry is NonNullable<(typeof selectedCandidates)[number]> =>
+      entry !== null,
+  );
+  if (
+    candidatesWithProfiles.some(
+      ({ productionProfile }) =>
+        !canRenderShortsWithAudioProfile(productionProfile),
+    )
+  ) {
     return NextResponse.json(
       { error: "adapted_music_required" },
       { status: 409, headers: { "Cache-Control": "private, no-store" } },
     );
   }
 
-  if (productionProfile.creative_direction.enabled) {
+  const hasCreativeDirection = candidatesWithProfiles.some(
+    ({ productionProfile }) => productionProfile.creative_direction.enabled,
+  );
+  if (hasCreativeDirection) {
     if (!CLAUDE_OPUS_5_5_MODEL_API_ID_CONFIRMED) {
       return NextResponse.json(
         { error: "creative_director_model_unconfirmed" },
@@ -207,17 +220,16 @@ export async function POST(
   // blocking on (or accidentally repeating) a hosted transcription call.
   // If any selected window lacks cached words, keep both paid-provider gates
   // closed until the caller has explicitly authorized a budget.
-  const needsTranscription = orderedRows.some((row) => {
-    if (!row) return true;
-    const candidate = row as {
+  const needsTranscription = candidatesWithProfiles.some(({ candidate }) => {
+    const candidateWindow = candidate as {
       start_seconds: unknown;
       end_seconds: unknown;
     };
     return (
       transcriptWindow(
         episode.transcript_segments,
-        candidate.start_seconds as number,
-        candidate.end_seconds as number,
+        candidateWindow.start_seconds as number,
+        candidateWindow.end_seconds as number,
       ) === null
     );
   });
@@ -234,29 +246,15 @@ export async function POST(
       return unavailableResponse("transcription_unavailable");
     }
   }
-  if (
-    orderedRows.some(
-      (row) =>
-        JSON.stringify(
-          (row as { production_profile: unknown }).production_profile,
-        ) !== JSON.stringify(firstRow.production_profile),
-    )
-  ) {
-    return NextResponse.json(
-      { error: "production_profile_invalid" },
-      { status: 409 },
-    );
-  }
-
-  if (productionProfile.elevenlabs.enabled) {
-    const soundEffect = productionProfile.elevenlabs.use_cases.includes(
-      "sound_effects",
-    )
-      ? resolveShortsMotionEffect(productionProfile.motion.template)
-      : null;
-    const assetRequests = orderedRows.flatMap((row) => {
-      if (!row) return [];
-      const candidate = row as {
+  const audioAssetRequests = candidatesWithProfiles.flatMap(
+    ({ candidate, productionProfile }) => {
+      if (!productionProfile.elevenlabs.enabled) return [];
+      const soundEffect = productionProfile.elevenlabs.use_cases.includes(
+        "sound_effects",
+      )
+        ? resolveShortsMotionEffect(productionProfile.motion.template)
+        : null;
+      const audioCandidate = candidate as {
         id: string;
         title: string;
         hook: string;
@@ -266,13 +264,13 @@ export async function POST(
         {
           userId: user.id,
           projectId: project.id,
-          candidateId: candidate.id,
+          candidateId: audioCandidate.id,
           kind: "music" as const,
           prompt: resolveShortsMusicPrompt(
-            candidate.title,
-            candidate.hook,
+            audioCandidate.title,
+            audioCandidate.hook,
             productionProfile.motion.template,
-            candidate.music_mood,
+            audioCandidate.music_mood,
           ),
         },
         ...(soundEffect
@@ -280,29 +278,34 @@ export async function POST(
               {
                 userId: user.id,
                 projectId: project.id,
-                candidateId: candidate.id,
+                candidateId: audioCandidate.id,
                 kind: "sound_effect" as const,
                 prompt: soundEffect.prompt,
               },
             ]
           : []),
       ];
-    });
+    },
+  );
+  let needsElevenLabsGeneration = false;
+  if (audioAssetRequests.length > 0) {
     let cachedAssets: boolean[];
     try {
       cachedAssets = await Promise.all(
-        assetRequests.map((asset) => hasCachedShortsAudioAsset(admin, asset)),
+        audioAssetRequests.map((asset) =>
+          hasCachedShortsAudioAsset(admin, asset),
+        ),
       );
     } catch {
       return unavailableResponse("elevenlabs_cache_unavailable");
     }
-    if (
-      cachedAssets.some((cached) => !cached) ||
-      productionProfile.creative_direction.enabled
-    ) {
-      if (process.env.CLIPS_AI_BUDGET_AUTHORIZED !== "true") {
-        return unavailableResponse("paid_ai_not_authorized");
-      }
+    needsElevenLabsGeneration = cachedAssets.some((cached) => !cached);
+  }
+  if (needsElevenLabsGeneration || hasCreativeDirection) {
+    if (process.env.CLIPS_AI_BUDGET_AUTHORIZED !== "true") {
+      return unavailableResponse("paid_ai_not_authorized");
+    }
+    if (needsElevenLabsGeneration) {
       try {
         const { resolveElevenLabsConfig } =
           await import("@/lib/clips/elevenlabs");
@@ -330,8 +333,7 @@ export async function POST(
     error?: string;
   }> = [];
 
-  for (const candidate of orderedRows) {
-    if (!candidate) continue;
+  for (const { candidate, productionProfile } of candidatesWithProfiles) {
     const candidateId = candidate.id as string;
     if (
       candidate.episode_id !== project.episode_id ||
