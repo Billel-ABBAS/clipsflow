@@ -26,10 +26,10 @@ const freshCookie: CookiePatch = {
   options: { path: "/", httpOnly: true, secure: true },
 };
 
-async function runProxy() {
+async function runProxy(pathname = "/fr/dashboard") {
   const { default: proxy } = await import("@/proxy");
   return proxy(
-    new NextRequest("https://app.example.com/fr/dashboard", {
+    new NextRequest(new URL(pathname, "https://app.example.com"), {
       headers: {
         cookie: "sb-test-session=expired-test-session; theme=dark",
         "x-clipsflow-request-path": "/admin",
@@ -106,9 +106,8 @@ describe("proxy — renouvellement de session et routage next-intl", () => {
     expect(
       response.headers.get("x-middleware-request-x-clipsflow-request-path"),
     ).toBe("/fr/dashboard");
-    expect(response.headers.get("x-middleware-rewrite")).toContain(
-      "/fr/dashboard",
-    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
     expect(response.cookies.get(freshCookie.name)).toBeUndefined();
   });
 
@@ -121,6 +120,25 @@ describe("proxy — renouvellement de session et routage next-intl", () => {
     expect(response.cookies.get(freshCookie.name)?.value).toBe(
       "latest-test-session",
     );
+  });
+
+  it("préserve une redirection de locale et ses nouveaux cookies", async () => {
+    batches = [[freshCookie]];
+    const response = await runProxy("/dashboard");
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "https://app.example.com/en/dashboard",
+    );
+    expect(response.cookies.get(freshCookie.name)?.value).toBe(freshCookie.value);
+  });
+
+  it("répercute également la suppression d'un cookie de session", async () => {
+    batches = [[{ ...freshCookie, value: "", options: { path: "/", maxAge: 0 } }]];
+    const response = await runProxy();
+    expect(response.headers.get("x-middleware-request-cookie")).not.toContain(
+      "expired-test-session",
+    );
+    expect(response.cookies.get(freshCookie.name)?.maxAge).toBe(0);
   });
 
   it("garde le routage internationalisé sans variables Supabase", async () => {
