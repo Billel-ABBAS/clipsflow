@@ -93,9 +93,11 @@ export function resolveShortsMusicPrompt(
   return "Focused contemporary instrumental bed with warm piano, a restrained low pulse, subtle percussion, and clear space around the foreground.";
 }
 
-export function resolveShortsMotionEffect(
-  motionTemplate: string,
-): { prompt: string; atSeconds: number; durationSeconds: number } | null {
+export function resolveShortsMotionEffect(motionTemplate: string): {
+  prompt: string;
+  atSeconds: number;
+  durationSeconds: number;
+} {
   switch (motionTemplate) {
     case "punchy-cuts":
       return {
@@ -111,7 +113,13 @@ export function resolveShortsMotionEffect(
         durationSeconds: 0.8,
       };
     default:
-      return null;
+      // Sound effects are an independent user choice, including when visual
+      // motion is reduced or disabled. Keep the fallback restrained.
+      return {
+        prompt: "Brief soft non-verbal chime accent, subtle and unobtrusive.",
+        atSeconds: 1.8,
+        durationSeconds: 0.8,
+      };
   }
 }
 
