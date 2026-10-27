@@ -45,7 +45,13 @@ describe("Shorts ElevenLabs creative plan", () => {
       atSeconds: 1.8,
       durationSeconds: 0.8,
     });
-    expect(resolveShortsMotionEffect("calm-focus")).toBeNull();
+    for (const motion of ["calm-focus", "minimal-static", "editorial-focus"]) {
+      expect(resolveShortsMotionEffect(motion)).toEqual({
+        prompt: "Brief soft non-verbal chime accent, subtle and unobtrusive.",
+        atSeconds: 1.8,
+        durationSeconds: 0.8,
+      });
+    }
   });
 
   it("recognizes an existing private audio object without requiring provider configuration", async () => {

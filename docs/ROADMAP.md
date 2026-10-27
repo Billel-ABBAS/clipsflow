@@ -270,3 +270,18 @@ avec 88 assertions pgTAP. Les cinq tests du mixeur audio passent aussi sur Linux
 Cette preuve vise ce commit de code; la note de résultat est un ajout documentaire. Cette preuve locale ne valide ni
 les fournisseurs, ni un rendu Production, ni les SFX sans musique. Aucune
 fusion, migration, ouverture de gate ou publication n'est incluse dans ce lot.
+
+## Accent sonore et motion statique — 27 octobre 2026
+
+Un lot empilé sur la correction du mixeur conserve un accent sonore demandé
+pour les presets calm-focus, minimal-static et editorial-focus. Le helper
+renvoyait null pour ces trois cas; il propose désormais un accent discret non
+verbal. Les presets énergiques gardent leur plan précédent. Le worker appelle
+ce helper uniquement dans la branche sound_effects déjà autorisée; ce lot
+n'ajoute ni consentement implicite ni génération fournisseur.
+
+Le test pur en mémoire reproduit les trois suppressions puis valide les trois
+plans corrigés et l'absence de changement des deux plans énergiques. La CI
+complète est en attente. Le mode SFX sans musique dépend toujours du lot des
+profils indépendants; aucune preuve ElevenLabs réelle ou Production n'est
+revendiquée ici.
