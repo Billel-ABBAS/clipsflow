@@ -41,6 +41,14 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - name: Verify package manager pin
+        run: |
+          node -e '
+            const expected = require("./package.json").packageManager;
+            const actual = "pnpm@" + require("node:child_process").execFileSync("pnpm", ["--version"], { encoding: "utf8" }).trim();
+            if (expected !== actual) throw new Error("pnpm mismatch: package.json=" + expected + ", installed=" + actual);
+          '
+
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
 
