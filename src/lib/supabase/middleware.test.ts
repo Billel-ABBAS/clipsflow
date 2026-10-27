@@ -72,7 +72,9 @@ describe("proxy — renouvellement de session et routage next-intl", () => {
     expect(response.headers.get("x-middleware-request-cookie")).not.toContain(
       "expired-test-session",
     );
-    expect(response.headers.get("x-middleware-request-cookie")).toContain("theme=dark");
+    expect(response.headers.get("x-middleware-request-cookie")).toContain(
+      "theme=dark",
+    );
   });
 
   it("rend les cookies renouvelés visibles aux lectures suivantes de Supabase", async () => {
@@ -87,30 +89,46 @@ describe("proxy — renouvellement de session et routage next-intl", () => {
   it("conserve les options du cookie navigateur et interdit sa mise en cache", async () => {
     batches = [[freshCookie]];
     const response = await runProxy();
-    expect(response.cookies.get(freshCookie.name)).toMatchObject(freshCookie);
+    expect(response.cookies.get(freshCookie.name)).toMatchObject({
+      name: freshCookie.name,
+      value: freshCookie.value,
+      ...freshCookie.options,
+    });
     expect(response.headers.get("cache-control")).toContain("private");
     expect(response.headers.get("cache-control")).toContain("no-store");
   });
 
   it("préserve la locale et remplace le chemin d'authentification fourni par le client", async () => {
     const response = await runProxy();
-    expect(response.headers.get("x-middleware-request-x-next-intl-locale")).toBe("fr");
-    expect(response.headers.get("x-middleware-request-x-clipsflow-request-path")).toBe("/fr/dashboard");
-    expect(response.headers.get("x-middleware-rewrite")).toContain("/fr/dashboard");
+    expect(response.headers.get("x-middleware-request-x-next-intl-locale")).toBe(
+      "fr",
+    );
+    expect(
+      response.headers.get("x-middleware-request-x-clipsflow-request-path"),
+    ).toBe("/fr/dashboard");
+    expect(response.headers.get("x-middleware-rewrite")).toContain(
+      "/fr/dashboard",
+    );
     expect(response.cookies.get(freshCookie.name)).toBeUndefined();
   });
 
   it("conserve le dernier renouvellement quand Supabase émet plusieurs mises à jour", async () => {
     batches = [[freshCookie], [{ ...freshCookie, value: "latest-test-session" }]];
     const response = await runProxy();
-    expect(response.headers.get("x-middleware-request-cookie")).toContain("sb-test-session=latest-test-session");
-    expect(response.cookies.get(freshCookie.name)?.value).toBe("latest-test-session");
+    expect(response.headers.get("x-middleware-request-cookie")).toContain(
+      "sb-test-session=latest-test-session",
+    );
+    expect(response.cookies.get(freshCookie.name)?.value).toBe(
+      "latest-test-session",
+    );
   });
 
   it("garde le routage internationalisé sans variables Supabase", async () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
     const response = await runProxy();
     expect(createServerClientMock).not.toHaveBeenCalled();
-    expect(response.headers.get("x-middleware-request-x-next-intl-locale")).toBe("fr");
+    expect(response.headers.get("x-middleware-request-x-next-intl-locale")).toBe(
+      "fr",
+    );
   });
 });
