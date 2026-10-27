@@ -263,6 +263,10 @@ sidechain et délai explicite sur les deux canaux. Deux tests exécutent le
 binaire empaqueté avec des sources à 48/44,1/22,05 kHz et une sortie null.
 
 La PR est préparée depuis main sans reprendre les changements locaux Remotion
-ou profils. La CI complète reste à vérifier. Cette preuve locale ne valide ni
+ou profils. La CI complète du correctif a réussi sur le commit `4c5939c` : [run
+40565136781](https://github.com/Billel-ABBAS/clipsflow/actions/runs/40565136781),
+726 tests sur 92 fichiers, TypeScript, ESLint, build et smoke Docker authentifié,
+avec 88 assertions pgTAP. Les cinq tests du mixeur audio passent aussi sur Linux.
+Cette preuve vise ce commit de code; la note de résultat est un ajout documentaire. Cette preuve locale ne valide ni
 les fournisseurs, ni un rendu Production, ni les SFX sans musique. Aucune
 fusion, migration, ouverture de gate ou publication n'est incluse dans ce lot.
