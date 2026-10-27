@@ -36,8 +36,32 @@ function inputUrl(input: RequestInfo | URL): URL {
   return new URL(input.url);
 }
 
+/** Bound waiting for DNS even though the underlying resolver cannot be aborted. */
+async function awaitWithSignal<T>(
+  operation: () => Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  signal.throwIfAborted();
+  let onAbort!: () => void;
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => {
+        signal.throwIfAborted();
+        return operation();
+      }),
+      aborted,
+    ]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
 /**
- * GET/HEAD fetch with an overall header timeout and SSRF checks before every
+ * GET/HEAD fetch with an overall DNS/header timeout and SSRF checks before every
  * request in the redirect chain. Response bodies remain caller-owned.
  */
 export async function safeFetch(
@@ -69,15 +93,19 @@ export async function safeFetch(
     throw new OutboundUrlError("safeFetch only permits GET and HEAD");
   }
 
+  // Parse before allocating a timer: malformed input must not leak one.
+  let current = inputUrl(input);
+  const callerSignal =
+    requestInit.signal ?? (input instanceof Request ? input.signal : undefined);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  const signal = requestInit.signal
-    ? AbortSignal.any([requestInit.signal, controller.signal])
+  const signal = callerSignal
+    ? AbortSignal.any([callerSignal, controller.signal])
     : controller.signal;
-  let current = inputUrl(input);
 
   try {
     for (let redirects = 0; ; redirects++) {
+      signal.throwIfAborted();
       if (allowHttpOrigin && current.origin !== allowHttpOrigin) {
         throw new OutboundUrlError(
           "Local storage fetch left the configured Supabase origin",
@@ -88,8 +116,9 @@ export async function safeFetch(
         allowHttpOrigin,
       });
       if (current.protocol !== "http:" || current.origin !== allowHttpOrigin) {
-        await assertPublicDns(current, lookup);
+        await awaitWithSignal(() => assertPublicDns(current, lookup), signal);
       }
+      signal.throwIfAborted();
 
       const response = await fetchImpl(current, {
         ...requestInit,
@@ -111,7 +140,7 @@ export async function safeFetch(
       current = next;
     }
   } catch (error) {
-    if (controller.signal.aborted) {
+    if (controller.signal.aborted && signal.reason === controller.signal.reason) {
       throw new FetchTimeoutError(current, timeoutMs);
     }
     throw error;
