@@ -14,11 +14,9 @@ export default async function proxy(request: NextRequest) {
   requestHeaders.set(AUTH_REQUEST_PATH_HEADER, request.nextUrl.pathname);
   const requestWithPath = new NextRequest(request, { headers: requestHeaders });
 
-  // 1. next-intl : normalise /pricing → /en/pricing (redirect/rewrite + headers locale)
-  const response = intlMiddleware(requestWithPath);
-
-  // 2. Supabase : layer les cookies de session SUR la réponse intl (ordre critique)
-  return updateSession(requestWithPath, response);
+  // Supabase actualise la requête avant sa transmission au rendu serveur.
+  // La réponse finale reste celle de next-intl, avec ses locales et redirections.
+  return updateSession(requestWithPath, intlMiddleware);
 }
 
 export const config = {

@@ -11,6 +11,13 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.{ts,tsx}"],
+    server: {
+      deps: {
+        // next-intl uses extensionless Next.js imports; let Vite resolve them.
+        // https://next-intl.dev/docs/environments/testing#vitest
+        inline: ["next-intl"],
+      },
+    },
     coverage: {
       provider: "v8",
       include: ["src/lib/clips/**"],
