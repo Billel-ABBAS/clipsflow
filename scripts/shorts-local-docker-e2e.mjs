@@ -447,6 +447,10 @@ async function main() {
       containers.databaseName,
       "supabase/tests/shorts_analysis_transient_retry.sql",
     );
+    await runDatabaseAssertions(
+      containers.databaseName,
+      "supabase/tests/shorts_analysis_targeted_claim.sql",
+    );
 
     console.log(
       "Local Docker Shorts E2E passed: authenticated Studio, closed-budget/stale-heartbeat gates, readiness-off rollback with a fresh heartbeat and empty analysis queue, successful worker poll, resumable TUS upload, audio and audio-video analysis, creator selection, renders/downloads, motion, YouTube mock, and all Shorts SQL assertion suites.",
