@@ -18,6 +18,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  railway-web-image:
+    name: Railway web image smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        # actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Build web image with synthetic public configuration
+        run: |
+          docker build -f Dockerfile.web -t clipsflow-web-ci \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL=https://supabase.example.invalid \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=synthetic-public-key \
+            --build-arg NEXT_PUBLIC_APP_URL=https://clipsflow.example.invalid .
+
+      - name: Start image and verify HTTP routes
+        run: |
+          set -eu
+          trap 'docker logs clipsflow-web-ci || true; docker rm -f clipsflow-web-ci || true' EXIT
+          docker run -d --name clipsflow-web-ci -p 127.0.0.1:31887:31887 \
+            -e PORT=31887 clipsflow-web-ci
+          ready=false
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:31887/api/health > /tmp/clipsflow-health.json; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = true
+          node -e 'const h=require("/tmp/clipsflow-health.json"); if(h.status!=="ok" || h.service!=="clipsflow-web") process.exit(1)'
+          curl -fsS http://127.0.0.1:31887/fr > /tmp/clipsflow-home.html
+          grep -q '<html' /tmp/clipsflow-home.html
+          asset=$(node -e 'const h=require("fs").readFileSync("/tmp/clipsflow-home.html","utf8"); const m=h.match(/\/_next\/static\/[^" ]+\.js/); if(m) process.stdout.write(m[0])')
+          test -n "$asset"
+          curl -fsS "http://127.0.0.1:31887$asset" > /dev/null
+
   quality:
     name: Tests, types, lint, build, and Shorts Docker E2E
     runs-on: ubuntu-latest

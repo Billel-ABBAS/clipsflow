@@ -2,6 +2,23 @@
 
 > Objectif produit : importer une vidéo ou un podcast de 1 minute à 4 heures, analyser sa transcription en mode audio ou audio + vidéo, proposer les meilleurs extraits avec ou sans consignes, puis générer, télécharger et publier les Shorts après validation du créateur.
 
+## Préparation du site web Railway — 28 octobre 2026
+
+Le propriétaire a confirmé la cible : site web et workers sur Railway, avec
+Supabase conservé. `Dockerfile.web` prépare une image Next.js Linux distincte
+du worker, en Node 24, avec les seules variables publiques nécessaires au
+build et un processus non privilégié. Une tâche CI construit l'image avec des
+valeurs synthétiques, puis vérifie le démarrage, la santé, la landing et un
+asset JavaScript. Ces contrôles ne valident ni les secrets, ni les sessions,
+OAuth, Stripe, upload, workers ou le parcours utilisateur en Production.
+
+La configuration de service et du chemin Dockerfile, les callbacks, l'origine,
+le healthcheck Railway, le suivi des files et le retour arrière restent à
+vérifier dans un environnement autorisé avant toute bascule. La migration ne
+doit pas utiliser l'ancien format de configuration Railway déprécié pour de
+nouveaux services. Aucun déploiement, secret, domaine ou trafic n'est modifié
+par ce lot.
+
 ## État de livraison vérifié — 8 octobre 2026
 
 - Le code couvre les 11 routes de l'extension design; voir [la carte des écrans](../.superdesign/init/routes.md). La direction Canva étendue et le correctif de readiness Shorts sont fusionnés dans `main` par les PR #8 et #9. Vercel Production `dpl_GUGdv82rmcTEFxzyBgxpzt88Pwxy` est `READY`, lié au commit `b30a711b67dc5879c9f1d612c2618f775b22c00c` et sert l'alias `clipsflow-liart.vercel.app`.
