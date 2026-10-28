@@ -27,6 +27,104 @@ afterEach(() => {
 });
 
 describe("fenced Shorts analysis worker", () => {
+  it("fails closed on incomplete or malformed target configuration", async () => {
+    const rpc = vi.fn();
+    const admin = { rpc } as unknown as SupabaseClient;
+    for (const target of [
+      { SHORTS_ANALYSIS_TARGET_JOB_ID: "40000000-0000-4000-8000-000000000091" },
+      {
+        SHORTS_ANALYSIS_TARGET_USER_ID: "20000000-0000-4000-8000-000000000091",
+      },
+      {
+        SHORTS_ANALYSIS_TARGET_JOB_ID: "",
+        SHORTS_ANALYSIS_TARGET_USER_ID: "bad",
+      },
+    ]) {
+      await expect(
+        processOneShortsAnalysisJob(admin, {
+          environment: { ...validEnvironment, ...target },
+        }),
+      ).rejects.toThrow("analysis_target_configuration_invalid");
+    }
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("uses only the targeted claim and never marks the general queue healthy", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [], error: null });
+    const heartbeat = vi.fn(async () => true);
+    const admin = { rpc } as unknown as SupabaseClient;
+    await expect(
+      processOneShortsAnalysisJob(admin, {
+        environment: {
+          ...validEnvironment,
+          SHORTS_ANALYSIS_TARGET_JOB_ID: "40000000-0000-4000-8000-000000000091",
+          SHORTS_ANALYSIS_TARGET_USER_ID:
+            "20000000-0000-4000-8000-000000000091",
+        },
+        onSuccessfulQueuePoll: heartbeat,
+      }),
+    ).resolves.toEqual({ kind: "idle" });
+    expect(rpc).toHaveBeenCalledWith("shorts_claim_analysis_targeted", {
+      p_claim_request_id: expect.any(String),
+      p_lease_seconds: 1800,
+      p_job_id: "40000000-0000-4000-8000-000000000091",
+      p_user_id: "20000000-0000-4000-8000-000000000091",
+    });
+    expect(heartbeat).not.toHaveBeenCalled();
+  });
+
+  it("rejects a claim for another job before accessing its data or sending a heartbeat", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [
+        {
+          id: "40000000-0000-4000-8000-000000000092",
+          project_id: "10000000-0000-4000-8000-000000000091",
+          user_id: "20000000-0000-4000-8000-000000000091",
+          episode_id: "30000000-0000-4000-8000-000000000091",
+          status: "processing",
+          attempt_count: 1,
+          lease_token: "50000000-0000-4000-8000-000000000091",
+        },
+      ],
+      error: null,
+    });
+    const from = vi.fn();
+    const heartbeat = vi.fn(async () => true);
+    await expect(
+      processOneShortsAnalysisJob({ rpc, from } as unknown as SupabaseClient, {
+        environment: {
+          ...validEnvironment,
+          SHORTS_ANALYSIS_TARGET_JOB_ID: "40000000-0000-4000-8000-000000000091",
+          SHORTS_ANALYSIS_TARGET_USER_ID:
+            "20000000-0000-4000-8000-000000000091",
+        },
+        onSuccessfulQueuePoll: heartbeat,
+      }),
+    ).rejects.toThrow("analysis_target_claim_conflict");
+    expect(from).not.toHaveBeenCalled();
+    expect(heartbeat).not.toHaveBeenCalled();
+  });
+
+  it("never falls back to the general queue when the targeted RPC is unavailable", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: "42883", message: "missing targeted function" },
+      status: 404,
+    });
+    await expect(
+      processOneShortsAnalysisJob({ rpc } as unknown as SupabaseClient, {
+        environment: {
+          ...validEnvironment,
+          SHORTS_ANALYSIS_TARGET_JOB_ID: "40000000-0000-4000-8000-000000000091",
+          SHORTS_ANALYSIS_TARGET_USER_ID:
+            "20000000-0000-4000-8000-000000000091",
+        },
+      }),
+    ).rejects.toThrow("analysis_queue_unavailable");
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(rpc.mock.calls[0]?.[0]).toBe("shorts_claim_analysis_targeted");
+  });
+
   it("does not claim work when the worker switch is off", async () => {
     const rpc = vi.fn();
     const admin = { rpc } as unknown as SupabaseClient;
@@ -181,110 +279,124 @@ describe("fenced Shorts analysis worker", () => {
     expect(calls[0]?.args).toEqual(calls[1]?.args);
   });
 
-  it("requeues a retryable provider failure on the first analysis attempt", async () => {
-    const jobId = "40000000-0000-4000-8000-000000000091";
-    const projectId = "10000000-0000-4000-8000-000000000091";
-    const userId = "20000000-0000-4000-8000-000000000091";
-    const episodeId = "30000000-0000-4000-8000-000000000091";
-    const leaseToken = "50000000-0000-4000-8000-000000000091";
-    const project = {
-      id: projectId,
-      user_id: userId,
-      episode_id: episodeId,
-      analysis_mode: "audio",
-      user_instructions: "",
-      jev_shadow_consent: false,
-      status: "transcribing",
-      source_duration_seconds: 1_200,
-    };
-    const episode = {
-      id: episodeId,
-      user_id: userId,
-      source_type: "upload",
-      source_url: null,
-      source_storage_path: `${userId}/shorts/source.mp4`,
-      status: "ready",
-    };
-    const queryFor = (data: unknown) => {
-      const query = {
-        select: vi.fn(() => query),
-        eq: vi.fn(() => query),
-        maybeSingle: vi.fn(async () => ({ data, error: null })),
+  it.each([false, true])(
+    "handles a transient provider failure in targeted mode %s",
+    async (targeted) => {
+      const jobId = "40000000-0000-4000-8000-000000000091";
+      const projectId = "10000000-0000-4000-8000-000000000091";
+      const userId = "20000000-0000-4000-8000-000000000091";
+      const episodeId = "30000000-0000-4000-8000-000000000091";
+      const leaseToken = "50000000-0000-4000-8000-000000000091";
+      const project = {
+        id: projectId,
+        user_id: userId,
+        episode_id: episodeId,
+        analysis_mode: "audio",
+        user_instructions: "",
+        jev_shadow_consent: false,
+        status: "transcribing",
+        source_duration_seconds: 1_200,
       };
-      return query;
-    };
-    const from = vi.fn((table: string) => {
-      if (table === "shorts_projects") return queryFor(project);
-      if (table === "episodes") return queryFor(episode);
-      throw new Error(`unexpected_table:${table}`);
-    });
-    const rpc = vi.fn(async (name: string) => {
-      if (name === "shorts_claim_analysis_job_idempotent") {
-        return {
-          data: [
-            {
-              id: jobId,
-              project_id: projectId,
-              user_id: userId,
-              episode_id: episodeId,
-              status: "processing",
-              attempt_count: 1,
-              lease_token: leaseToken,
-            },
-          ],
-          error: null,
+      const episode = {
+        id: episodeId,
+        user_id: userId,
+        source_type: "upload",
+        source_url: null,
+        source_storage_path: `${userId}/shorts/source.mp4`,
+        status: "ready",
+      };
+      const queryFor = (data: unknown) => {
+        const query = {
+          select: vi.fn(() => query),
+          eq: vi.fn(() => query),
+          maybeSingle: vi.fn(async () => ({ data, error: null })),
         };
-      }
-      if (
-        name === "shorts_adjust_analysis_quota" ||
-        name === "shorts_mark_analysis_analyzing"
-      ) {
-        return { data: true, error: null };
-      }
-      if (name === "shorts_fail_or_retry_analysis_job") {
-        return { data: true, error: null };
-      }
-      throw new Error(`unexpected_rpc:${name}`);
-    });
-    const admin = { rpc, from } as unknown as SupabaseClient;
+        return query;
+      };
+      const from = vi.fn((table: string) => {
+        if (table === "shorts_projects") return queryFor(project);
+        if (table === "episodes") return queryFor(episode);
+        throw new Error(`unexpected_table:${table}`);
+      });
+      const rpc = vi.fn(async (name: string) => {
+        if (
+          name ===
+          (targeted
+            ? "shorts_claim_analysis_targeted"
+            : "shorts_claim_analysis_job_idempotent")
+        ) {
+          return {
+            data: [
+              {
+                id: jobId,
+                project_id: projectId,
+                user_id: userId,
+                episode_id: episodeId,
+                status: "processing",
+                attempt_count: 1,
+                lease_token: leaseToken,
+              },
+            ],
+            error: null,
+          };
+        }
+        if (
+          name === "shorts_adjust_analysis_quota" ||
+          name === "shorts_mark_analysis_analyzing"
+        ) {
+          return { data: true, error: null };
+        }
+        if (name === "shorts_fail_or_retry_analysis_job") {
+          return { data: true, error: null };
+        }
+        throw new Error(`unexpected_rpc:${name}`);
+      });
+      const admin = { rpc, from } as unknown as SupabaseClient;
 
-    await expect(
-      processOneShortsAnalysisJob(admin, {
-        environment: validEnvironment,
-        resolveSource: vi.fn(async () => ({
-          url: "https://media.example/test",
-        })),
-        downloadSource: vi.fn(async () => ({
-          path: "retry-test-source.media",
-          bytes: 100,
-          contentType: "audio/mpeg",
-        })),
-        probeMedia: vi.fn(async () => ({
-          durationSeconds: 1_200,
-          hasVideo: false,
-        })),
-        extractAudioChunk: vi.fn(async () => "retry-test-chunk.wav"),
-        transcribe: vi.fn(async () => ({
-          words: [{ text: "useful transcript", start: 20, end: 20.5 }],
-          detectedLanguage: "en",
-          model: "whisper-test",
-        })),
-        analyzeCandidates: vi.fn(async () => {
-          throw new LongformOpenAIError(
-            "longform_analysis_provider_failed",
-            true,
-          );
+      await expect(
+        processOneShortsAnalysisJob(admin, {
+          environment: targeted
+            ? {
+                ...validEnvironment,
+                SHORTS_ANALYSIS_TARGET_JOB_ID: jobId,
+                SHORTS_ANALYSIS_TARGET_USER_ID: userId,
+              }
+            : validEnvironment,
+          resolveSource: vi.fn(async () => ({
+            url: "https://media.example/test",
+          })),
+          downloadSource: vi.fn(async () => ({
+            path: "retry-test-source.media",
+            bytes: 100,
+            contentType: "audio/mpeg",
+          })),
+          probeMedia: vi.fn(async () => ({
+            durationSeconds: 1_200,
+            hasVideo: false,
+          })),
+          extractAudioChunk: vi.fn(async () => "retry-test-chunk.wav"),
+          transcribe: vi.fn(async () => ({
+            words: [{ text: "useful transcript", start: 20, end: 20.5 }],
+            detectedLanguage: "en",
+            model: "whisper-test",
+          })),
+          analyzeCandidates: vi.fn(async () => {
+            throw new LongformOpenAIError(
+              "longform_analysis_provider_failed",
+              true,
+            );
+          }),
         }),
-      }),
-    ).resolves.toEqual({ kind: "retrying", jobId });
+      ).resolves.toEqual({ kind: targeted ? "failed" : "retrying", jobId });
 
-    expect(rpc).toHaveBeenCalledWith("shorts_fail_or_retry_analysis_job", {
-      p_job_id: jobId,
-      p_lease_token: leaseToken,
-      p_error_message: "longform_analysis_provider_failed",
-      p_retryable: true,
-    });
-  });
+      expect(rpc).toHaveBeenCalledWith("shorts_fail_or_retry_analysis_job", {
+        p_job_id: jobId,
+        p_lease_token: leaseToken,
+        p_error_message: "longform_analysis_provider_failed",
+        p_retryable: !targeted,
+      });
+    },
+  );
 
   it("returns idle when the fenced queue has no job", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: [], error: null });

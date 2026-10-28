@@ -4,15 +4,25 @@
 
 ## Préparation P0 — claim d'analyse ciblé — 28 octobre 2026
 
+Le worker peut utiliser le claim ciblé en indiquant ensemble les UUID du job et
+de son propriétaire. Une configuration incomplète échoue fermée, tout résultat
+inattendu est refusé, et aucune reprise de job ni heartbeat de file générale
+n'est déclenché en mode ciblé. Les tests du worker sont locaux/simulés. Ce mode
+ne suffit pas à isoler une recette : les autres consommateurs doivent être
+arrêtés ou confinés, l'admission web limitée au compte de test et les appels
+internes des fournisseurs ainsi que leur budget doivent être bornés. La
+publication de ce code ne vaut ni activation Railway ni recette Production.
+
 Une migration prépare un claim limité à un job et à son propriétaire, sans
 balayage des jobs expirés ni deuxième tentative. Elle conserve l'idempotence
 d'un bail vivant et purge les anciennes entrées du registre selon la politique
 existante. Le smoke Docker inclut les assertions pgTAP de propriété, droits,
-isolation, rejeu et rétention. Aucun worker n'utilise encore cette fonction;
-elle n'isole pas les consommateurs ordinaires concurrents et ne limite pas
-les admissions web. Les tests SQL et leur concurrence réelle restent à exécuter
-sur une base éphémère : Docker local est indisponible. Aucune migration distante,
-activation Railway ou recette Production n'est impliquée par ce lot.
+isolation, rejeu et rétention. La CI de la PR #45 au commit `e518ede` a appliqué
+la migration sur Supabase éphémère et réussi ses 12 assertions ainsi que le
+smoke Shorts simulé. La concurrence entre consommateurs reste à tester; cette
+fonction n'isole pas les consommateurs ordinaires et ne limite pas l'admission
+web. Aucune migration distante, activation Railway ou recette Production n'est
+impliquée par ce lot.
 
 ## État de livraison vérifié — 8 octobre 2026
 
