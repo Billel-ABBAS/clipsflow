@@ -2,6 +2,18 @@
 
 > Objectif produit : importer une vidéo ou un podcast de 1 minute à 4 heures, analyser sa transcription en mode audio ou audio + vidéo, proposer les meilleurs extraits avec ou sans consignes, puis générer, télécharger et publier les Shorts après validation du créateur.
 
+## Préparation P0 — claim d'analyse ciblé — 28 octobre 2026
+
+Une migration prépare un claim limité à un job et à son propriétaire, sans
+balayage des jobs expirés ni deuxième tentative. Elle conserve l'idempotence
+d'un bail vivant et purge les anciennes entrées du registre selon la politique
+existante. Le smoke Docker inclut les assertions pgTAP de propriété, droits,
+isolation, rejeu et rétention. Aucun worker n'utilise encore cette fonction;
+elle n'isole pas les consommateurs ordinaires concurrents et ne limite pas
+les admissions web. Les tests SQL et leur concurrence réelle restent à exécuter
+sur une base éphémère : Docker local est indisponible. Aucune migration distante,
+activation Railway ou recette Production n'est impliquée par ce lot.
+
 ## État de livraison vérifié — 8 octobre 2026
 
 - Le code couvre les 11 routes de l'extension design; voir [la carte des écrans](../.superdesign/init/routes.md). La direction Canva étendue et le correctif de readiness Shorts sont fusionnés dans `main` par les PR #8 et #9. Vercel Production `dpl_GUGdv82rmcTEFxzyBgxpzt88Pwxy` est `READY`, lié au commit `b30a711b67dc5879c9f1d612c2618f775b22c00c` et sert l'alias `clipsflow-liart.vercel.app`.
