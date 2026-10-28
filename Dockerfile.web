@@ -1,0 +1,23 @@
+# Railway web service; workers keep their own entrypoints and image.
+FROM node:24-bookworm-slim AS build
+WORKDIR /app
+RUN npm install --global pnpm@11.20.0 --no-audit --no-fund
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY . .
+
+# Public browser configuration is compiled into the Next.js build. Never add
+# provider keys, service-role keys, webhook secrets or OAuth secrets here.
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG NEXT_PUBLIC_APP_URL
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN pnpm build
+
+FROM node:24-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+COPY --from=build --chown=node:node /app /app
+USER node
+# Next reads Railway's PORT environment variable; bind on the container network.
+CMD ["node", "node_modules/next/dist/bin/next", "start", "-H", "0.0.0.0"]
