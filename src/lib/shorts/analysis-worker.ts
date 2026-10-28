@@ -80,6 +80,8 @@ export interface ShortsAnalysisWorkerEnvironment
   CLIPS_FORCE_OPENAI_WHISPER?: string;
   GROQ_API_KEY?: string;
   SHORTS_ANALYSIS_WORKER_ENABLED?: string;
+  SHORTS_ANALYSIS_TARGET_JOB_ID?: string;
+  SHORTS_ANALYSIS_TARGET_USER_ID?: string;
 }
 
 export interface ShortsAnalysisWorkerDependencies {
@@ -780,8 +782,9 @@ async function processClaimedJob(
     }
     const errorCode = safeFailureCode(error);
     const retryable =
-      error instanceof RetryableShortsAnalysisError ||
-      asRecord(error)?.retryable === true;
+      environment.SHORTS_ANALYSIS_TARGET_JOB_ID === undefined &&
+      (error instanceof RetryableShortsAnalysisError ||
+        asRecord(error)?.retryable === true);
     const retryScheduled =
       retryable && job.attempt_count < MAX_ANALYSIS_JOB_ATTEMPTS;
     console.error(
@@ -835,6 +838,12 @@ export async function processOneShortsAnalysisJob(
   ) {
     return { kind: "idle" };
   }
+  const targetJobId = environment.SHORTS_ANALYSIS_TARGET_JOB_ID;
+  const targetUserId = environment.SHORTS_ANALYSIS_TARGET_USER_ID;
+  const targeted = targetJobId !== undefined || targetUserId !== undefined;
+  if (targeted && (!isUuid(targetJobId) || !isUuid(targetUserId))) {
+    throw new Error("analysis_target_configuration_invalid");
+  }
   // Do not lease a user job until its required paid providers are configured.
   // This preserves queued work while credentials or budget approval are being
   // provisioned, instead of burning retries and marking it failed.
@@ -857,10 +866,17 @@ export async function processOneShortsAnalysisJob(
   for (let attempt = 0; attempt < MAX_ANALYSIS_CLAIM_ATTEMPTS; attempt += 1) {
     try {
       claimResult = await withAnalysisRequestTimeout(
-        admin.rpc("shorts_claim_analysis_job_idempotent", {
-          p_claim_request_id: claimRequestId,
-          p_lease_seconds: DEFAULT_ANALYSIS_LEASE_SECONDS,
-        }),
+        targeted
+          ? admin.rpc("shorts_claim_analysis_targeted", {
+              p_claim_request_id: claimRequestId,
+              p_lease_seconds: DEFAULT_ANALYSIS_LEASE_SECONDS,
+              p_job_id: targetJobId,
+              p_user_id: targetUserId,
+            })
+          : admin.rpc("shorts_claim_analysis_job_idempotent", {
+              p_claim_request_id: claimRequestId,
+              p_lease_seconds: DEFAULT_ANALYSIS_LEASE_SECONDS,
+            }),
       );
     } catch {
       // A claim may have committed even if its PostgREST response was lost.
@@ -888,6 +904,15 @@ export async function processOneShortsAnalysisJob(
   }
   if (!claimResult) throw new Error("analysis_queue_unavailable");
   const job = parseClaim(claimResult.data);
+  if (
+    job &&
+    targeted &&
+    (job.id !== targetJobId ||
+      job.user_id !== targetUserId ||
+      job.attempt_count !== 1)
+  ) {
+    throw new Error("analysis_target_claim_conflict");
+  }
   const queueIsEmpty =
     Array.isArray(claimResult.data) && claimResult.data.length === 0;
   if (!job && !queueIsEmpty) {
@@ -900,7 +925,8 @@ export async function processOneShortsAnalysisJob(
     );
     return { kind: "idle" };
   }
-  if (dependencies.onSuccessfulQueuePoll) {
+  // A targeted poll says nothing about the general queue's readiness.
+  if (!targeted && dependencies.onSuccessfulQueuePoll) {
     try {
       const heartbeatRecorded = await withAnalysisRequestTimeout(
         dependencies.onSuccessfulQueuePoll(),
@@ -925,5 +951,9 @@ export async function processOneShortsAnalysisJob(
     }
   }
   if (!job) return { kind: "idle" };
-  return processClaimedJob(admin, job, { ...dependencies, environment });
+  return processClaimedJob(admin, job, {
+    ...dependencies,
+    environment,
+    ...(targeted ? { refreshWorkerHeartbeat: undefined } : {}),
+  });
 }
