@@ -4,6 +4,19 @@
 
 ## Préparation P0 — claim d'analyse ciblé — 28 octobre 2026
 
+Une restriction web facultative `SHORTS_ANALYSIS_ALLOWED_USER_ID` borne la
+création d'analyse à un compte; une valeur configurée vide ou invalide ferme
+l'admission. La page masque les modes d'analyse pour les autres comptes et
+l'API refuse avant l'accès privilégié. Lorsque la variable est absente, le
+comportement normal reste inchangé; la restriction ne contourne ni le flag ni
+le heartbeat. Les tests locaux couvrent la restriction et les portes existantes
+(14 tests), TypeScript et ESLint passent. Elle ne limite pas le nombre de jobs
+de ce compte, ne filtre pas le claim des workers standards et ne garantit pas
+que toutes les révisions web servies appliquent le filtre pendant une bascule.
+Sa configuration, l'arrêt des autres consommateurs, la validité du heartbeat,
+le budget, la concurrence et le retour arrière restent à vérifier avant toute
+recette autorisée. Aucun flag Production n'a été changé.
+
 Le worker peut utiliser le claim ciblé en indiquant ensemble les UUID du job et
 de son propriétaire. Une configuration incomplète échoue fermée, tout résultat
 inattendu est refusé, et aucune reprise de job ni heartbeat de file générale

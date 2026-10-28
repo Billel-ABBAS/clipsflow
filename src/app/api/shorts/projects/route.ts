@@ -22,6 +22,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { routing } from "@/i18n/routing";
 import { resolveShortsAnalysisQuotaSeconds } from "@/lib/shorts/analysis-quota";
+import { isShortsAnalysisUserAllowed } from "@/lib/shorts/analysis-admission";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -248,6 +249,14 @@ export async function POST(request: Request): Promise<Response> {
   }
   if (!(await isShortsEnabledForCurrentUser(user.id))) {
     return NextResponse.json({ error: "not_yet_available" }, { status: 403 });
+  }
+  if (
+    !isShortsAnalysisUserAllowed(
+      user.id,
+      process.env.SHORTS_ANALYSIS_ALLOWED_USER_ID,
+    )
+  ) {
+    return unavailableResponse();
   }
   const providerCapabilities =
     await resolveShortsProviderCapabilitiesForServer();
