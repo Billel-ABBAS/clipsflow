@@ -251,3 +251,22 @@ Reprise bornée des erreurs transitoires — 16 octobre 2026 : le worker classif
 P0 reprise fiabilisée — 17 octobre 2026 : la PR #22 ajoute le RPC fenced de retry et son CI Supabase éphémère est vert. La PR #23 ajoute une échéance persistante de 30 s et empêche le claim avant cette échéance; sa migration et ses assertions pgTAP sont en CI. La PR #24 classe les erreurs transitoires des fournisseurs et du média; elle est empilée sur #23. Le câblage final dans le worker (retour `retrying`, appel RPC, erreurs terminales conservées) est local et testé dans le lot suivant. Validations locales cumulées : 715 tests/90 fichiers, typecheck, ESLint et Prettier passent; `git diff --check` passe. Les runs CI #23 et #24 sont en cours sur des schémas éphémères. Aucune de ces PR n’est fusionnée; aucune migration Supabase Production, modification Railway/Vercel, analyse IA réelle ou publication YouTube n’a eu lieu. Prochaine étape : publier le câblage worker en PR empilée puis attendre les CI; ensuite la mise en Production reste soumise à une autorisation séparée et à la recette authentifiée avec le gate maintenu fermé jusqu’à preuve complète.
 
 État de release P0 revérifié — 19 octobre 2026 : les CI GitHub des PR #23, #24 et #25 sont toutes vertes (tests, TypeScript, ESLint, build, Supabase éphémère et smoke Shorts authentifié). Cette preuve couvre le schéma reconstruit et le workflow simulé, pas les fournisseurs réels ni Production. Les trois migrations de cette série (`20261015132301`, `20261016121800`, `20261016123837`) restent absentes de Supabase Production, dont le dernier historique est `20261010150636`; aucune n’a été appliquée. La Production Vercel sert toujours `main` au commit `7f31e3f`, antérieur à la série #15–#25, et son inventaire de variables ne contient pas `SHORTS_ANALYSIS_WORKER_READY` : le gate reste donc fermé. Railway garde le patch `b18546f9-157f-4b31-b972-c1710599f611` en attente (21 changements) ; son service `shorts-analysis-worker-production` est offline, sans release, tandis que le worker de rendu séparé reste sain. La sonde Supabase retourne `analysis_worker_healthy = false` et zéro job actif. Étapes encore séparées par autorisation : fusion ordonnée des PR #15–#25, déploiement Vercel issu de `main`, validation/restauration du plan Railway depuis le commit final, migrations Production avec sauvegarde et vérification, puis recette authentifiée contrôlée avant toute ouverture du gate ou appel fournisseur réel.
+
+## Compatibilité du mixage audio — 27 octobre 2026
+
+Un lot isolé corrige le mixeur actuellement sur main. Le FFmpeg Windows
+embarqué a été exécuté sur des entrées lavfi synthétiques, sans fichier local :
+la version précédente échoue sans accent sur la négociation des formats du
+sidechain, et avec accent sur l'option adelay all indisponible. Les deux cas
+passent après normalisation stéréo à 48 kHz, séparation de la voix pour le
+sidechain et délai explicite sur les deux canaux. Deux tests exécutent le
+binaire empaqueté avec des sources à 48/44,1/22,05 kHz et une sortie null.
+
+La PR est préparée depuis main sans reprendre les changements locaux Remotion
+ou profils. La CI complète du correctif a réussi sur le commit `4c5939c` : [run
+40565136781](https://github.com/Billel-ABBAS/clipsflow/actions/runs/40565136781),
+726 tests sur 92 fichiers, TypeScript, ESLint, build et smoke Docker authentifié,
+avec 88 assertions pgTAP. Les cinq tests du mixeur audio passent aussi sur Linux.
+Cette preuve vise ce commit de code; la note de résultat est un ajout documentaire. Cette preuve locale ne valide ni
+les fournisseurs, ni un rendu Production, ni les SFX sans musique. Aucune
+fusion, migration, ouverture de gate ou publication n'est incluse dans ce lot.

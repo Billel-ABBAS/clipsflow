@@ -45,8 +45,9 @@ export function buildShortAudioMixArgs(input: {
   }
 
   const filter = [
-    "[1:a]volume=0.16[music]",
-    "[music][0:a]sidechaincompress=threshold=0.025:ratio=8:attack=18:release=420[ducked]",
+    "[0:a]aformat=sample_rates=48000:channel_layouts=stereo,asplit=2[voice][sidechain]",
+    "[1:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=0.16[music]",
+    "[music][sidechain]sidechaincompress=threshold=0.025:ratio=8:attack=18:release=420[ducked]",
   ];
   // The packaged FFmpeg build predates amix=normalize=0. Restore the sum
   // after amix's default input-count normalization, then cap peaks safely.
@@ -54,14 +55,14 @@ export function buildShortAudioMixArgs(input: {
     const delayMs = Math.round(effectOffset * 1_000);
     const effectTargetSamples = Math.ceil(input.durationSeconds * 48_000);
     filter.push(
-      `[2:a]volume=0.45,adelay=${delayMs}:all=1,aresample=48000,apad=whole_len=${effectTargetSamples}[effect]`,
+      `[2:a]volume=0.45,aformat=channel_layouts=stereo,adelay=${delayMs}|${delayMs},aresample=48000,apad=whole_len=${effectTargetSamples}[effect]`,
     );
     filter.push(
-      "[0:a][ducked][effect]amix=inputs=3:duration=first:dropout_transition=2,volume=3,alimiter=limit=0.95[audio]",
+      "[voice][ducked][effect]amix=inputs=3:duration=first:dropout_transition=2,volume=3,alimiter=limit=0.95[audio]",
     );
   } else {
     filter.push(
-      "[0:a][ducked]amix=inputs=2:duration=first:dropout_transition=2,volume=2,alimiter=limit=0.95[audio]",
+      "[voice][ducked]amix=inputs=2:duration=first:dropout_transition=2,volume=2,alimiter=limit=0.95[audio]",
     );
   }
 
