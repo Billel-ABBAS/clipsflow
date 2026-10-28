@@ -8,6 +8,7 @@ import {
 import { redirect } from "@/i18n/navigation";
 import { isClipsEnabled } from "@/lib/clips/feature-flag";
 import { resolveShortsProviderCapabilitiesForServer } from "@/lib/shorts/provider-capabilities-server";
+import { filterShortsAnalysisCapabilities } from "@/lib/shorts/analysis-admission";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -66,7 +67,11 @@ export default async function ShortsPage({
           : undefined
       }
       episodes={episodes}
-      providerCapabilities={await resolveShortsProviderCapabilitiesForServer()}
+      providerCapabilities={filterShortsAnalysisCapabilities(
+        await resolveShortsProviderCapabilitiesForServer(),
+        user.id,
+        process.env.SHORTS_ANALYSIS_ALLOWED_USER_ID,
+      )}
       sourceLoadError={Boolean(error)}
     />
   );
