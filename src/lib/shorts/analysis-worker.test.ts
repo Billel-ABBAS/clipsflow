@@ -236,6 +236,87 @@ describe("fenced Shorts analysis worker", () => {
     });
   });
 
+  it("logs the sanitized PostgREST status and SQLSTATE on a terminal claim failure", async () => {
+    const logger = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const rpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: "42501", message: "private user data and tokens" },
+        status: 403,
+      });
+      await expect(
+        processOneShortsAnalysisJob({ rpc } as unknown as SupabaseClient, {
+          environment: validEnvironment,
+        }),
+      ).rejects.toThrow("analysis_queue_unavailable");
+      expect(rpc).toHaveBeenCalledOnce();
+      expect(JSON.parse(String(logger.mock.calls[0]?.[0]))).toEqual({
+        level: "error",
+        source: "shorts-analysis-worker",
+        message: "analysis_claim_failed",
+        category: "postgrest",
+        attempts: 1,
+        http_status: 403,
+        rpc_code: "42501",
+      });
+      expect(String(logger.mock.calls[0]?.[0])).not.toContain("private user");
+    } finally {
+      logger.mockRestore();
+    }
+  });
+
+  it("retries an uncertain PostgREST failure with the same key and hides untrusted error fields", async () => {
+    const logger = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const rpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: "bearer-secret", message: "token-in-message" },
+        status: 0,
+      });
+      await expect(
+        processOneShortsAnalysisJob({ rpc } as unknown as SupabaseClient, {
+          environment: validEnvironment,
+        }),
+      ).rejects.toThrow("analysis_queue_unavailable");
+      expect(rpc).toHaveBeenCalledTimes(2);
+      expect(rpc.mock.calls[0]?.[1]).toEqual(rpc.mock.calls[1]?.[1]);
+      expect(JSON.parse(String(logger.mock.calls[0]?.[0]))).toEqual({
+        level: "error",
+        source: "shorts-analysis-worker",
+        message: "analysis_claim_failed",
+        category: "postgrest_transport",
+        attempts: 2,
+        http_status: 0,
+      });
+      expect(String(logger.mock.calls[0]?.[0])).not.toContain("bearer-secret");
+      expect(String(logger.mock.calls[0]?.[0])).not.toContain("token-in-message");
+    } finally {
+      logger.mockRestore();
+    }
+  });
+
+  it("reports a terminal timeout without revealing the underlying exception", async () => {
+    const logger = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const rpc = vi.fn().mockRejectedValue(new Error("analysis_request_timeout"));
+      await expect(
+        processOneShortsAnalysisJob({ rpc } as unknown as SupabaseClient, {
+          environment: validEnvironment,
+        }),
+      ).rejects.toThrow("analysis_queue_unavailable");
+      expect(rpc).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(String(logger.mock.calls[0]?.[0]))).toEqual({
+        level: "error",
+        source: "shorts-analysis-worker",
+        message: "analysis_claim_failed",
+        category: "timeout",
+        attempts: 2,
+      });
+    } finally {
+      logger.mockRestore();
+    }
+  });
+
   it("does not replay a permanent PostgREST claim error", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: null,

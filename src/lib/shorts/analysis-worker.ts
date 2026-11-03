@@ -825,6 +825,38 @@ async function processClaimedJob(
 }
 
 /** Claim and process no more than one analysis job per worker invocation. */
+/**
+ * Emit only allowlisted claim diagnostics: PostgREST messages and arbitrary
+ * exception strings may contain tokens, identifiers or request metadata.
+ * Keep the generic failure and bounded idempotent retry behavior unchanged.
+ */
+function logAnalysisClaimFailure(
+  category: "timeout" | "exception" | "postgrest" | "postgrest_transport",
+  attempts: number,
+  status?: number,
+  code?: unknown,
+): void {
+  console.error(
+    JSON.stringify({
+      level: "error",
+      source: "shorts-analysis-worker",
+      message: "analysis_claim_failed",
+      category,
+      attempts,
+      ...(typeof status === "number" &&
+      Number.isInteger(status) &&
+      status >= 0 &&
+      status <= 599
+        ? { http_status: status }
+        : {}),
+      ...(typeof code === "string" &&
+      /^(?:[0-9A-Z]{5}|PGRST[0-9]{3})$/.test(code)
+        ? { rpc_code: code }
+        : {}),
+    }),
+  );
+}
+
 export async function processOneShortsAnalysisJob(
   admin: SupabaseClient,
   dependencies: ShortsAnalysisWorkerDependencies = {},
@@ -878,11 +910,17 @@ export async function processOneShortsAnalysisJob(
               p_lease_seconds: DEFAULT_ANALYSIS_LEASE_SECONDS,
             }),
       );
-    } catch {
+    } catch (error) {
       // A claim may have committed even if its PostgREST response was lost.
       // Replaying the same request id returns that exact live lease, rather
       // than consuming another attempt or taking a different queued job.
       if (attempt + 1 === MAX_ANALYSIS_CLAIM_ATTEMPTS) {
+        logAnalysisClaimFailure(
+          error instanceof Error && error.message === "analysis_request_timeout"
+            ? "timeout"
+            : "exception",
+          attempt + 1,
+        );
         throw new Error("analysis_queue_unavailable");
       }
       continue;
@@ -898,6 +936,12 @@ export async function processOneShortsAnalysisJob(
       ) {
         continue;
       }
+      logAnalysisClaimFailure(
+        claimResult.status === 0 ? "postgrest_transport" : "postgrest",
+        attempt + 1,
+        claimResult.status,
+        claimResult.error.code,
+      );
       throw new Error("analysis_queue_unavailable");
     }
     break;
