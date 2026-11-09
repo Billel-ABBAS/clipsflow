@@ -1,0 +1,42 @@
+name: Supabase legacy-to-audio upgrade rehearsal
+on:
+  push:
+    branches: [test/supabase-upgrade-rehearsal-20261109]
+  pull_request:
+    paths:
+      - scripts/supabase-upgrade-local.sh
+      - scripts/seed-upgrade-baseline.sql
+      - scripts/verify-upgraded-audio-schema.sql
+      - .github/workflows/supabase-upgrade-rehearsal.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: supabase-rehearsal-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      CLIPS_EPHEMERAL_DB_TEST: 'true'
+      CLIPS_AI_BUDGET_AUTHORIZED: 'false'
+      CLIPS_SOUNDBOX_ENABLED: 'false'
+      CLIPS_VOICESTUDIO_ENABLED: 'false'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          version: 11.20.0
+          run_install: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start legacy baseline, prove failure, apply 17 migrations and verify
+        run: bash scripts/supabase-upgrade-local.sh
