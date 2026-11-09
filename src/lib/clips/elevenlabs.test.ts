@@ -10,9 +10,10 @@ import {
 } from "./elevenlabs";
 
 const enabledEnvironment: ElevenLabsEnvironment = {
-  CLIPS_AI_BUDGET_AUTHORIZED: "true",
-  CLIPS_ELEVENLABS_ENABLED: "true",
-  ELEVENLABS_API_KEY: "test-elevenlabs-key",
+  CLIPS_OPEN_AUDIO_COMPUTE_AUTHORIZED: "true",
+  CLIPS_OPEN_AUDIO_ENABLED: "true",
+  CLIPS_OPEN_AUDIO_BASE_URL: "https://audio.example.test",
+  CLIPS_OPEN_AUDIO_API_KEY: "private-test-token",
 };
 
 const authorization: ElevenLabsGenerationAuthorization = {
@@ -20,8 +21,8 @@ const authorization: ElevenLabsGenerationAuthorization = {
   commercialLicenseConfirmed: true,
 };
 
-describe("ElevenLabs non-verbal sound design", () => {
-  it("requires server-side feature, budget, and creator consent before a provider call", async () => {
+describe("Open Audio through legacy non-verbal sound design contract", () => {
+  it("requires server-side feature, compute approval, and creator consent before a provider call", async () => {
     const fetch = vi.fn();
     await expect(
       generateInstrumentalMusic(
@@ -47,19 +48,24 @@ describe("ElevenLabs non-verbal sound design", () => {
   });
 
   it("requests instrumental music and returns bounded validated audio bytes", async () => {
+    const json = (data: unknown) => new Response(JSON.stringify({ code: 200, error: null, data }));
     const fetch = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
-        expect(String(input)).toContain("/v1/music?");
-        expect(new Headers(init?.headers).get("xi-api-key")).toBe(
-          "test-elevenlabs-key",
-        );
-        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        expect(body.model_id).toBe(ELEVENLABS_MUSIC_MODEL);
-        expect(body.force_instrumental).toBe(true);
-        expect(body.music_length_ms).toBe(60_000);
-        expect(body.prompt).toContain("No vocals");
+        expect(new URL(String(input)).origin).toBe("https://audio.example.test");
+        expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer private-test-token");
+        if (String(input).endsWith("/release_task")) {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          expect(body.model).toBe(ELEVENLABS_MUSIC_MODEL);
+          expect(body.lyrics).toBe("[Instrumental]");
+          expect(body.audio_duration).toBe(60);
+          expect(body.prompt).toContain("No vocals");
+          return json({ task_id: "song_123" });
+        }
+        if (String(input).endsWith("/query_result")) {
+          return json([{ task_id: "song_123", status: 1, result: JSON.stringify([{ file: "/v1/audio?path=sample.mp3" }]) }]);
+        }
         return new Response(new Uint8Array([1, 2, 3]), {
-          headers: { "content-type": "audio/mpeg", "song-id": "song_123" },
+          headers: { "content-type": "audio/mpeg" },
         });
       },
     );
@@ -70,7 +76,7 @@ describe("ElevenLabs non-verbal sound design", () => {
         prompt: "Warm, restrained background music.",
         authorization,
       },
-      { environment: enabledEnvironment, fetch },
+      { environment: enabledEnvironment, fetch, renderAudio: async (input) => input.bytes! },
     );
     expect(result).toMatchObject({
       kind: "instrumental-music",
@@ -110,21 +116,8 @@ describe("ElevenLabs non-verbal sound design", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("creates only short non-verbal motion effects", async () => {
-    const fetch = vi.fn(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        expect(String(input)).toContain("/v1/sound-generation?");
-        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        expect(body.model_id).toBe(ELEVENLABS_SOUND_MODEL);
-        expect(body.loop).toBe(false);
-        expect(body.duration_seconds).toBe(1.5);
-        expect(body.text).toContain("Non-verbal one-shot");
-        return new Response(new Uint8Array([4, 5]), {
-          headers: { "content-type": "audio/mpeg" },
-        });
-      },
-    );
-
+  it("creates only short non-verbal motion effects without network calls", async () => {
+    const fetch = vi.fn();
     const result = await generateMotionSoundEffect(
       {
         shortDurationSeconds: 45,
@@ -133,8 +126,13 @@ describe("ElevenLabs non-verbal sound design", () => {
         prompt: "Soft transition whoosh",
         authorization,
       },
-      { environment: enabledEnvironment, fetch },
+      { environment: enabledEnvironment, fetch, renderAudio: async (input) => {
+        expect(input.durationSeconds).toBe(1.5);
+        expect(input.prompt).toContain("Non-verbal one-shot");
+        return new Uint8Array([4, 5]);
+      } },
     );
+    expect(fetch).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       kind: "motion-sfx",
       model: ELEVENLABS_SOUND_MODEL,
