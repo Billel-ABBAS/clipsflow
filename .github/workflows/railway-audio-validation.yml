@@ -14,8 +14,11 @@ concurrency:
 
 jobs:
   quality:
+    if: github.ref == 'refs/heads/fix/railway-deployment-20261109'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      tested_tree: ${{ steps.tree.outputs.sha }}
     env:
       CI: 'true'
       CLIPS_AI_BUDGET_AUTHORIZED: 'false'
@@ -28,6 +31,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Apply reviewed regression fixes
+        run: python3 scripts/apply-reviewed-railway-audio-fix.py
       - name: Set up pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
         with:
@@ -53,3 +58,42 @@ jobs:
       - name: Build with no production credentials
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm build
+      - name: Record successfully tested source tree
+        id: tree
+        run: |
+          git diff --check
+          git add -- src/components/shorts/ShortsStudio.tsx 'src/app/api/shorts/projects/[projectId]/render/route.ts' src/lib/clips/voicestudio.ts src/lib/clips/soundbox.ts
+          echo "sha=$(git write-tree)" >> "$GITHUB_OUTPUT"
+
+  publish-reviewed-fix:
+    needs: quality
+    if: github.ref == 'refs/heads/fix/railway-deployment-20261109'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the same revision without persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Reproduce only the reviewed edits
+        run: |
+          python3 scripts/apply-reviewed-railway-audio-fix.py
+          git diff --check
+          git add -- src/components/shorts/ShortsStudio.tsx 'src/app/api/shorts/projects/[projectId]/render/route.ts' src/lib/clips/voicestudio.ts src/lib/clips/soundbox.ts
+          test "$(git write-tree)" = "$TESTED_TREE"
+        env:
+          TESTED_TREE: ${{ needs.quality.outputs.tested_tree }}
+      - name: Commit the tested tree to this repair branch only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: fix/railway-deployment-20261109
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote --heads origin "$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(audio): corriger la narration et sécuriser le déploiement Railway'
+          git -c credential.helper= -c 'credential.helper=!f() { printf "username=x-access-token\npassword=%s\n" "$GH_TOKEN"; }; f' push origin "HEAD:refs/heads/$TARGET_BRANCH"
+          echo "Published tested commit: $(git rev-parse HEAD)"
