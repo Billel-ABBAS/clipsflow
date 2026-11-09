@@ -4,7 +4,7 @@
 
 ## Stack
 
-Next.js 16 App Router · TS strict · Tailwind v4 · shadcn/base-ui · Supabase · Railway workers · Vercel/Sentry · next-intl (en/fr) · FFmpeg · Whisper/Groq ou OpenAI · analyse vidéo configurable · ElevenLabs (musique/SFX, serveur uniquement) · Claude Opus 5.5 (`claude-opus-5-5`, appels protégés par budget/flag) · Jev TypeSafe (classement shadow opt-in)
+Next.js 16 App Router · TS strict · Tailwind v4 · shadcn/base-ui · Supabase · Railway workers · Vercel/Sentry · next-intl (en/fr) · FFmpeg · Whisper/Groq ou OpenAI · analyse vidéo configurable · Soundbox (ACE-Step 1.5 musique / MiDashengLM SFX) · VoiceStudio (narration optionnelle, serveur privé) · Claude Opus 5.5 (`claude-opus-5-5`, appels protégés par budget/flag) · Jev TypeSafe (classement shadow opt-in)
 
 ⚠️ **Next 16 : `src/proxy.ts`, PAS `middleware.ts`** (convention renommée — voir docs embarquées `node_modules/next/dist/docs`). Lire ces docs avant tout code Next non trivial.
 
@@ -28,7 +28,7 @@ Next.js 16 App Router · TS strict · Tailwind v4 · shadcn/base-ui · Supabase 
 
 Le flux Clips existant reste disponible séparément : épisode → segment court → style et personnalisation → rendu FFmpeg → galerie privée. Les workers d'analyse Shorts, de rendu et de publication sont des services asynchrones distincts ; leur présence dans le code ne prouve pas leur provisionnement en staging ou production.
 
-**Garde-fous fournisseurs** : Anthropic confirme l'identifiant Opus 5.5 `claude-opus-5-5`; ne pas le remplacer par Opus 5 (`claude-opus-5`). Tout appel reste interdit sans budget explicitement autorisé, flag serveur et clé privée. ElevenLabs est limité à la musique instrumentale/SFX avec consentement, licence et budget validés. Jev est optionnel, avec consentement du créateur et résultats shadow uniquement.
+**Garde-fous fournisseurs** : Anthropic confirme l'identifiant Opus 5.5 `claude-opus-5-5`; ne pas le remplacer par Opus 5 (`claude-opus-5`). Tout appel reste interdit sans budget explicitement autorisé, flag serveur et clé privée. Les nouveaux rendus musicaux/SFX passent par Soundbox en local, et la narration facultative par VoiceStudio avec consentement et validation des licences des modèles. Les champs JSON historiques `elevenlabs` restent conservés pour compatibilité ; aucun secret ni accès GPU externe n'est activé par défaut. Jev est optionnel, avec consentement du créateur et résultats shadow uniquement.
 
 Quotas par plan (free/solo/pro/studio) via RPC atomiques `clips_consume_quota` / `clips_refund_quota`.
 
