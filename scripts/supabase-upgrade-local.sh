@@ -12,7 +12,6 @@ cleanup() {
   rmdir "$pending" 2>/dev/null || true
 }
 trap cleanup EXIT
-# Move only post-September migrations inside this disposable checkout.
 for f in supabase/migrations/*.sql; do
   name=$(basename "$f")
   [[ "$name" < 20261000000000 ]] || mv "$f" "$pending/"
@@ -32,7 +31,9 @@ set +e
 psql "$local_url" -X -v ON_ERROR_STOP=1 -f scripts/verify-upgraded-audio-schema.sql >"$RUNNER_TEMP/upgrade-red.log" 2>&1
 code=$?
 set -e
-[[ "$code" -ne 0 ]] && grep -q UPGRADE_NOT_APPLIED "$RUNNER_TEMP/upgrade-red.log"
+if [[ "$code" -eq 0 ]] || ! grep -q UPGRADE_NOT_APPLIED "$RUNNER_TEMP/upgrade-red.log"; then
+  echo 'legacy_acceptance_did_not_fail_as_expected' >&2; exit 1
+fi
 echo 'EXPECTED_RED: new audio schema absent in legacy baseline'
 for f in "$pending"/*.sql; do mv "$f" supabase/migrations/; done
 # Local-only CLI records the real sequence; never repair hosted history here.
