@@ -30,7 +30,9 @@ describe("Shorts instrumental audio mix", () => {
     });
     const filter = args[args.indexOf("-filter_complex") + 1];
     expect(filter).toContain("atrim=duration=3");
-    expect(filter).toContain("adelay=2200:all=1");
+    expect(filter).toContain("aformat=channel_layouts=stereo");
+    expect(filter).toContain("adelay=2200|2200");
+    expect(filter).not.toContain(":all=1");
     expect(filter).toContain("apad=whole_len=960000");
     expect(filter).toContain("amix=inputs=3");
     expect(filter).toContain("volume=3,alimiter=limit=0.95");

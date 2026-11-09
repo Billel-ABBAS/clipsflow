@@ -156,7 +156,7 @@ export async function generateSoundboxAudio(
   ): Promise<Record<string, unknown>> => {
     let res: Response;
     try {
-      res = await fetcher(url, { ...init, headers, signal: AbortSignal.timeout(20_000) });
+      res = await fetcher(url, { ...init, headers, redirect: "error", signal: AbortSignal.timeout(20_000) });
     } catch { throw new SoundboxError("soundbox_unreachable"); }
     if (!res.ok) throw new SoundboxError("soundbox_provider_failed");
     try {
@@ -211,7 +211,7 @@ export async function generateSoundboxAudio(
   try {
     audio = await fetcher(
       `${config.baseUrl}/files/${soundId}.wav?format=mp3`,
-      { headers, signal: AbortSignal.timeout(40_000) },
+      { headers, redirect: "error", signal: AbortSignal.timeout(40_000) },
     );
   } catch { throw new SoundboxError("soundbox_audio_unreachable"); }
   if (!audio.ok) throw new SoundboxError("soundbox_audio_unavailable");

@@ -376,6 +376,9 @@ export async function POST(
         motion_template: productionProfile.motion.template,
         reduced_motion: productionProfile.motion.reduced_motion,
         elevenlabs: productionProfile.elevenlabs,
+        ...(productionProfile.voiceover
+          ? { voiceover: productionProfile.voiceover }
+          : {}),
         creative_direction: {
           ...productionProfile.creative_direction,
           user_instructions: productionProfile.creative_direction.enabled

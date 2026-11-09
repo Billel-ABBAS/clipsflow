@@ -1,0 +1,63 @@
+name: Railway HTTP validation
+
+on:
+  push:
+    branches: [fix/railway-deployment-20261109]
+    paths: [.github/workflows/railway-http-validation.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Check Railway HTTP without credentials or mutation
+        shell: python
+        run: |
+          import json
+          from urllib.error import HTTPError
+          from urllib.request import Request, build_opener, HTTPRedirectHandler
+
+          base = "https://clipsflow-web-railway-canary-production.up.railway.app"
+          class NoRedirect(HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          client = build_opener(NoRedirect())
+          checks = [
+              ("/api/health", {200}),
+              ("/fr", {200}),
+              ("/en", {200}),
+              ("/fr/login", {200}),
+              ("/fr/shorts-preview", {200}),
+              ("/api/youtube/connections", {401}),
+              ("/api/shorts/projects/11111111-1111-4111-8111-111111111111", {401}),
+          ]
+          failures = []
+          for path, expected in checks:
+              try:
+                  response = client.open(Request(base + path, headers={
+                      "User-Agent": "Clipsflow-Railway-ReadOnly-Smoke/1.0",
+                  }), timeout=25)
+              except HTTPError as error:
+                  response = error
+              with response:
+                  status = response.code
+                  body = response.read(2_000_000)
+                  content_type = response.headers.get("Content-Type", "")
+                  print(f"GET {path}: {status}")
+                  if status not in expected:
+                      failures.append(f"{path}: expected {expected}, got {status}")
+                  if status == 200 and path == "/api/health":
+                      data = json.loads(body)
+                      if data.get("status") != "ok" or data.get("service") != "clipsflow-web":
+                          failures.append("health response invalid")
+                      if "no-store" not in response.headers.get("Cache-Control", ""):
+                          failures.append("health must not be cached")
+                  elif status == 200 and "text/html" not in content_type:
+                      failures.append(f"{path}: expected HTML")
+          if failures:
+              raise SystemExit("\n".join(failures))
+          print("All seven Railway HTTP checks passed; no authenticated or mutating requests sent.")
