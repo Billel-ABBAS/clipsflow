@@ -185,6 +185,7 @@ export async function generateVoiceStudioNarration(
           input: text,
           response_format: "wav",
         }),
+        redirect: "error",
         signal: AbortSignal.timeout(90_000),
       },
     );

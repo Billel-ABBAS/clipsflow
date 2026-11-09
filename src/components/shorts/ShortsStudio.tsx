@@ -463,7 +463,7 @@ const COPY: Record<"fr" | "en", Copy> = {
       "Utilise une animation minimale et limite les changements visuels rapides.",
     elevenLabsLabel: "Musique adaptée",
     elevenLabsEnableLabel:
-      "Inclure une musique instrumentale adaptée (requise pour générer)",
+      "Inclure une musique instrumentale adaptée (facultatif)",
     elevenLabsDescription:
       "Chaque Short reçoit une musique instrumentale mixée sous la voix. Des effets non verbaux peuvent aussi souligner le motion design.",
     elevenLabsConsentLabel:
@@ -473,7 +473,7 @@ const COPY: Record<"fr" | "en", Copy> = {
     elevenLabsUnavailable:
       "Soundbox n’est pas configuré sur un service audio privé avec les modèles locaux et les droits commerciaux validés.",
     adaptedMusicRequired:
-      "Pour générer les Shorts, activez la musique adaptée, donnez votre accord explicite et confirmez vos droits d’usage commercial.",
+      "Pour utiliser la musique adaptée, donnez votre accord explicite et confirmez vos droits. Vous pouvez aussi désactiver la musique et conserver l’audio original.",
     opusTitle: "Direction créative Claude Opus 5.5",
     opusDescription:
       "Si vous l’autorisez, Opus reçoit uniquement la transcription du Short sélectionné, vos consignes (1 200 caractères max.) et son résumé visuel facultatif. Il propose le titre, l’accroche, la musique et un preset motion autorisé. Le rendu visuel reste déterministe ; Soundbox produit la musique et les effets. Appel Opus désactivé par défaut : flag, clé et budget sont requis.",
@@ -605,7 +605,7 @@ const COPY: Record<"fr" | "en", Copy> = {
       "Uses minimal animation and limits fast visual changes.",
     elevenLabsLabel: "Adapted music",
     elevenLabsEnableLabel:
-      "Include adapted instrumental music (required to render)",
+      "Include adapted instrumental music (optional)",
     elevenLabsDescription:
       "Every Short receives an instrumental bed mixed under speech. Non-verbal effects may also accent the motion design.",
     elevenLabsConsentLabel:
@@ -615,7 +615,7 @@ const COPY: Record<"fr" | "en", Copy> = {
     elevenLabsUnavailable:
       "Soundbox is not configured on a private audio server with installed models and verified commercial rights.",
     adaptedMusicRequired:
-      "To render these Shorts, enable adapted music, provide explicit consent, and confirm your commercial-use rights.",
+      "To use adapted music, provide explicit consent and confirm your rights. You can also disable music and keep the original audio.",
     opusTitle: "Claude Opus 5.5 creative direction",
     opusDescription:
       "If enabled, Opus receives only the selected Short’s transcript, your guidance (max. 1,200 characters), and its optional visual summary. It suggests a title, hook, music, and an allow-listed motion preset. Visual rendering remains deterministic; Soundbox generates music and non-verbal effects. Opus calls remain gated by a flag, private key and approved budget.",
@@ -1198,10 +1198,10 @@ export function ShortsStudio({
       voiceStudioVoiceRights &&
       voiceStudioCommercialRights);
   const adaptedMusicAuthorized =
-    providerCapabilities.elevenLabs &&
-    elevenLabsEnabled &&
-    elevenLabsConsent &&
-    commercialLicenseConfirmed;
+    !elevenLabsEnabled ||
+    (providerCapabilities.elevenLabs &&
+      elevenLabsConsent &&
+      commercialLicenseConfirmed);
   const [savingSelection, setSavingSelection] = useState(false);
   const [renderingSelected, setRenderingSelected] = useState(false);
   const [renderStatus, setRenderStatus] = useState<string | null>(null);
