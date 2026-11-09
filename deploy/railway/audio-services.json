@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "activation": "staged-only",
+  "projectId": "18423fe5-a950-4f2a-b9ed-f7130238b4d7",
+  "environmentId": "3b7161b7-f10c-4833-b008-e52ff1bfe169",
+  "services": {
+    "voicestudio": {
+      "id": "87663f81-1d2e-49dc-b43d-ce25e8005029",
+      "image": "ghcr.io/debpalash/voicestudio:0.5.7",
+      "imageDigestVerified": false,
+      "publicDomain": false,
+      "privateEndpoint": "clipsflow-voicestudio",
+      "port": 3900,
+      "healthcheckPath": "/health",
+      "vCPUs": 2,
+      "memoryGB": 8,
+      "volumeMB": 5000,
+      "volumeMount": "/app/omnivoice_data",
+      "modelDownloadApproved": false,
+      "requiredSecrets": [
+        "OMNIVOICE_API_KEY"
+      ],
+      "startCommand": "/bin/sh -ec '[ \"${CLIPS_AUDIO_ROLLOUT_APPROVED:-false}\" = true ] || { echo audio_rollout_not_approved >&2; exit 78; }; key=\"${OMNIVOICE_API_KEY:-}\"; [ \"${#key}\" -ge 32 ] || { echo voicestudio_api_key_required >&2; exit 78; }; unset key; exec python -m backend.docker_entrypoint --host :: --port 3900'",
+      "environment": {
+        "CLIPS_AUDIO_ROLLOUT_APPROVED": "false",
+        "OMNIVOICE_DEVICE": "cpu",
+        "OMNIVOICE_DATA_DIR": "/app/omnivoice_data",
+        "OMNIVOICE_PORT": "3900",
+        "OMNIVOICE_SERVER_MODE": "1",
+        "OMNIVOICE_MCP_DISABLE": "1",
+        "OMP_NUM_THREADS": "2",
+        "HF_HUB_OFFLINE": "1",
+        "TRANSFORMERS_OFFLINE": "1",
+        "HF_HUB_DISABLE_TELEMETRY": "1",
+        "OMNIVOICE_ALLOWED_HOSTS": "clipsflow-voicestudio.railway.internal,healthcheck.railway.app"
+      }
+    },
+    "soundbox": {
+      "id": "30fbf21b-5f16-4137-82e0-4fc50de773e8",
+      "image": "ghcr.io/hamsanders/soundbox:v0.4.1",
+      "imageDigestVerified": false,
+      "publicDomain": false,
+      "privateEndpoint": "clipsflow-soundbox",
+      "port": 17494,
+      "healthcheckPath": "/api/health",
+      "vCPUs": 2,
+      "memoryGB": 8,
+      "volumeMB": 5000,
+      "volumeMount": "/data",
+      "modelDownloadApproved": false,
+      "requiredSecrets": [],
+      "startCommand": "/bin/sh -ec '[ \"${CLIPS_AUDIO_ROLLOUT_APPROVED:-false}\" = true ] || { echo audio_rollout_not_approved >&2; exit 78; }; [ \"${CLIPS_SOUNDBOX_PRIVATE_GATE_READY:-false}\" = true ] || { echo soundbox_private_gate_required >&2; exit 78; }; exec node /opt/soundbox/server/dist/cli.js --host :: --port 17494'",
+      "environment": {
+        "CLIPS_AUDIO_ROLLOUT_APPROVED": "false",
+        "CLIPS_SOUNDBOX_PRIVATE_GATE_READY": "false",
+        "SOUNDBOX_AUDIOCPP_BACKEND": "cpu",
+        "SOUNDBOX_DATA_DIR": "/data",
+        "SOUNDBOX_ALLOWED_HOSTS": "clipsflow-soundbox.railway.internal,clipsflow-soundbox.railway.internal:17494,healthcheck.railway.app",
+        "SOUNDBOX_LOG_LEVEL": "warning",
+        "OMP_NUM_THREADS": "2",
+        "HF_HUB_OFFLINE": "1",
+        "HF_HUB_DISABLE_TELEMETRY": "1"
+      }
+    }
+  }
+}

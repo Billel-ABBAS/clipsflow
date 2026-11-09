@@ -1,0 +1,30 @@
+name: Railway audio launch guards
+on:
+  push:
+    branches: [ops/railway-audio-launch-guards-20261109]
+  pull_request:
+    paths:
+      - deploy/railway/audio-services.json
+      - scripts/railway-audio-launch.test.mjs
+      - .github/workflows/railway-audio-launch-guards.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: railway-audio-guards-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  launch-guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+      - name: Verify actual shell guards with stubbed providers
+        run: node --test scripts/railway-audio-launch.test.mjs
