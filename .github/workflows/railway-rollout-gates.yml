@@ -1,0 +1,62 @@
+name: Railway rollout gates
+on:
+  push:
+    branches: [ops/railway-rollout-plan-20261109]
+  pull_request:
+    branches: ['fix/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: railway-rollout-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.6@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: audio_migration_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d audio_migration_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CI: 'true'
+      CLIPS_AI_BUDGET_AUTHORIZED: 'false'
+      CLIPS_SOUNDBOX_ENABLED: 'false'
+      CLIPS_VOICESTUDIO_ENABLED: 'false'
+      CLIPS_CREATIVE_DIRECTOR_ENABLED: 'false'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - name: Checkout reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          version: 11.20.0
+          run_install: false
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Secret-safe preflight unit tests
+        run: node --test scripts/railway-rollout-preflight.test.mjs
+      - name: Actual migration on disposable PostgreSQL only
+        run: psql 'postgresql://postgres@127.0.0.1:5432/audio_migration_test' -v ON_ERROR_STOP=1 -f scripts/test-soundbox-migration.sql
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Full suite including real FFmpeg integration
+        run: pnpm test
+      - name: TypeScript
+        run: pnpm typecheck
+      - name: ESLint
+        run: pnpm lint
+      - name: Production build with no production credentials
+        run: pnpm build
