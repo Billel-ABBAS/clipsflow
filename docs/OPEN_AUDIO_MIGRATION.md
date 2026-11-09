@@ -64,6 +64,15 @@ Le routeur vérifie la configuration VoiceStudio avant la mise en file.
 Le worker peut synthétiser **l'accroche du Short**, puis FFmpeg la superpose
 à la vidéo en atténuant la piste source pendant la narration.
 
-La case d'activation et les autorisations sont ajoutées séparément à
-l'interface (PR suivante). Par défaut aucune narration synthétique n'est
-commandée. Le choix du moteur et de la voix est réservé au serveur.
+L'interface Shorts propose maintenant une case facultative VoiceStudio,
+désactivée par défaut, et trois confirmations explicites dans les droits de
+production. Le choix du moteur et de la voix est réservé au serveur.
+Les champs `elevenlabs` / `elevenLabs` restent des identifiants historiques
+dans les profils et capacités afin de préserver les projets enregistrés : le
+code de génération actif emploie Soundbox, sans appel à ElevenLabs.
+
+Le worker local récupère les variables VoiceStudio/Soundbox de
+`compose.workers.yaml`. Après validation, appliquer la migration SQL
+`20261109130000_allow_soundbox_shorts_audio.sql` avant d'activer
+`CLIPS_SOUNDBOX_ENABLED`. La validation sur GPU réel et les tests de rendu
+restent obligatoires avant toute mise en production.

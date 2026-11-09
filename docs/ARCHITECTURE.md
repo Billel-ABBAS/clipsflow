@@ -99,7 +99,7 @@ des workers.
    sont transmis.
    Le brief sera mis en cache sous le lease de rendu pour permettre les reprises.
    FFmpeg garde l'exécution visuelle déterministe;
-   ElevenLabs ne génère que musique instrumentale/SFX après consentement et
+   Soundbox génère musique instrumentale/SFX après consentement et
    confirmation de licence.
 7. Les URL signées de lecture restent inline; des URL distinctes munies du
    paramètre Storage `download` servent aux exports MP4/VTT. Le téléchargement
@@ -118,7 +118,7 @@ des workers.
 | Vérification visuelle des meilleurs extraits   | Gemini `gemini-3.8-flash`                           | Option audio + vidéo, échantillons bornés, budget et flag indépendants                     |
 | Classement comparatif                          | Jev via TypeSafe System One                         | Consentement, `CLIPS_JEV_HOOK_SCORE=shadow`, jamais décisionnel avant évaluation           |
 | Direction créative / plan motion               | Anthropic Claude Opus 5.5 (`claude-opus-5-5`)       | ID officiel fixe; budget, flag et clé serveur requis; aucun Opus différent n'est substitué |
-| Musique instrumentale et effets                | ElevenLabs `music_v2_5` / `eleven_text_to_sound_v2` | Consentement distinct, licence commerciale confirmée, budget et worker serveur             |
+| Musique instrumentale et effets                | Soundbox ACE-Step 1.5 Turbo / MiDashengLM-Gen | Consentement distinct, licence commerciale confirmée, budget et worker serveur             |
 | Rendu final                                    | FFmpeg existant                                     | Motion templates déterministes, sous-titres synchronisés et audio mixé côté serveur        |
 
 Toutes les clés fournisseur restent serveur uniquement. Une option visuelle,

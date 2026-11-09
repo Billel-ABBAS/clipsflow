@@ -40,7 +40,7 @@
     "step2_title": "Review the transcript and best moments",
     "step2_desc": "ClipsFlow transcribes the source with timestamps, ranks candidate excerpts, and uses your instructions to guide the selection. You decide which moments to produce.",
     "step3_title": "Create, download, and publish with control",
-    "step3_desc": "Render synchronized subtitles and motion-design templates. Adapted instrumental music is generated with ElevenLabs only after consent and rights confirmation. Download Shorts individually or in a ZIP; every YouTube upload requires your confirmation and starts private.",
+    "step3_desc": "Render synchronized subtitles and motion-design templates. Adapted instrumental music and sound effects are generated locally with Soundbox after consent and rights confirmation. Optional narration uses VoiceStudio. Download Shorts individually or in a ZIP; every YouTube upload requires your confirmation and starts private.",
     "pricing_title": "Simple, transparent pricing",
     "pricing_subtitle": "Source-analysis hours and rendered-clip minutes are shown separately. All plans include AI subtitles, vertical formats, and direct downloads.",
     "pricing_free_tagline": "Get started free",

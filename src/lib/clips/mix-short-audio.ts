@@ -54,7 +54,7 @@ export function buildShortAudioMixArgs(input: {
     const delayMs = Math.round(effectOffset * 1_000);
     const effectTargetSamples = Math.ceil(input.durationSeconds * 48_000);
     filter.push(
-      `[2:a]volume=0.45,adelay=${delayMs}:all=1,aresample=48000,apad=whole_len=${effectTargetSamples}[effect]`,
+      `[2:a]atrim=duration=3,asetpts=PTS-STARTPTS,volume=0.45,adelay=${delayMs}:all=1,aresample=48000,apad=whole_len=${effectTargetSamples}[effect]`,
     );
     filter.push(
       "[0:a][ducked][effect]amix=inputs=3:duration=first:dropout_transition=2,volume=3,alimiter=limit=0.95[audio]",

@@ -14,7 +14,7 @@ ClipsFlow is a B2C SaaS for finding and producing short-form video from long rec
 - **Overlays**: title card, speaker banner, stat callout, CTA outro
 - **Smart crop**: saliency-based reframing to 9:16 / 1:1 / 4:5 / 16:9
 - **Rendering**: separate queued worker → Whisper/Groq or OpenAI transcription → FFmpeg subtitle burn, crop and motion overlays → private gallery
-- **Sound and motion**: deterministic motion templates remain available; Opus 5.5 creative direction is fail-closed until Anthropic confirms its exact API model ID (no Opus 5 substitution); ElevenLabs creates instrumental music/SFX only after separate consent, licensing, and budget approval
+- **Sound and motion**: deterministic motion templates remain available; Opus 5.5 creative direction is fail-closed until Anthropic confirms its exact API model ID (no Opus 5 substitution); Soundbox generates instrumental music/SFX with separate consent and licensed local models; optional VoiceStudio narration requires voice and model rights
 - **YouTube**: OAuth connection and resumable publication queue; uploads require creator confirmation and default to private visibility
 - **Existing Clips Studio**: retained as a separate short-segment workflow while the long-form Shorts flow matures
 - **Free-tier watermark**, per-plan quota (seconds of render/month)

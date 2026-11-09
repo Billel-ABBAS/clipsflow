@@ -247,6 +247,39 @@ describe("ShortsStudio pure boundaries", () => {
     });
   });
 
+  it("gates VoiceStudio hook narration on provider readiness and all rights", () => {
+    const baseline = {
+      aspectRatio: "9:16" as const,
+      subtitleStyle: "viral" as const,
+      motionTemplate: "punchy-cuts" as const,
+      reducedMotion: false,
+      elevenLabsEnabled: true,
+      elevenLabsAvailable: true,
+      elevenLabsConsent: true,
+      commercialLicenseConfirmed: true,
+      creativeDirectionEnabled: false,
+      creativeDirectionAvailable: false,
+      creativeDirectionConsent: false,
+      voiceStudioEnabled: true,
+      voiceStudioAvailable: true,
+      voiceStudioConsent: true,
+      voiceStudioVoiceRights: true,
+      voiceStudioCommercialRights: true,
+    };
+    expect(buildProductionProfile(baseline).voiceover).toEqual({
+      enabled: true,
+      explicit_consent: true,
+      voice_rights_confirmed: true,
+      commercial_model_rights_confirmed: true,
+    });
+    expect(buildProductionProfile({ ...baseline, voiceStudioAvailable: false }).voiceover?.enabled)
+      .toBe(false);
+    expect(buildProductionProfile({ ...baseline, voiceStudioVoiceRights: false }).voiceover?.enabled)
+      .toBe(false);
+    expect(buildProductionProfile({ ...baseline, voiceStudioCommercialRights: false }).voiceover?.enabled)
+      .toBe(false);
+  });
+
   it("keeps render disabled until candidates and adapted music are authorized", () => {
     const ready = {
       candidatesReady: true,

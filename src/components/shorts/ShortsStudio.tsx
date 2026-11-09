@@ -215,6 +215,12 @@ export type ProductionProfileInput = Readonly<{
     use_cases: readonly ("instrumental_music" | "sound_effects")[];
     synthetic_voice: false;
   }>;
+  voiceover?: Readonly<{
+    enabled: boolean;
+    explicit_consent: boolean;
+    voice_rights_confirmed: boolean;
+    commercial_model_rights_confirmed: boolean;
+  }>;
   creative_direction: Readonly<{
     enabled: boolean;
     explicit_consent: boolean;
@@ -461,22 +467,22 @@ const COPY: Record<"fr" | "en", Copy> = {
     elevenLabsDescription:
       "Chaque Short reçoit une musique instrumentale mixée sous la voix. Des effets non verbaux peuvent aussi souligner le motion design.",
     elevenLabsConsentLabel:
-      "J’autorise explicitement ElevenLabs à générer la musique instrumentale et les éventuels effets pour ces extraits.",
+      "J’autorise explicitement Soundbox à générer la musique instrumentale et les effets sonores de ces extraits.",
     elevenLabsLicenseLabel:
       "Je confirme disposer des droits/licences nécessaires pour l’usage commercial et la publication prévus.",
     elevenLabsUnavailable:
-      "La génération ElevenLabs n’est pas configurée côté serveur avec une clé privée, un budget autorisé et le flag fournisseur activé.",
+      "Soundbox n’est pas configuré sur un service audio privé avec les modèles locaux et les droits commerciaux validés.",
     adaptedMusicRequired:
       "Pour générer les Shorts, activez la musique adaptée, donnez votre accord explicite et confirmez vos droits d’usage commercial.",
     opusTitle: "Direction créative Claude Opus 5.5",
     opusDescription:
-      "Si vous l’autorisez, Opus reçoit uniquement la transcription du Short sélectionné, vos consignes (1 200 caractères max.) et son résumé visuel facultatif. Il propose le titre, l’accroche, la musique et un preset motion autorisé. Le rendu visuel reste déterministe; ElevenLabs ne crée que la musique et les effets non verbaux. Appel serveur désactivé par défaut : il requiert le flag, une clé privée et un budget autorisé.",
+      "Si vous l’autorisez, Opus reçoit uniquement la transcription du Short sélectionné, vos consignes (1 200 caractères max.) et son résumé visuel facultatif. Il propose le titre, l’accroche, la musique et un preset motion autorisé. Le rendu visuel reste déterministe ; Soundbox produit la musique et les effets. Appel Opus désactivé par défaut : flag, clé et budget sont requis.",
     opusEnableLabel:
       "J’autorise Claude Opus 5.5 à analyser les données de cet extrait sélectionné pour préparer sa direction créative.",
     opusUnavailable:
       "Opus 5.5 n’est pas configuré côté serveur : vérifiez la clé Anthropic privée, le flag fournisseur et l’autorisation de budget.",
     elevenLabsSafety:
-      "Aucune voix synthétique, aucun clonage de voix : ElevenLabs est limité à la musique instrumentale et aux effets sonores. Le rendu visuel reste déterministe pour préserver la source.",
+      "Soundbox produit uniquement la musique instrumentale et les effets. La narration VoiceStudio est une option distincte, soumise au consentement et aux droits sur la voix. Le rendu visuel préserve la source.",
     saveSelection: "Enregistrer ma sélection",
     savingSelection: "Enregistrement…",
     selectionSaved: (count) =>
@@ -603,22 +609,22 @@ const COPY: Record<"fr" | "en", Copy> = {
     elevenLabsDescription:
       "Every Short receives an instrumental bed mixed under speech. Non-verbal effects may also accent the motion design.",
     elevenLabsConsentLabel:
-      "I explicitly authorize ElevenLabs to generate instrumental music and any selected effects for these moments.",
+      "I explicitly authorize Soundbox to generate instrumental music and selected sound effects for these moments.",
     elevenLabsLicenseLabel:
       "I confirm that I hold the rights/licenses needed for the intended commercial use and publication.",
     elevenLabsUnavailable:
-      "ElevenLabs generation is not configured on the server with a private key, authorized budget, and the provider flag enabled.",
+      "Soundbox is not configured on a private audio server with installed models and verified commercial rights.",
     adaptedMusicRequired:
       "To render these Shorts, enable adapted music, provide explicit consent, and confirm your commercial-use rights.",
     opusTitle: "Claude Opus 5.5 creative direction",
     opusDescription:
-      "If enabled, Opus receives only the selected Short’s transcript, your guidance (max. 1,200 characters), and its optional visual summary. It suggests a title, hook, music, and an allow-listed motion preset. Visual rendering remains deterministic; ElevenLabs generates instrumental music and non-verbal effects only. Server calls are off by default and require the server flag, a private key, and an authorized budget.",
+      "If enabled, Opus receives only the selected Short’s transcript, your guidance (max. 1,200 characters), and its optional visual summary. It suggests a title, hook, music, and an allow-listed motion preset. Visual rendering remains deterministic; Soundbox generates music and non-verbal effects. Opus calls remain gated by a flag, private key and approved budget.",
     opusEnableLabel:
       "I authorize Claude Opus 5.5 to analyze this selected moment and prepare its creative direction.",
     opusUnavailable:
       "Opus 5.5 is not configured on the server: check the private Anthropic key, provider flag, and explicit budget authorization.",
     elevenLabsSafety:
-      "No synthetic voice and no voice cloning: ElevenLabs is limited to instrumental music and sound effects. Visual rendering remains deterministic to preserve the source.",
+      "Soundbox generates instrumental music and effects only. VoiceStudio narration is a separate, consented option requiring rights to the selected voice. Visual rendering preserves the source.",
     saveSelection: "Save my selection",
     savingSelection: "Saving…",
     selectionSaved: (count) =>
@@ -946,12 +952,24 @@ export function buildProductionProfile(input: {
   creativeDirectionEnabled: boolean;
   creativeDirectionAvailable: boolean;
   creativeDirectionConsent: boolean;
+  voiceStudioEnabled?: boolean;
+  voiceStudioAvailable?: boolean;
+  voiceStudioConsent?: boolean;
+  voiceStudioVoiceRights?: boolean;
+  voiceStudioCommercialRights?: boolean;
 }): ProductionProfileInput {
   const elevenLabsEnabled =
     input.elevenLabsAvailable &&
     input.elevenLabsEnabled &&
     input.elevenLabsConsent &&
     input.commercialLicenseConfirmed;
+  const voiceStudioEnabled = Boolean(
+    input.voiceStudioEnabled &&
+      input.voiceStudioAvailable &&
+      input.voiceStudioConsent &&
+      input.voiceStudioVoiceRights &&
+      input.voiceStudioCommercialRights,
+  );
   const creativeDirectionEnabled =
     input.creativeDirectionAvailable &&
     CLAUDE_OPUS_5_5_MODEL_API_ID_CONFIRMED &&
@@ -977,6 +995,12 @@ export function buildProductionProfile(input: {
         ? ["instrumental_music", "sound_effects"]
         : [],
       synthetic_voice: false,
+    },
+    voiceover: {
+      enabled: voiceStudioEnabled,
+      explicit_consent: voiceStudioEnabled,
+      voice_rights_confirmed: voiceStudioEnabled,
+      commercial_model_rights_confirmed: voiceStudioEnabled,
     },
     creative_direction: {
       enabled: creativeDirectionEnabled,
@@ -1162,6 +1186,17 @@ export function ShortsStudio({
     useState(false);
   const [creativeDirectionEnabled, setCreativeDirectionEnabled] =
     useState(false);
+  const [voiceStudioEnabled, setVoiceStudioEnabled] = useState(false);
+  const [voiceStudioConsent, setVoiceStudioConsent] = useState(false);
+  const [voiceStudioVoiceRights, setVoiceStudioVoiceRights] = useState(false);
+  const [voiceStudioCommercialRights, setVoiceStudioCommercialRights] =
+    useState(false);
+  const voiceStudioAuthorized =
+    !voiceStudioEnabled ||
+    (providerCapabilities.voiceStudio &&
+      voiceStudioConsent &&
+      voiceStudioVoiceRights &&
+      voiceStudioCommercialRights);
   const adaptedMusicAuthorized =
     providerCapabilities.elevenLabs &&
     elevenLabsEnabled &&
@@ -1847,6 +1882,11 @@ export function ShortsStudio({
               elevenLabsAvailable: providerCapabilities.elevenLabs,
               elevenLabsConsent,
               commercialLicenseConfirmed,
+              voiceStudioEnabled,
+              voiceStudioAvailable: providerCapabilities.voiceStudio,
+              voiceStudioConsent,
+              voiceStudioVoiceRights,
+              voiceStudioCommercialRights,
               creativeDirectionEnabled,
               creativeDirectionAvailable:
                 providerCapabilities.creativeDirection,
@@ -1875,6 +1915,11 @@ export function ShortsStudio({
     creativeDirectionEnabled,
     providerCapabilities.creativeDirection,
     providerCapabilities.elevenLabs,
+    providerCapabilities.voiceStudio,
+    voiceStudioEnabled,
+    voiceStudioConsent,
+    voiceStudioVoiceRights,
+    voiceStudioCommercialRights,
     copy,
     designPreviewNotice,
     elevenLabsConsent,
@@ -1898,6 +1943,14 @@ export function ShortsStudio({
       setSaveError(copy.adaptedMusicRequired);
       return;
     }
+    if (!voiceStudioAuthorized) {
+      setSaveError(
+        locale.startsWith("fr")
+          ? "La narration VoiceStudio nécessite votre accord et la confirmation des droits."
+          : "VoiceStudio narration requires consent and confirmation of rights.",
+      );
+      return;
+    }
 
     if (isDesignPreview) {
       setSaveSuccess(designPreviewNotice);
@@ -1916,6 +1969,11 @@ export function ShortsStudio({
       elevenLabsAvailable: providerCapabilities.elevenLabs,
       elevenLabsConsent,
       commercialLicenseConfirmed,
+      voiceStudioEnabled,
+      voiceStudioAvailable: providerCapabilities.voiceStudio,
+      voiceStudioConsent,
+      voiceStudioVoiceRights,
+      voiceStudioCommercialRights,
       creativeDirectionEnabled,
       creativeDirectionAvailable: providerCapabilities.creativeDirection,
       creativeDirectionConsent: creativeDirectionEnabled,
@@ -1979,11 +2037,18 @@ export function ShortsStudio({
     }
   }, [
     adaptedMusicAuthorized,
+    voiceStudioAuthorized,
+    locale,
     aspectRatio,
     commercialLicenseConfirmed,
     creativeDirectionEnabled,
     providerCapabilities.creativeDirection,
     providerCapabilities.elevenLabs,
+    providerCapabilities.voiceStudio,
+    voiceStudioEnabled,
+    voiceStudioConsent,
+    voiceStudioVoiceRights,
+    voiceStudioCommercialRights,
     copy,
     designPreviewNotice,
     elevenLabsConsent,
@@ -3772,6 +3837,10 @@ export function ShortsStudio({
                         setReducedMotion(false);
                         setElevenLabsConsent(false);
                         setCommercialLicenseConfirmed(false);
+                        setVoiceStudioEnabled(false);
+                        setVoiceStudioConsent(false);
+                        setVoiceStudioVoiceRights(false);
+                        setVoiceStudioCommercialRights(false);
                         setCreativeDirectionEnabled(false);
                       }}
                     >
@@ -3887,6 +3956,40 @@ export function ShortsStudio({
                         <span className={styles.toggleTrack} />
                       </label>
                     </div>
+                    <div className={styles.optionRow}>
+                      <span className={styles.optionIcon} aria-hidden="true">
+                        <UserRound size={24} />
+                      </span>
+                      <span className={styles.optionCopy}>
+                        <strong>VoiceStudio</strong>
+                        <span>
+                          {locale.startsWith("fr")
+                            ? "Narration IA facultative de l’accroche, générée localement."
+                            : "Optional locally generated AI narration of the hook."}
+                        </span>
+                      </span>
+                      <label className={styles.toggle}>
+                        <input
+                          type="checkbox"
+                          checked={voiceStudioEnabled}
+                          onChange={(event) => {
+                            setVoiceStudioEnabled(event.target.checked);
+                            if (!event.target.checked) {
+                              setVoiceStudioConsent(false);
+                              setVoiceStudioVoiceRights(false);
+                              setVoiceStudioCommercialRights(false);
+                            }
+                          }}
+                          disabled={!providerCapabilities.voiceStudio || savingSelection}
+                          aria-label={
+                            locale.startsWith("fr")
+                              ? "Activer la narration VoiceStudio"
+                              : "Enable VoiceStudio narration"
+                          }
+                        />
+                        <span className={styles.toggleTrack} />
+                      </label>
+                    </div>
                   </div>
 
                   <div className={styles.reducedMotion}>
@@ -3916,7 +4019,8 @@ export function ShortsStudio({
                       candidatesReady: showCandidateControls,
                       selectedCandidateCount:
                         selectedCandidateIdsForCurrentProject.length,
-                      adaptedMusicAuthorized,
+                      adaptedMusicAuthorized:
+                        adaptedMusicAuthorized && voiceStudioAuthorized,
                       savingSelection,
                       renderingSelected,
                     })}
@@ -3929,7 +4033,8 @@ export function ShortsStudio({
                         : "Generate render"}
                     <ArrowRight size={20} aria-hidden="true" />
                   </button>
-                  {elevenLabsEnabled && !adaptedMusicAuthorized ? (
+                  {(elevenLabsEnabled && !adaptedMusicAuthorized) ||
+                  (voiceStudioEnabled && !voiceStudioAuthorized) ? (
                     <button
                       type="button"
                       className={styles.rightsReminder}
@@ -3944,8 +4049,8 @@ export function ShortsStudio({
                       }}
                     >
                       {locale.startsWith("fr")
-                        ? "Confirmer les droits musicaux pour continuer"
-                        : "Confirm music rights to continue"}
+                        ? "Confirmer les droits audio et vocaux pour continuer"
+                        : "Confirm audio and voice rights to continue"}
                     </button>
                   ) : null}
                   {saveError ? (
@@ -4074,6 +4179,61 @@ export function ShortsStudio({
                       ) : null}
                       {!providerCapabilities.elevenLabs ? (
                         <p>{copy.elevenLabsUnavailable}</p>
+                      ) : null}
+                      {voiceStudioEnabled ? (
+                        <>
+                          <p>
+                            {locale.startsWith("fr")
+                              ? "VoiceStudio créera une voix synthétique pour l’accroche. La voix est sélectionnée par le serveur ; aucune imitation d’une personne réelle sans autorisation."
+                              : "VoiceStudio will synthesize the hook. Voice selection is controlled by the server; no real-person voice imitation without permission."}
+                          </p>
+                          <label className={styles.consentCheck}>
+                            <input
+                              type="checkbox"
+                              checked={voiceStudioConsent}
+                              onChange={(event) =>
+                                setVoiceStudioConsent(event.target.checked)
+                              }
+                              disabled={savingSelection}
+                            />
+                            {locale.startsWith("fr")
+                              ? "J’autorise explicitement la narration par VoiceStudio."
+                              : "I explicitly consent to VoiceStudio narration."}
+                          </label>
+                          <label className={styles.consentCheck}>
+                            <input
+                              type="checkbox"
+                              checked={voiceStudioVoiceRights}
+                              onChange={(event) =>
+                                setVoiceStudioVoiceRights(event.target.checked)
+                              }
+                              disabled={savingSelection}
+                            />
+                            {locale.startsWith("fr")
+                              ? "Je confirme disposer des droits et consentements pour la voix utilisée."
+                              : "I confirm I have all permissions and rights for the selected voice."}
+                          </label>
+                          <label className={styles.consentCheck}>
+                            <input
+                              type="checkbox"
+                              checked={voiceStudioCommercialRights}
+                              onChange={(event) =>
+                                setVoiceStudioCommercialRights(event.target.checked)
+                              }
+                              disabled={savingSelection}
+                            />
+                            {locale.startsWith("fr")
+                              ? "Je confirme les droits d’utilisation commerciale et de publication."
+                              : "I confirm the rights for commercial use and publication."}
+                          </label>
+                        </>
+                      ) : null}
+                      {!providerCapabilities.voiceStudio ? (
+                        <p>
+                          {locale.startsWith("fr")
+                            ? "VoiceStudio n’est pas configuré sur le serveur avec un modèle vocal commercialement autorisé."
+                            : "VoiceStudio is not configured server-side with a commercially approved voice model."}
+                        </p>
                       ) : null}
                       <label className={styles.consentCheck}>
                         <input
