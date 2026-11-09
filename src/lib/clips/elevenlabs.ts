@@ -1,17 +1,15 @@
 // ============================================================================
-// ClipsFlow Shorts — ElevenLabs instrumental music and motion SFX boundary
+// ClipsFlow Shorts — legacy API names; execution is exclusively open-source.
+// Serialized names stay compatible with existing jobs. No ElevenLabs fallback.
+// Music: self-hosted ACE-Step 1.5. Motion accents: local FFmpeg synthesis.
 // ============================================================================
-// This module intentionally exposes only two ElevenLabs capabilities:
-//   1. `music_v2_5` with `force_instrumental: true` for a selected Short.
-//   2. `eleven_text_to_sound_v2` for short, non-verbal motion accents.
-//
-// It never creates, clones, remixes, or changes a voice. Calls are server-only,
-// feature-flagged, budget-gated, consent/licence-gated, and made only from the
-// exported async functions (never while importing this module).
-// ============================================================================
+import {
+  OPEN_MUSIC_MODEL, OPEN_SFX_MODEL, generateAceMusic, resolveOpenAudioConfig,
+  type OpenAudioConfig,
+} from "./open-audio";
 
-export const ELEVENLABS_MUSIC_MODEL = "music_v2_5" as const;
-export const ELEVENLABS_SOUND_MODEL = "eleven_text_to_sound_v2" as const;
+export const ELEVENLABS_MUSIC_MODEL = OPEN_MUSIC_MODEL;
+export const ELEVENLABS_SOUND_MODEL = OPEN_SFX_MODEL;
 export const ELEVENLABS_MAX_SHORT_DURATION_SECONDS = 180;
 export const ELEVENLABS_MIN_MUSIC_DURATION_SECONDS = 3;
 export const ELEVENLABS_MAX_MUSIC_DURATION_SECONDS = 600;
@@ -23,13 +21,9 @@ export const ELEVENLABS_MAX_MOTION_SFX_PER_SHORT = 2;
 export const ELEVENLABS_MAX_MUSIC_BYTES = 32 * 1024 * 1024;
 export const ELEVENLABS_MAX_SFX_BYTES = 8 * 1024 * 1024;
 
-const ELEVENLABS_MUSIC_URL = "https://api.elevenlabs.io/v1/music";
-const ELEVENLABS_SFX_URL = "https://api.elevenlabs.io/v1/sound-generation";
-const ELEVENLABS_OUTPUT_FORMAT = "mp3_44100_128";
-
-/** Copy this into a consent UI immediately before queuing a paid generation. */
+/** Compatibility export; consent now covers the self-hosted models and compute. */
 export const ELEVENLABS_CONSENT_AND_LICENSE_NOTICE =
-  "La génération crée une musique instrumentale ou un effet sonore non verbal via ElevenLabs. Avant de lancer le rendu, confirmez votre accord explicite et que votre usage (dont commercial et publication) respecte les conditions de votre offre et les licences applicables.";
+  "La génération utilise ACE-Step auto-hébergé pour la musique instrumentale et FFmpeg pour les accents sonores. Confirmez votre accord, les droits sur vos contenus et l'autorisation du calcul local ou hébergé. Aucun service ElevenLabs n'est appelé.";
 
 export type ElevenLabsErrorCode =
   | "elevenlabs_disabled"
@@ -52,18 +46,15 @@ export class ElevenLabsError extends Error {
   }
 }
 
-export interface ElevenLabsEnvironment {
-  CLIPS_AI_BUDGET_AUTHORIZED?: string;
-  CLIPS_ELEVENLABS_ENABLED?: string;
-  CLIPS_ELEVENLABS_MUSIC_MODEL?: string;
-  CLIPS_ELEVENLABS_SOUND_MODEL?: string;
-  ELEVENLABS_API_KEY?: string;
-  NEXT_PUBLIC_ELEVENLABS_API_KEY?: string;
+export interface ElevenLabsEnvironment extends Record<string, string | undefined> {
+  CLIPS_OPEN_AUDIO_COMPUTE_AUTHORIZED?: string;
+  CLIPS_OPEN_AUDIO_ENABLED?: string;
+  CLIPS_OPEN_AUDIO_BASE_URL?: string;
+  CLIPS_OPEN_AUDIO_API_KEY?: string;
+  NEXT_PUBLIC_OPEN_AUDIO_API_KEY?: string;
 }
 
-export interface ElevenLabsConfig {
-  /** Server-only. Do not put this value in a route response or client state. */
-  apiKey: string;
+export interface ElevenLabsConfig extends OpenAudioConfig {
   musicModel: typeof ELEVENLABS_MUSIC_MODEL;
   soundModel: typeof ELEVENLABS_SOUND_MODEL;
 }
@@ -103,9 +94,9 @@ export interface GeneratedElevenLabsAudio {
   durationSeconds: number;
   contentType: string;
   bytes: Uint8Array;
-  /** A validated provider ID, when ElevenLabs returns one for a music asset. */
+  /** Self-hosted ACE-Step task id, or null for a locally synthesized accent. */
   providerAssetId: string | null;
-  /** Metering header for observability only; never trusted for billing decisions. */
+  /** Compatibility only. There are no ElevenLabs billed characters. */
   billedCharacters: number | null;
 }
 
@@ -114,10 +105,15 @@ export type ElevenLabsFetch = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+type AudioRenderer = (input: {
+  prompt?: string; bytes?: Uint8Array; durationSeconds: number;
+}) => Promise<Uint8Array>;
+
 export interface ElevenLabsRunOptions {
   /** Dependency injection keeps unit tests offline and workers deterministic. */
   fetch?: ElevenLabsFetch;
   environment?: ElevenLabsEnvironment;
+  renderAudio?: AudioRenderer;
 }
 
 function normalizeWhitespace(value: string): string {
@@ -156,8 +152,7 @@ const VOICE_REQUEST_PATTERN =
 
 /**
  * Normalise user/model text and reject voice-oriented requests before they can
- * reach ElevenLabs. The explicit API parameter adds a second independent
- * instrumental guard for music.
+ * reach the music model. No audio reference or cloning input is accepted.
  */
 export function normalizeNonVerbalAudioPrompt(
   value: unknown,
@@ -192,54 +187,25 @@ function requireAuthorization(
   }
 }
 
-/**
- * Resolve private configuration only at call time. Public-key configuration and
- * model drift fail closed so server secrets cannot silently become client data.
- */
+/** Old provider keys/flags cannot activate the replacement. */
 export function resolveElevenLabsConfig(
   environment: ElevenLabsEnvironment = process.env as ElevenLabsEnvironment,
 ): ElevenLabsConfig {
-  if (environment.CLIPS_AI_BUDGET_AUTHORIZED !== "true") {
-    throw new ElevenLabsError(
-      "paid_ai_not_authorized",
-      "paid_ai_not_authorized",
-    );
+  if (environment.CLIPS_OPEN_AUDIO_COMPUTE_AUTHORIZED !== "true") {
+    throw new ElevenLabsError("paid_ai_not_authorized", "open_audio_compute_not_authorized");
   }
-  if (environment.CLIPS_ELEVENLABS_ENABLED !== "true") {
-    throw new ElevenLabsError("elevenlabs_disabled", "elevenlabs_disabled");
+  if (environment.CLIPS_OPEN_AUDIO_ENABLED !== "true") {
+    throw new ElevenLabsError("elevenlabs_disabled", "open_audio_disabled");
   }
-  if (environment.NEXT_PUBLIC_ELEVENLABS_API_KEY?.trim()) {
-    throw new ElevenLabsError(
-      "elevenlabs_unavailable",
-      "elevenlabs_public_key_configuration_rejected",
-    );
+  try {
+    return {
+      ...resolveOpenAudioConfig(environment),
+      musicModel: ELEVENLABS_MUSIC_MODEL,
+      soundModel: ELEVENLABS_SOUND_MODEL,
+    };
+  } catch {
+    throw new ElevenLabsError("elevenlabs_unavailable", "open_audio_configuration_invalid");
   }
-
-  const configuredMusicModel = environment.CLIPS_ELEVENLABS_MUSIC_MODEL?.trim();
-  const configuredSoundModel = environment.CLIPS_ELEVENLABS_SOUND_MODEL?.trim();
-  if (
-    (configuredMusicModel && configuredMusicModel !== ELEVENLABS_MUSIC_MODEL) ||
-    (configuredSoundModel && configuredSoundModel !== ELEVENLABS_SOUND_MODEL)
-  ) {
-    throw new ElevenLabsError(
-      "elevenlabs_unavailable",
-      "elevenlabs_model_configuration_rejected",
-    );
-  }
-
-  const apiKey = environment.ELEVENLABS_API_KEY?.trim();
-  if (!apiKey) {
-    throw new ElevenLabsError(
-      "elevenlabs_unavailable",
-      "elevenlabs_not_configured",
-    );
-  }
-
-  return {
-    apiKey,
-    musicModel: ELEVENLABS_MUSIC_MODEL,
-    soundModel: ELEVENLABS_SOUND_MODEL,
-  };
 }
 
 function parseNonNegativeHeader(value: string | null): number | null {
@@ -329,9 +295,8 @@ async function readAudioBytes(
 }
 
 interface AudioRequestDetails {
-  url: string;
   body: Record<string, unknown>;
-  apiKey: string;
+  config: ElevenLabsConfig;
   maximumBytes: number;
   kind: GeneratedElevenLabsAudio["kind"];
   model: GeneratedElevenLabsAudio["model"];
@@ -341,21 +306,25 @@ interface AudioRequestDetails {
 async function requestGeneratedAudio(
   details: AudioRequestDetails,
   fetchImplementation: ElevenLabsFetch,
+  renderAudio?: AudioRenderer,
 ): Promise<GeneratedElevenLabsAudio> {
   let response: Response;
   try {
-    response = await fetchImplementation(details.url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "xi-api-key": details.apiKey,
-      },
-      body: JSON.stringify(details.body),
+    const render = renderAudio ?? (await import("./open-audio-dsp")).renderOpenAudio;
+    const generated = details.kind === "instrumental-music"
+      ? await generateAceMusic({ prompt: String(details.body.prompt), durationSeconds: details.durationSeconds }, details.config, { fetch: fetchImplementation })
+      : null;
+    const bytes = await render({
+      ...(generated ? { bytes: generated.bytes } : { prompt: String(details.body.text) }),
+      durationSeconds: details.durationSeconds,
+    });
+    response = new Response(Uint8Array.from(bytes), {
+      headers: { "content-type": "audio/mpeg", ...(generated ? { "song-id": generated.taskId } : {}) },
     });
   } catch {
     throw new ElevenLabsError(
       "elevenlabs_provider_failed",
-      "elevenlabs_provider_failed",
+      "open_audio_provider_failed",
     );
   }
 
@@ -375,9 +344,7 @@ async function requestGeneratedAudio(
       contentType: contentTypeFrom(response),
       bytes: await readAudioBytes(response, details.maximumBytes),
       providerAssetId: parseProviderAssetId(response.headers.get("song-id")),
-      billedCharacters: parseNonNegativeHeader(
-        response.headers.get("character-cost"),
-      ),
+      billedCharacters: null,
     };
   } catch (error) {
     if (error instanceof ElevenLabsError) throw error;
@@ -400,9 +367,8 @@ function resolveFetch(options: ElevenLabsRunOptions): ElevenLabsFetch {
 }
 
 /**
- * Generate one instrumental bed for the exact selected Short. It always uses
- * `force_instrumental: true`, has no audio-reference input, and cannot make a
- * synthetic narration or musical vocals.
+ * Generate an instrumental bed, then normalize/trim locally to the Short.
+ * ACE-Step gets at least 10 seconds; shorter clips are trimmed by FFmpeg.
  */
 export async function generateInstrumentalMusic(
   request: InstrumentalMusicRequest,
@@ -423,20 +389,20 @@ export async function generateInstrumentalMusic(
 
   return requestGeneratedAudio(
     {
-      url: `${ELEVENLABS_MUSIC_URL}?output_format=${ELEVENLABS_OUTPUT_FORMAT}`,
       body: {
         model_id: config.musicModel,
         prompt: `Instrumental background music only. No vocals, lyrics, speech, or synthetic voice. ${prompt}`,
         music_length_ms: Math.round(shortDurationSeconds * 1_000),
         force_instrumental: true,
       },
-      apiKey: config.apiKey,
+      config,
       maximumBytes: ELEVENLABS_MAX_MUSIC_BYTES,
       kind: "instrumental-music",
       model: config.musicModel,
       durationSeconds: shortDurationSeconds,
     },
     resolveFetch(options),
+    options.renderAudio,
   );
 }
 
@@ -471,7 +437,6 @@ export async function generateMotionSoundEffect(
 
   return requestGeneratedAudio(
     {
-      url: `${ELEVENLABS_SFX_URL}?output_format=${ELEVENLABS_OUTPUT_FORMAT}`,
       body: {
         model_id: config.soundModel,
         text: `Non-verbal one-shot sound effect only. No speech, vocals, dialogue, or voice. ${prompt}`,
@@ -479,12 +444,13 @@ export async function generateMotionSoundEffect(
         loop: false,
         prompt_influence: 0.35,
       },
-      apiKey: config.apiKey,
+      config,
       maximumBytes: ELEVENLABS_MAX_SFX_BYTES,
       kind: "motion-sfx",
       model: config.soundModel,
       durationSeconds: roundMilliseconds(durationSeconds),
     },
     resolveFetch(options),
+    options.renderAudio,
   );
 }
