@@ -7,7 +7,7 @@ import {
   resolveShortsMusicPrompt,
 } from "./elevenlabs-render";
 
-describe("Shorts ElevenLabs creative plan", () => {
+describe("Shorts Soundbox creative plan", () => {
   it("chooses a safe instrumental template locally without forwarding transcript text", () => {
     const prompt = resolveShortsMusicPrompt(
       "Un lancement rapide",
@@ -78,9 +78,10 @@ describe("Shorts ElevenLabs creative plan", () => {
         prompt: "A fixed synthetic music prompt.",
       }),
     ).resolves.toBe(true);
+    expect(query.eq).toHaveBeenCalledWith("provider", "soundbox");
     expect(list).toHaveBeenCalledWith("user-1/shorts/project-1/candidate-1", {
       limit: 100,
-      search: expect.stringMatching(/^music-[0-9a-f]{64}\.mp3$/u),
+      search: expect.stringMatching(/^music-soundbox-[0-9a-f]{64}\.mp3$/u),
     });
   });
 

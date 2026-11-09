@@ -2,10 +2,7 @@ import {
   CLAUDE_OPUS_5_5_MODEL_API_ID,
   CLAUDE_OPUS_5_5_MODEL_API_ID_CONFIRMED,
 } from "@/lib/clips/creative-director-model";
-import {
-  ELEVENLABS_MUSIC_MODEL,
-  ELEVENLABS_SOUND_MODEL,
-} from "@/lib/clips/elevenlabs";
+import { resolveSoundboxConfig } from "@/lib/clips/soundbox";
 import { assertLongformOpenAIAvailable } from "./longform-openai";
 import { resolveShortsVisualConfig } from "./visual-analysis";
 
@@ -29,11 +26,11 @@ export interface ShortsProviderEnvironment extends Record<
   CLIPS_CREATIVE_DIRECTOR_MODEL?: string;
   ANTHROPIC_API_KEY?: string;
   NEXT_PUBLIC_ANTHROPIC_API_KEY?: string;
-  CLIPS_ELEVENLABS_ENABLED?: string;
-  CLIPS_ELEVENLABS_MUSIC_MODEL?: string;
-  CLIPS_ELEVENLABS_SOUND_MODEL?: string;
-  ELEVENLABS_API_KEY?: string;
-  NEXT_PUBLIC_ELEVENLABS_API_KEY?: string;
+  CLIPS_SOUNDBOX_ENABLED?: string;
+  CLIPS_SOUNDBOX_BASE_URL?: string;
+  CLIPS_SOUNDBOX_PROXY_TOKEN?: string;
+  CLIPS_SOUNDBOX_MODELS_COMMERCIAL_OK?: string;
+  NEXT_PUBLIC_CLIPS_SOUNDBOX_PROXY_TOKEN?: string;
 }
 
 export interface ShortsProviderCapabilities {
@@ -132,18 +129,14 @@ export function resolveShortsProviderCapabilities(
         environment.CLIPS_CREATIVE_DIRECTOR_MODEL,
         CLAUDE_OPUS_5_5_MODEL_API_ID,
       ),
-    elevenLabs:
-      paidCallsAuthorized &&
-      environment.CLIPS_ELEVENLABS_ENABLED === "true" &&
-      hasPrivateKey(environment.ELEVENLABS_API_KEY) &&
-      !hasPrivateKey(environment.NEXT_PUBLIC_ELEVENLABS_API_KEY) &&
-      matchesConfiguredModel(
-        environment.CLIPS_ELEVENLABS_MUSIC_MODEL,
-        ELEVENLABS_MUSIC_MODEL,
-      ) &&
-      matchesConfiguredModel(
-        environment.CLIPS_ELEVENLABS_SOUND_MODEL,
-        ELEVENLABS_SOUND_MODEL,
-      ),
+    // Compatibility field for stored Shorts profiles; now backed by Soundbox.
+    elevenLabs: (() => {
+      try {
+        resolveSoundboxConfig(environment);
+        return true;
+      } catch {
+        return false;
+      }
+    })(),
   };
 }

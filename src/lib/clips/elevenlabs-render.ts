@@ -2,15 +2,13 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
-  ELEVENLABS_MAX_SFX_BYTES,
-  ELEVENLABS_MAX_MUSIC_BYTES,
-  ELEVENLABS_MUSIC_MODEL,
-  ELEVENLABS_SOUND_MODEL,
-  generateInstrumentalMusic,
-  generateMotionSoundEffect,
-  type GeneratedElevenLabsAudio,
-  type MotionSoundEffectRequest,
-} from "./elevenlabs";
+  SOUNDBOX_MUSIC_MODEL,
+  SOUNDBOX_SOUND_MODEL,
+  generateSoundboxAudio,
+} from "./soundbox";
+
+const SOUNDBOX_MAX_MUSIC_BYTES = 32 * 1024 * 1024;
+const SOUNDBOX_MAX_SFX_BYTES = 8 * 1024 * 1024;
 
 const OUTPUT_BUCKET = "clip-outputs";
 
@@ -39,7 +37,7 @@ export interface StoredShortsAudioAsset {
   bytes: Uint8Array;
   kind: AudioAssetKind;
   atSeconds?: number;
-  model: typeof ELEVENLABS_MUSIC_MODEL | typeof ELEVENLABS_SOUND_MODEL;
+  model: typeof SOUNDBOX_MUSIC_MODEL | typeof SOUNDBOX_SOUND_MODEL;
 }
 
 /**
@@ -116,13 +114,13 @@ export function resolveShortsMotionEffect(
 }
 
 function assetModel(kind: AudioAssetKind): StoredShortsAudioAsset["model"] {
-  return kind === "music" ? ELEVENLABS_MUSIC_MODEL : ELEVENLABS_SOUND_MODEL;
+  return kind === "music" ? SOUNDBOX_MUSIC_MODEL : SOUNDBOX_SOUND_MODEL;
 }
 
 function maximumAssetBytes(kind: AudioAssetKind): number {
   return kind === "music"
-    ? ELEVENLABS_MAX_MUSIC_BYTES
-    : ELEVENLABS_MAX_SFX_BYTES;
+    ? SOUNDBOX_MAX_MUSIC_BYTES
+    : SOUNDBOX_MAX_SFX_BYTES;
 }
 
 function promptHash(prompt: string): string {
@@ -139,7 +137,7 @@ function assetFolder(request: ShortsAudioAssetCacheRequest): string {
 }
 
 function fallbackAssetPath(request: ShortsAudioAssetCacheRequest): string {
-  return `${assetFolder(request)}/${request.kind}-${promptHash(request.prompt)}.mp3`;
+  return `${assetFolder(request)}/${request.kind}-soundbox-${promptHash(request.prompt)}.mp3`;
 }
 
 async function resolveStoredAssetPath(
@@ -153,7 +151,7 @@ async function resolveStoredAssetPath(
     .eq("user_id", request.userId)
     .eq("project_id", request.projectId)
     .eq("candidate_id", request.candidateId)
-    .eq("provider", "elevenlabs")
+    .eq("provider", "soundbox")
     .eq("kind", request.kind)
     .eq("model_id", assetModel(request.kind))
     .eq("prompt_hash", hash)
@@ -221,7 +219,7 @@ export async function getOrCreateShortsAudioAsset(
     (request.kind === "sound_effect" &&
       !request.authorization.use_cases.includes("sound_effects"))
   ) {
-    throw new Error("elevenlabs_consent_required");
+    throw new Error("soundbox_consent_required");
   }
   const maximumBytes = maximumAssetBytes(request.kind);
   const hash = promptHash(request.prompt);
@@ -244,30 +242,18 @@ export async function getOrCreateShortsAudioAsset(
     };
   }
 
-  const authorization = {
-    explicitUserConsent: request.authorization.explicit_consent,
-    commercialLicenseConfirmed:
-      request.authorization.commercial_license_confirmed,
-  };
-  let generated: GeneratedElevenLabsAudio;
-  if (request.kind === "music") {
-    generated = await generateInstrumentalMusic({
-      shortDurationSeconds: request.durationSeconds,
-      prompt: request.prompt,
-      authorization,
-    });
-  } else {
-    const sfxRequest: MotionSoundEffectRequest = {
-      shortDurationSeconds: request.durationSeconds,
-      atSeconds: request.atSeconds,
-      durationSeconds: Math.min(3, Math.max(0.5, request.durationSeconds / 20)),
-      prompt: request.prompt,
-      authorization,
-    };
-    generated = await generateMotionSoundEffect(sfxRequest);
-  }
+  const generated = await generateSoundboxAudio({
+    kind: request.kind,
+    prompt: request.prompt,
+    shortDurationSeconds: request.durationSeconds,
+    authorization: {
+      explicitUserConsent: request.authorization.explicit_consent,
+      commercialLicenseConfirmed:
+        request.authorization.commercial_license_confirmed,
+    },
+  });
   if (generated.contentType !== "audio/mpeg") {
-    throw new Error("elevenlabs_audio_format_unsupported");
+    throw new Error("soundbox_audio_format_unsupported");
   }
 
   const { error: uploadError } = await admin.storage
@@ -284,7 +270,7 @@ export async function getOrCreateShortsAudioAsset(
       user_id: request.userId,
       project_id: request.projectId,
       candidate_id: request.candidateId,
-      provider: "elevenlabs",
+      provider: "soundbox",
       kind: request.kind,
       model_id: generated.model,
       prompt_hash: hash,
