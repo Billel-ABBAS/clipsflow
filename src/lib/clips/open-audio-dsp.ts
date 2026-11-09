@@ -11,7 +11,7 @@ export function buildSfxFilter(prompt: string, duration: number): string {
   return `${source},afade=t=in:d=0.015,afade=t=out:st=${duration * 0.15}:d=${duration * 0.85},volume=0.6`;
 }
 
-/** Decode only bytes/locally synthesized audio; never put a URL in FFmpeg. */
+/** Decode only MP3 bytes/locally synthesized audio; never auto-detect playlists. */
 export async function renderOpenAudio(
   input: { prompt?: string; bytes?: Uint8Array; durationSeconds: number },
   options: { binary?: string } = {},
@@ -24,7 +24,7 @@ export async function renderOpenAudio(
   }
   const binary = options.binary ?? (await import("@ffmpeg-installer/ffmpeg")).default.path;
   const args = ["-nostdin", "-hide_banner", "-loglevel", "error", "-protocol_whitelist", "file,pipe",
-    ...(music ? ["-i", "pipe:0"] : ["-f", "lavfi", "-i", buildSfxFilter(input.prompt ?? "", input.durationSeconds)]),
+    ...(music ? ["-f", "mp3", "-i", "pipe:0"] : ["-f", "lavfi", "-i", buildSfxFilter(input.prompt ?? "", input.durationSeconds)]),
     "-map", "0:a:0", "-vn", "-af", `apad,atrim=duration=${input.durationSeconds}`,
     "-t", String(input.durationSeconds), "-ac", "2", "-ar", "44100",
     "-c:a", "libmp3lame", "-b:a", "128k", "-f", "mp3", "pipe:1"];

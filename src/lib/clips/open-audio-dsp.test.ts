@@ -22,3 +22,11 @@ it("fails for invalid music, missing executable and out-of-range duration", asyn
   await assert.rejects(renderOpenAudio({ prompt: "pop", durationSeconds: 1 }, { binary: "missing-clipsflow-ffmpeg" }), /open_audio/);
   await assert.rejects(renderOpenAudio({ prompt: "pop", durationSeconds: 10 }), /input/);
 });
+it("normalizes actual MP3 bytes to a bounded music track and rejects playlists", async () => {
+  const options = { binary: process.env.TEST_FFMPEG_PATH };
+  const source = await renderOpenAudio({ prompt: "pop", durationSeconds: 0.5 }, options);
+  const output = await renderOpenAudio({ bytes: source, durationSeconds: 3 }, options);
+  assert.ok(output.byteLength > source.byteLength * 3);
+  assert.ok(output.byteLength < 80_000);
+  await assert.rejects(renderOpenAudio({ bytes: Buffer.from("#EXTM3U\nfile:/etc/passwd\n"), durationSeconds: 3 }, options), /open_audio/);
+});

@@ -44,7 +44,7 @@ export interface StoredShortsAudioAsset {
 
 /**
  * Pick a bounded, non-verbal instrumental direction using only local
- * transcript semantics. Raw transcript/title text is never sent to ElevenLabs.
+ * transcript semantics. Raw transcript/title text is never sent to the model.
  */
 export function resolveShortsMusicPrompt(
   title: string,
@@ -64,7 +64,7 @@ export function resolveShortsMusicPrompt(
     case "energetic":
       return "Upbeat energetic modern instrumental bed with crisp percussion, a confident pulse, and a bright concise social-video arrangement.";
     case "minimal":
-      return "Minimal instrumental bed with soft ambient texture, sparse piano, very restrained percussion, and generous space around speech.";
+      return "Minimal instrumental bed with soft ambient texture, sparse piano, very restrained percussion, and generous space around the foreground.";
   }
 
   const signal = `${title} ${hook}`.normalize("NFKC").toLocaleLowerCase();
@@ -139,7 +139,7 @@ function assetFolder(request: ShortsAudioAssetCacheRequest): string {
 }
 
 function fallbackAssetPath(request: ShortsAudioAssetCacheRequest): string {
-  return `${assetFolder(request)}/${request.kind}-${promptHash(request.prompt)}.mp3`;
+  return `${assetFolder(request)}/open-${assetModel(request.kind)}-${request.kind}-${promptHash(request.prompt)}.mp3`;
 }
 
 async function resolveStoredAssetPath(
@@ -153,7 +153,7 @@ async function resolveStoredAssetPath(
     .eq("user_id", request.userId)
     .eq("project_id", request.projectId)
     .eq("candidate_id", request.candidateId)
-    .eq("provider", "elevenlabs")
+    .eq("provider", "open-audio")
     .eq("kind", request.kind)
     .eq("model_id", assetModel(request.kind))
     .eq("prompt_hash", hash)
@@ -284,13 +284,14 @@ export async function getOrCreateShortsAudioAsset(
       user_id: request.userId,
       project_id: request.projectId,
       candidate_id: request.candidateId,
-      provider: "elevenlabs",
+      provider: "open-audio",
       kind: request.kind,
       model_id: generated.model,
       prompt_hash: hash,
       storage_path: path,
       duration_seconds: generated.durationSeconds,
-      license_reference: "end-user-confirmed-commercial-use",
+      license_reference: request.kind === "music" ? "ACE-Step-1.5-MIT" : "ClipsFlow-original-DSP-v1",
+      generation_cost_credits: 0,
     });
   if (insertError) throw new Error("shorts_audio_asset_persist_failed");
 

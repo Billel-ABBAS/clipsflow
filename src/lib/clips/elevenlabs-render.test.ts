@@ -6,8 +6,9 @@ import {
   resolveShortsMotionEffect,
   resolveShortsMusicPrompt,
 } from "./elevenlabs-render";
+import { normalizeNonVerbalAudioPrompt } from "./elevenlabs";
 
-describe("Shorts ElevenLabs creative plan", () => {
+describe("Shorts Open Audio creative plan", () => {
   it("chooses a safe instrumental template locally without forwarding transcript text", () => {
     const prompt = resolveShortsMusicPrompt(
       "Un lancement rapide",
@@ -18,6 +19,7 @@ describe("Shorts ElevenLabs creative plan", () => {
     expect(prompt).not.toContain("Un lancement");
     expect(prompt).not.toContain("urgent");
     expect(prompt).not.toMatch(/\b(voice|lyrics|speech|narration)\b/iu);
+    expect(() => normalizeNonVerbalAudioPrompt(resolveShortsMusicPrompt("", "", "calm-focus", "minimal"))).not.toThrow();
   });
 
   it("uses an allow-listed AI music mood while keeping provider prompts fixed", () => {
@@ -80,8 +82,10 @@ describe("Shorts ElevenLabs creative plan", () => {
     ).resolves.toBe(true);
     expect(list).toHaveBeenCalledWith("user-1/shorts/project-1/candidate-1", {
       limit: 100,
-      search: expect.stringMatching(/^music-[0-9a-f]{64}\.mp3$/u),
+      search: expect.stringMatching(/^open-acestep-v15-turbo-music-[0-9a-f]{64}\.mp3$/u),
     });
+    expect(query.eq).toHaveBeenCalledWith("provider", "open-audio");
+    expect(query.eq).toHaveBeenCalledWith("model_id", "acestep-v15-turbo");
   });
 
   it("does not treat a different audio object in the folder as a cache hit", async () => {
