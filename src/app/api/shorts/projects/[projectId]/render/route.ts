@@ -294,21 +294,16 @@ export async function POST(
         assetRequests.map((asset) => hasCachedShortsAudioAsset(admin, asset)),
       );
     } catch {
-      return unavailableResponse("elevenlabs_cache_unavailable");
+      return unavailableResponse("soundbox_cache_unavailable");
     }
-    if (
-      cachedAssets.some((cached) => !cached) ||
-      productionProfile.creative_direction.enabled
-    ) {
-      if (process.env.CLIPS_AI_BUDGET_AUTHORIZED !== "true") {
-        return unavailableResponse("paid_ai_not_authorized");
-      }
+    if (cachedAssets.some((cached) => !cached)) {
+      // Local Soundbox inference does not depend on paid-provider API budgets.
       try {
-        const { resolveElevenLabsConfig } =
-          await import("@/lib/clips/elevenlabs");
-        resolveElevenLabsConfig();
+        const { resolveSoundboxConfig } =
+          await import("@/lib/clips/soundbox");
+        resolveSoundboxConfig();
       } catch {
-        return unavailableResponse("elevenlabs_temporarily_unavailable");
+        return unavailableResponse("soundbox_temporarily_unavailable");
       }
     }
   }

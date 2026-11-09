@@ -16,8 +16,9 @@ const configuredEnvironment: ShortsProviderEnvironment = {
   CLIPS_CREATIVE_DIRECTOR_ENABLED: "true",
   CLIPS_CREATIVE_DIRECTOR_MODEL: "claude-opus-5-5",
   ANTHROPIC_API_KEY: "private-test-key",
-  CLIPS_ELEVENLABS_ENABLED: "true",
-  ELEVENLABS_API_KEY: "private-test-key",
+  CLIPS_SOUNDBOX_ENABLED: "true",
+  CLIPS_SOUNDBOX_BASE_URL: "http://soundbox:17494",
+  CLIPS_SOUNDBOX_MODELS_COMMERCIAL_OK: "true",
 };
 
 const withFreshWorker = (
@@ -38,7 +39,7 @@ describe("Shorts provider capabilities", () => {
       audioAnalysis: false,
       videoAnalysis: false,
       creativeDirection: false,
-      elevenLabs: false,
+      elevenLabs: true,
     });
   });
 
@@ -102,7 +103,7 @@ describe("Shorts provider capabilities", () => {
     expect(
       withFreshWorker({
         ...configuredEnvironment,
-        CLIPS_ELEVENLABS_MUSIC_MODEL: "unexpected-model",
+        CLIPS_SOUNDBOX_BASE_URL: "http://example.com",
       }).elevenLabs,
     ).toBe(false);
     expect(
