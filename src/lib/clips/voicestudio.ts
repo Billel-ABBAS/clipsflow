@@ -6,7 +6,7 @@
  * Its default OmniVoice weights are non-commercial. Fail closed until the
  * operator selects and approves a commercially usable model.
  */
-export interface VoiceStudioEnvironment {
+export interface VoiceStudioEnvironment extends Record<string, string | undefined> {
   CLIPS_VOICESTUDIO_ENABLED?: string;
   CLIPS_VOICESTUDIO_BASE_URL?: string;
   CLIPS_VOICESTUDIO_API_KEY?: string;
