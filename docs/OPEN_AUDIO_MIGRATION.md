@@ -38,3 +38,19 @@ sur une machine avec GPU si nécessaire. Pas d'exposition publique de
 son API d'administration. Les travailleurs Railway ne peuvent pas utiliser
 `localhost` d'un PC Windows à distance. Limiter la concurrence, l'espace disque
 et les téléchargements de modèles. La branche n'active ni clé ni trafic réel.
+
+## Soundbox : musique et SFX (étape 2)
+
+`src/lib/clips/soundbox.ts` utilise l'API asynchrone Soundbox :
+`POST /api/generate` → `GET /api/jobs/{id}` → `GET /files/{id}.wav?format=mp3`.
+Les durées sont bornées : 60 s pour la musique (bouclée par FFmpeg sur un
+Short plus long) et trois secondes pour les effets. Aucune requête client
+n'est autorisée à choisir le modèle ou l'URL.
+
+- Musique : `audiocpp-ace-step` (ACE-Step 1.5 Turbo, MIT).
+- SFX : `audiocpp-midashenglm-gen` (MiDashengLM-Gen, Apache-2.0
+  selon sa fiche ; vérifier les conditions annexes des poids).
+- Les deux modèles doivent être installés et préchauffés sur Soundbox.
+- Le proxy HTTPS doit imposer le jeton Bearer ; Soundbox lui-même ne fournit
+  pas de système de clés API pour son interface.
+- Les tests sont isolés sans téléchargement ni appel GPU.
