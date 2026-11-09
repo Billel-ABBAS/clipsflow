@@ -2,10 +2,7 @@ import {
   CLAUDE_OPUS_5_5_MODEL_API_ID,
   CLAUDE_OPUS_5_5_MODEL_API_ID_CONFIRMED,
 } from "@/lib/clips/creative-director-model";
-import {
-  ELEVENLABS_MUSIC_MODEL,
-  ELEVENLABS_SOUND_MODEL,
-} from "@/lib/clips/elevenlabs";
+import { resolveOpenAudioConfig } from "@/lib/clips/open-audio";
 import { assertLongformOpenAIAvailable } from "./longform-openai";
 import { resolveShortsVisualConfig } from "./visual-analysis";
 
@@ -29,17 +26,18 @@ export interface ShortsProviderEnvironment extends Record<
   CLIPS_CREATIVE_DIRECTOR_MODEL?: string;
   ANTHROPIC_API_KEY?: string;
   NEXT_PUBLIC_ANTHROPIC_API_KEY?: string;
-  CLIPS_ELEVENLABS_ENABLED?: string;
-  CLIPS_ELEVENLABS_MUSIC_MODEL?: string;
-  CLIPS_ELEVENLABS_SOUND_MODEL?: string;
-  ELEVENLABS_API_KEY?: string;
-  NEXT_PUBLIC_ELEVENLABS_API_KEY?: string;
+  CLIPS_OPEN_AUDIO_ENABLED?: string;
+  CLIPS_OPEN_AUDIO_COMPUTE_AUTHORIZED?: string;
+  CLIPS_OPEN_AUDIO_BASE_URL?: string;
+  CLIPS_OPEN_AUDIO_API_KEY?: string;
+  NEXT_PUBLIC_OPEN_AUDIO_API_KEY?: string;
 }
 
 export interface ShortsProviderCapabilities {
   audioAnalysis: boolean;
   videoAnalysis: boolean;
   creativeDirection: boolean;
+  /** Legacy serialized name; now represents self-hosted Open Audio configuration. */
   elevenLabs: boolean;
 }
 
@@ -58,6 +56,15 @@ function matchesConfiguredModel(
 ): boolean {
   const model = configured?.trim();
   return !model || model === expected;
+}
+
+function openAudioConfigured(environment: ShortsProviderEnvironment): boolean {
+  try {
+    resolveOpenAudioConfig(environment);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -96,9 +103,8 @@ export function isShortsAnalysisConfigurationEligible(
 }
 
 /**
- * Expose only readiness booleans to the browser; never serialize provider
- * keys, model errors, or other server configuration. The worker flag is only
- * an operator gate; a fresh database heartbeat is required as runtime proof.
+ * Expose only configuration booleans to the browser, never private endpoints.
+ * Open Audio configuration is not proof that its model server is healthy.
  */
 export function resolveShortsProviderCapabilities(
   environment: ShortsProviderEnvironment,
@@ -132,18 +138,6 @@ export function resolveShortsProviderCapabilities(
         environment.CLIPS_CREATIVE_DIRECTOR_MODEL,
         CLAUDE_OPUS_5_5_MODEL_API_ID,
       ),
-    elevenLabs:
-      paidCallsAuthorized &&
-      environment.CLIPS_ELEVENLABS_ENABLED === "true" &&
-      hasPrivateKey(environment.ELEVENLABS_API_KEY) &&
-      !hasPrivateKey(environment.NEXT_PUBLIC_ELEVENLABS_API_KEY) &&
-      matchesConfiguredModel(
-        environment.CLIPS_ELEVENLABS_MUSIC_MODEL,
-        ELEVENLABS_MUSIC_MODEL,
-      ) &&
-      matchesConfiguredModel(
-        environment.CLIPS_ELEVENLABS_SOUND_MODEL,
-        ELEVENLABS_SOUND_MODEL,
-      ),
+    elevenLabs: openAudioConfigured(environment),
   };
 }

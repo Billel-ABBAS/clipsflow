@@ -16,8 +16,10 @@ const configuredEnvironment: ShortsProviderEnvironment = {
   CLIPS_CREATIVE_DIRECTOR_ENABLED: "true",
   CLIPS_CREATIVE_DIRECTOR_MODEL: "claude-opus-5-5",
   ANTHROPIC_API_KEY: "private-test-key",
-  CLIPS_ELEVENLABS_ENABLED: "true",
-  ELEVENLABS_API_KEY: "private-test-key",
+  CLIPS_OPEN_AUDIO_ENABLED: "true",
+  CLIPS_OPEN_AUDIO_COMPUTE_AUTHORIZED: "true",
+  CLIPS_OPEN_AUDIO_BASE_URL: "https://audio.example.test",
+  CLIPS_OPEN_AUDIO_API_KEY: "private-test-token",
 };
 
 const withFreshWorker = (
@@ -28,7 +30,7 @@ const withFreshWorker = (
   });
 
 describe("Shorts provider capabilities", () => {
-  it("fails closed when provider budgets are not authorized", () => {
+  it("keeps paid providers closed while separately authorized Open Audio remains available", () => {
     expect(
       withFreshWorker({
         ...configuredEnvironment,
@@ -38,8 +40,12 @@ describe("Shorts provider capabilities", () => {
       audioAnalysis: false,
       videoAnalysis: false,
       creativeDirection: false,
-      elevenLabs: false,
+      elevenLabs: true,
     });
+    expect(withFreshWorker({
+      ...configuredEnvironment,
+      CLIPS_OPEN_AUDIO_COMPUTE_AUTHORIZED: "false",
+    }).elevenLabs).toBe(false);
   });
 
   it("exposes analysis and creative providers only when their server configurations are ready", () => {
@@ -86,7 +92,7 @@ describe("Shorts provider capabilities", () => {
     expect(audioOnly.videoAnalysis).toBe(false);
   });
 
-  it("rejects public keys and model overrides that the workers will reject", () => {
+  it("rejects public keys and configurations that the workers will reject", () => {
     expect(
       withFreshWorker({
         ...configuredEnvironment,
@@ -102,7 +108,7 @@ describe("Shorts provider capabilities", () => {
     expect(
       withFreshWorker({
         ...configuredEnvironment,
-        CLIPS_ELEVENLABS_MUSIC_MODEL: "unexpected-model",
+        CLIPS_OPEN_AUDIO_BASE_URL: "http://untrusted.example.test",
       }).elevenLabs,
     ).toBe(false);
     expect(
@@ -111,5 +117,9 @@ describe("Shorts provider capabilities", () => {
         NEXT_PUBLIC_OPENAI_API_KEY: "misconfigured-public-key",
       }).audioAnalysis,
     ).toBe(false);
+    expect(withFreshWorker({
+      ...configuredEnvironment,
+      NEXT_PUBLIC_OPEN_AUDIO_API_KEY: "exposed",
+    }).elevenLabs).toBe(false);
   });
 });
