@@ -1,0 +1,37 @@
+name: Railway authenticated audio gateway
+on:
+  push:
+    branches: [fix/railway-audio-gateway-20261109]
+  pull_request:
+    paths: ['deploy/railway/soundbox/**', '.github/workflows/railway-audio-gateway.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: railway-gateway-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  gateway:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+      - name: Actual HTTP isolation and auth tests (no AI calls)
+        run: node --test deploy/railway/soundbox/gateway.test.mjs
+      - name: Verify upstream image and build private facade
+        run: |
+          docker pull ghcr.io/hamsanders/soundbox:v0.4.1
+          docker image inspect ghcr.io/hamsanders/soundbox:v0.4.1 --format '{{json .RepoDigests}}'
+          docker build -f deploy/railway/soundbox/Dockerfile -t clipsflow-soundbox-gated:test .
+      - name: Default-off launcher fails before starting any model
+        run: |
+          set +e
+          docker run --rm --network none clipsflow-soundbox-gated:test
+          code=$?
+          set -e
+          test "$code" -eq 78
