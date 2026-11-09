@@ -55,7 +55,7 @@ describe("VoiceStudio private boundary", () => {
   });
 
   it("calls VoiceStudio's OpenAI-compatible private speech API", async () => {
-    const fetcher = vi.fn().mockResolvedValue(new Response(wav(), {
+    const fetcher = vi.fn().mockResolvedValue(new Response(new Uint8Array(wav()).buffer, {
       status: 200,
       headers: { "content-type": "audio/wav" },
     }));
