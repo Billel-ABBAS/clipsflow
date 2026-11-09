@@ -178,3 +178,80 @@ export async function mixShortAudio(
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
   }
 }
+
+/** Overlay a consented synthetic hook while ducking original audio under it. */
+export function buildShortNarrationMixArgs(input: {
+  videoPath: string;
+  narrationPath: string;
+  outputPath: string;
+  durationSeconds: number;
+}): string[] {
+  if (!input.videoPath || !input.narrationPath || !input.outputPath ||
+      !Number.isFinite(input.durationSeconds) || input.durationSeconds <= 0) {
+    throw new Error("short_narration_mix_input_invalid");
+  }
+  const samples = Math.ceil(input.durationSeconds * 48_000);
+  const filters = [
+    `[1:a]aresample=48000,apad=whole_len=${samples},asplit=2[narration_duck][narration]`,
+    "[0:a][narration_duck]sidechaincompress=threshold=0.025:ratio=10:attack=12:release=350[source_ducked]",
+    "[source_ducked][narration]amix=inputs=2:duration=first:dropout_transition=2,volume=2,alimiter=limit=0.95[audio]",
+  ];
+  return [
+    "-hide_banner", "-loglevel", "error",
+    ...FFMPEG_SINGLE_CORE_FILTER_ARGS,
+    "-i", input.videoPath, "-i", input.narrationPath,
+    "-filter_complex", filters.join(";"),
+    "-map", "0:v:0", "-map", "[audio]",
+    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+    "-t", input.durationSeconds.toFixed(3),
+    "-map_metadata", "0", "-movflags", "+faststart",
+    input.outputPath,
+  ];
+}
+
+export async function mixShortNarration(
+  video: Buffer,
+  narrationWav: Uint8Array,
+  durationSeconds: number,
+): Promise<Buffer> {
+  if (!video.byteLength || !narrationWav.byteLength) {
+    throw new Error("short_narration_mix_input_empty");
+  }
+  const dir = await mkdtemp(join(tmpdir(), "clipsflow-voiceover-"));
+  const videoPath = join(dir, "video.mp4");
+  const narrationPath = join(dir, "narration.wav");
+  const outputPath = join(dir, `mixed-${randomUUID()}.mp4`);
+  try {
+    await Promise.all([
+      writeFile(videoPath, video),
+      writeFile(narrationPath, Buffer.from(narrationWav)),
+    ]);
+    const child = spawn(
+      ffmpegPath.path,
+      buildShortNarrationMixArgs({
+        videoPath, narrationPath, outputPath, durationSeconds,
+      }),
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
+    let diagnostics = "";
+    child.stderr?.on("data", (chunk: Buffer) => {
+      diagnostics = `${diagnostics}${chunk.toString("utf8")}`.slice(-1_000);
+    });
+    const watchdog = attachFfmpegTimeout(child, "shorts_narration_mix");
+    try {
+      await new Promise<void>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("close", (code) => {
+          if (watchdog.timedOut()) reject(new Error(watchdog.message()));
+          else if (code === 0) resolve();
+          else reject(new Error(`short_narration_mix_failed:${code ?? "signal"}:${diagnostics.replaceAll(dir, "<temp>").trim().slice(-500)}`));
+        });
+      });
+    } finally { watchdog.clear(); }
+    const output = await readFile(outputPath);
+    if (!output.byteLength) throw new Error("short_narration_mix_empty_output");
+    return output;
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}

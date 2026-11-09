@@ -191,6 +191,16 @@ export async function POST(
     }
   }
 
+  if (productionProfile.voiceover?.enabled) {
+    try {
+      const { resolveVoiceStudioConfig } =
+        await import("@/lib/clips/voicestudio");
+      resolveVoiceStudioConfig();
+    } catch {
+      return unavailableResponse("voicestudio_temporarily_unavailable");
+    }
+  }
+
   const { data: episode, error: episodeError } = await admin
     .from("episodes")
     .select("id, transcript_segments")

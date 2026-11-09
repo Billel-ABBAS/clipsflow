@@ -139,6 +139,7 @@ export default async function ShortsPreviewPage({
         videoAnalysis: true,
         creativeDirection: true,
         elevenLabs: true,
+        voiceStudio: true,
       }}
     />
   );
