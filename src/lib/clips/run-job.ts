@@ -85,7 +85,8 @@ import {
   resolveShortsMotionEffect,
   resolveShortsMusicPrompt,
 } from "./elevenlabs-render";
-import { mixShortAudio } from "./mix-short-audio";
+import { mixShortAudio, mixShortNarration } from "./mix-short-audio";
+import { generateVoiceStudioNarration } from "./voicestudio";
 import { shouldReduceShortsMotion } from "./motion-preferences";
 import {
   validateOutboundUrl,
@@ -1338,6 +1339,32 @@ export async function runRenderJob(
           ...(diagnostic ? { diagnostic } : {}),
         });
         throw new Error(`shorts_audio_design_failed: ${errorCode}`);
+      }
+    }
+
+    // Optional voice-over of the selected hook. No voice clone is accepted here.
+    if (shortsProfile?.voiceover?.enabled === true) {
+      const approved = shortsProfile.voiceover;
+      try {
+        const narration = await generateVoiceStudioNarration({
+          text: shortsProfile.hook,
+          authorization: {
+            explicitConsent: approved.explicit_consent,
+            voiceRightsConfirmed: approved.voice_rights_confirmed,
+            commercialModelRightsConfirmed:
+              approved.commercial_model_rights_confirmed,
+          },
+        });
+        renderedBuf = await mixShortNarration(
+          renderedBuf, narration.bytes, segmentDuration,
+        );
+        addPipelineBreadcrumb("shorts_voicestudio_narration_complete", "info", {
+          model: narration.model,
+          mp4_bytes: renderedBuf.byteLength,
+        });
+      } catch (error) {
+        captureRunJobError(error, job, clip, "shorts_voicestudio_narration");
+        throw new Error("shorts_voicestudio_narration_failed");
       }
     }
 

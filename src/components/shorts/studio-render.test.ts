@@ -8,6 +8,7 @@ const unavailableCapabilities = {
   videoAnalysis: false,
   creativeDirection: false,
   elevenLabs: false,
+  voiceStudio: false,
 };
 
 afterEach(() => vi.unstubAllEnvs());
@@ -48,6 +49,7 @@ describe("Studio visual truthfulness", () => {
           videoAnalysis: false,
           creativeDirection: false,
           elevenLabs: false,
+          voiceStudio: false,
         },
       }),
     );

@@ -153,6 +153,34 @@ describe("Shorts candidate selection contract", () => {
     expect(parsed.production_profile).toEqual(validProductionProfile);
   });
 
+  it("authorises an optional VoiceStudio hook only with all voice rights", () => {
+    const voiceover = {
+      enabled: true,
+      explicit_consent: true,
+      voice_rights_confirmed: true,
+      commercial_model_rights_confirmed: true,
+    };
+    const selection = {
+      candidate_ids: [candidateIds[0]],
+      production_profile: { ...validProductionProfile, voiceover },
+    };
+    expect(selectShortsCandidatesSchema.safeParse(selection).success).toBe(true);
+    expect(selectShortsCandidatesSchema.safeParse({
+      ...selection,
+      production_profile: {
+        ...selection.production_profile,
+        voiceover: { ...voiceover, voice_rights_confirmed: false },
+      },
+    }).success).toBe(false);
+    expect(selectShortsCandidatesSchema.safeParse({
+      ...selection,
+      production_profile: {
+        ...selection.production_profile,
+        voiceover: { ...voiceover, enabled: false },
+      },
+    }).success).toBe(false);
+  });
+
   it("fails closed for missing ElevenLabs consent or a missing commercial license", () => {
     const input = {
       candidate_ids: [candidateIds[0]],

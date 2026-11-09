@@ -54,3 +54,16 @@ n'est autorisée à choisir le modèle ou l'URL.
 - Le proxy HTTPS doit imposer le jeton Bearer ; Soundbox lui-même ne fournit
   pas de système de clés API pour son interface.
 - Les tests sont isolés sans téléchargement ni appel GPU.
+
+## Narration réelle dans le pipeline (étape 4)
+
+Le profil Shorts admet maintenant un champ facultatif `voiceover` avec quatre
+booléens validés côté serveur : activation, consentement, droits sur la voix,
+droits commerciaux sur les poids. Les profils historiques restent valables.
+Le routeur vérifie la configuration VoiceStudio avant la mise en file.
+Le worker peut synthétiser **l'accroche du Short**, puis FFmpeg la superpose
+à la vidéo en atténuant la piste source pendant la narration.
+
+La case d'activation et les autorisations sont ajoutées séparément à
+l'interface (PR suivante). Par défaut aucune narration synthétique n'est
+commandée. Le choix du moteur et de la voix est réservé au serveur.

@@ -19,6 +19,12 @@ const configuredEnvironment: ShortsProviderEnvironment = {
   CLIPS_SOUNDBOX_ENABLED: "true",
   CLIPS_SOUNDBOX_BASE_URL: "http://soundbox:17494",
   CLIPS_SOUNDBOX_MODELS_COMMERCIAL_OK: "true",
+  CLIPS_VOICESTUDIO_ENABLED: "true",
+  CLIPS_VOICESTUDIO_BASE_URL: "http://voicestudio:3900",
+  CLIPS_VOICESTUDIO_API_KEY: "private-test-key",
+  CLIPS_VOICESTUDIO_TTS_MODEL: "approved-tts",
+  CLIPS_VOICESTUDIO_TTS_VOICE: "approved-voice",
+  CLIPS_VOICESTUDIO_MODEL_COMMERCIAL_OK: "true",
 };
 
 const withFreshWorker = (
@@ -40,6 +46,7 @@ describe("Shorts provider capabilities", () => {
       videoAnalysis: false,
       creativeDirection: false,
       elevenLabs: true,
+      voiceStudio: true,
     });
   });
 
@@ -49,6 +56,7 @@ describe("Shorts provider capabilities", () => {
       videoAnalysis: true,
       creativeDirection: true,
       elevenLabs: true,
+      voiceStudio: true,
     });
   });
 
@@ -68,6 +76,7 @@ describe("Shorts provider capabilities", () => {
     expect(capabilities.videoAnalysis).toBe(false);
     expect(capabilities.creativeDirection).toBe(true);
     expect(capabilities.elevenLabs).toBe(true);
+    expect(capabilities.voiceStudio).toBe(true);
   });
 
   it("requires a transcription provider and a configured visual provider", () => {

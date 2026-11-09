@@ -121,6 +121,28 @@ const elevenLabsProfileSchema = z
     }
   });
 
+const voiceoverProfileSchema = z
+  .strictObject({
+    enabled: z.boolean(),
+    explicit_consent: z.boolean(),
+    voice_rights_confirmed: z.boolean(),
+    commercial_model_rights_confirmed: z.boolean(),
+  })
+  .superRefine((value, ctx) => {
+    const authorised =
+      value.explicit_consent &&
+      value.voice_rights_confirmed &&
+      value.commercial_model_rights_confirmed;
+    if (value.enabled && !authorised) {
+      ctx.addIssue({ code: "custom", message: "VoiceStudio narration requires explicit consent and cleared rights" });
+    }
+    if (!value.enabled &&
+        (value.explicit_consent || value.voice_rights_confirmed ||
+         value.commercial_model_rights_confirmed)) {
+      ctx.addIssue({ code: "custom", message: "Disabled narration must have no stale authorisation" });
+    }
+  });
+
 const creativeDirectionProfileSchema = z
   .strictObject({
     enabled: z.boolean(),
@@ -163,6 +185,7 @@ const productionProfileSchema = z.strictObject({
     renderer: z.literal("deterministic"),
   }),
   elevenlabs: elevenLabsProfileSchema,
+  voiceover: voiceoverProfileSchema.optional(),
   creative_direction: creativeDirectionProfileSchema.default({
     enabled: false,
     explicit_consent: false,

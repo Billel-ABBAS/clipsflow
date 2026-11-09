@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildShortAudioMixArgs } from "./mix-short-audio";
+import { buildShortAudioMixArgs, buildShortNarrationMixArgs } from "./mix-short-audio";
 
 describe("Shorts instrumental audio mix", () => {
   it("ducks music under the source audio and limits the final mix", () => {
@@ -33,6 +33,21 @@ describe("Shorts instrumental audio mix", () => {
     expect(filter).toContain("apad=whole_len=960000");
     expect(filter).toContain("amix=inputs=3");
     expect(filter).toContain("volume=3,alimiter=limit=0.95");
+  });
+
+  it("overlays VoiceStudio narration with original audio ducking", () => {
+    const args = buildShortNarrationMixArgs({
+      videoPath: "video.mp4",
+      narrationPath: "narration.wav",
+      outputPath: "output.mp4",
+      durationSeconds: 20,
+    });
+    const filter = args[args.indexOf("-filter_complex") + 1];
+    expect(filter).toContain("asplit=2");
+    expect(filter).toContain("sidechaincompress");
+    expect(filter).toContain("amix=inputs=2");
+    expect(filter).toContain("apad=whole_len=960000");
+    expect(args).toContain("narration.wav");
   });
 
   it("rejects invalid mix windows and sound-effect offsets", () => {

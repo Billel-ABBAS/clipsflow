@@ -184,6 +184,13 @@ export type SubtitleCustomizations = {
       use_cases: readonly ("instrumental_music" | "sound_effects")[];
       synthetic_voice: false;
     };
+    /** Optional creator-approved VoiceStudio narration of the selected hook. */
+    voiceover?: {
+      enabled: boolean;
+      explicit_consent: boolean;
+      voice_rights_confirmed: boolean;
+      commercial_model_rights_confirmed: boolean;
+    };
     creative_direction: {
       enabled: boolean;
       explicit_consent: boolean;

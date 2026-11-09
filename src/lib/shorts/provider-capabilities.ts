@@ -3,6 +3,7 @@ import {
   CLAUDE_OPUS_5_5_MODEL_API_ID_CONFIRMED,
 } from "@/lib/clips/creative-director-model";
 import { resolveSoundboxConfig } from "@/lib/clips/soundbox";
+import { resolveVoiceStudioConfig } from "@/lib/clips/voicestudio";
 import { assertLongformOpenAIAvailable } from "./longform-openai";
 import { resolveShortsVisualConfig } from "./visual-analysis";
 
@@ -31,6 +32,13 @@ export interface ShortsProviderEnvironment extends Record<
   CLIPS_SOUNDBOX_PROXY_TOKEN?: string;
   CLIPS_SOUNDBOX_MODELS_COMMERCIAL_OK?: string;
   NEXT_PUBLIC_CLIPS_SOUNDBOX_PROXY_TOKEN?: string;
+  CLIPS_VOICESTUDIO_ENABLED?: string;
+  CLIPS_VOICESTUDIO_BASE_URL?: string;
+  CLIPS_VOICESTUDIO_API_KEY?: string;
+  CLIPS_VOICESTUDIO_TTS_MODEL?: string;
+  CLIPS_VOICESTUDIO_TTS_VOICE?: string;
+  CLIPS_VOICESTUDIO_MODEL_COMMERCIAL_OK?: string;
+  NEXT_PUBLIC_CLIPS_VOICESTUDIO_API_KEY?: string;
 }
 
 export interface ShortsProviderCapabilities {
@@ -38,6 +46,7 @@ export interface ShortsProviderCapabilities {
   videoAnalysis: boolean;
   creativeDirection: boolean;
   elevenLabs: boolean;
+  voiceStudio: boolean;
 }
 
 export interface ShortsProviderHealth {
@@ -129,6 +138,14 @@ export function resolveShortsProviderCapabilities(
         environment.CLIPS_CREATIVE_DIRECTOR_MODEL,
         CLAUDE_OPUS_5_5_MODEL_API_ID,
       ),
+    voiceStudio: (() => {
+      try {
+        resolveVoiceStudioConfig(environment);
+        return true;
+      } catch {
+        return false;
+      }
+    })(),
     // Compatibility field for stored Shorts profiles; now backed by Soundbox.
     elevenLabs: (() => {
       try {
